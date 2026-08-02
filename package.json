@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "jimp": "^0.22.12",
     "typescript": "~5.9.2"
   },
   "scripts": {

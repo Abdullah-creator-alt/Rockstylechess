@@ -20,14 +20,14 @@ export const Colors = {
   chromeMid: '#A6ACB8',
   chromeDark: '#5C6069',
 
-  // Board surface — near-white light squares against slate dark squares, as in
-  // the reference match screenshot (solid tones, not translucent chrome, so the
-  // squares don't pick up whatever panel color happens to sit behind the board).
-  boardLight: '#EDEFF2',
-  boardLightShade: '#DCDFE5',
-  boardDark: '#6B6F79',
-  boardDarkShade: '#5A5E67',
-  boardEdge: '#3A3D44',
+  // Board surface, sampled from the reference render rather than picked by eye:
+  // warm ivory squares against deep navy-slate. These are the mid-board values;
+  // the per-rank table below is what actually gets drawn. Solid tones, not
+  // translucent chrome, so the squares don't pick up whatever panel color
+  // happens to sit behind the board.
+  boardLight: '#DEDBD6',
+  boardDark: '#373D47',
+  boardEdge: '#20242C',
 
   // Sculpted piece tones. Each piece is a gradient body (Hi -> Mid -> Lo,
   // lit from the top-left) plus a rim: gold trim on the black set, cool
@@ -49,6 +49,22 @@ export const Colors = {
 } as const;
 
 export type ColorToken = keyof typeof Colors;
+
+/**
+ * Square colors per rank, measured directly off the reference render.
+ * Index 0 is rank 8 (top), index 7 is rank 1 (bottom).
+ *
+ * The render is lit from above, so its squares are not one flat pair of tones:
+ * brightness peaks around ranks 5-6 and falls away toward the player, most
+ * sharply on the last rank (light drops #DBDCE0 -> #BDBEC2, dark #676971 ->
+ * #595B63). Painting every square one color is what made the board read flat
+ * and washed out next to the reference, so each rank gets its measured value
+ * and the board picks up the render's own lighting for free.
+ */
+export const BoardSquares = {
+  light: ['#DDDAD5', '#DDDAD5', '#E0DDD8', '#DFDCD8', '#E1DED8', '#DEDCD8', '#DEDBD6', '#DBD8D3'],
+  dark: ['#393E48', '#373D46', '#363D48', '#373D48', '#363D48', '#373D48', '#383E49', '#373C46'],
+} as const;
 
 /**
  * Font family keys map to the exact PostScript names registered by

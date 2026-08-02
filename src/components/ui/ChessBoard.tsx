@@ -1,5 +1,4 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import MaskedView from '@react-native-masked-view/masked-view';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { memo, useState } from 'react';
 import {
@@ -19,7 +18,9 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { Colors, withOpacity } from '@/constants/theme';
+import { BoardSquares, Colors, withOpacity } from '@/constants/theme';
+
+import { PIECE_SPRITES } from './pieceSprites';
 
 // Standard starting position. Uppercase = white, lowercase = black, '' = empty.
 // Default board when no `board` prop is given -- this is what keeps Front
@@ -35,28 +36,6 @@ const STARTING_BOARD: string[][] = [
   ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
   ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'],
 ];
-
-// Flat, chess.com-style piece silhouettes instead of Unicode chess glyphs --
-// consistent rendering across devices and closer to the reference look.
-const PIECE_ICON: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
-  k: 'chess-king',
-  q: 'chess-queen',
-  r: 'chess-rook',
-  b: 'chess-bishop',
-  n: 'chess-knight',
-  p: 'chess-pawn',
-};
-
-// How far the rim glyph is scaled past the body glyph. The rim sits *behind*
-// the body, so the overhang is what you actually see: a gold trim outline on
-// the black set and cool chrome shading on the white set, matching the
-// ornate, gold-filigreed pieces in the reference screenshot.
-const RIM_SCALE = 1.09;
-
-// Where the top-down specular gloss finishes fading out, as a fraction of the
-// glyph height. Keeping it high on the piece is what makes the crown/cross
-// caps read as polished gold (black set) or pearl (white set).
-const GLOSS_END_Y = 0.44;
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
@@ -109,11 +88,18 @@ export function ChessBoard({
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
 
-  const squareSize = gridSize / 8;
+  // Exact 8x8. Squares are laid out at an integer pixel size rather than with
+  // flex:1, because eight flex children of a fractional width get rounded
+  // independently -- squares end up a pixel wider or narrower than their
+  // neighbours and the file boundaries stop lining up down the board. Flooring
+  // to a whole number and sizing the grid to 8x that keeps every square
+  // identical and perfectly square; the few leftover pixels go to the frame.
+  const squareSize = Math.floor(gridSize / 8);
+  const boardSize = squareSize * 8;
   const interactive = Boolean(onSquarePress);
 
   function handleGridLayout(event: LayoutChangeEvent) {
-    setGridSize(event.nativeEvent.layout.width);
+    setGridSize(Math.min(event.nativeEvent.layout.width, event.nativeEvent.layout.height));
   }
 
   function handleTapSquare(square: string) {
@@ -173,8 +159,12 @@ export function ChessBoard({
           <Rivet style={{ bottom: 6, left: 6 }} />
           <Rivet style={{ bottom: 6, right: 6 }} />
 
-          <View style={styles.gridWrapper}>
-            <View style={styles.boardGrid} onLayout={handleGridLayout}>
+          <View style={styles.gridWrapper} onLayout={handleGridLayout}>
+            {/* Sized to the exact 8x8 so the sheen and the drag ghost share the
+                grid's coordinate space -- the leftover pixels from flooring sit
+                outside this box, against the frame. */}
+            <View style={boardSize > 0 ? { width: boardSize, height: boardSize } : undefined}>
+            <View style={styles.boardGrid}>
               {board.map((rowPieces, rowIndex) => (
                 <View key={rowIndex} style={styles.boardRow}>
                   {rowPieces.map((piece, colIndex) => {
@@ -189,8 +179,10 @@ export function ChessBoard({
                         key={colIndex}
                         square={square}
                         piece={piece}
+                        squareColor={
+                          (isLight ? BoardSquares.light : BoardSquares.dark)[rowIndex]
+                        }
                         isLight={isLight}
-                        isWhitePiece={isWhitePiece}
                         isSelected={square === selectedSquare}
                         isLegalTarget={legalTargets.includes(square)}
                         isCapture={legalTargets.includes(square) && piece !== ''}
@@ -218,21 +210,10 @@ export function ChessBoard({
               ))}
             </View>
 
-            {/* Single diagonal sheen across the whole playfield -- one gradient
-                instead of 64, so the board picks up the same "under glass"
-                lighting as the reference without a per-square cost. */}
-            <LinearGradient
-              pointerEvents="none"
-              colors={[
-                withOpacity(Colors.chrome, 0.16),
-                withOpacity(Colors.chrome, 0),
-                withOpacity(Colors.bgBase, 0.14),
-              ]}
-              locations={[0, 0.45, 1]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0.85, y: 1 }}
-              style={styles.boardSheen}
-            />
+            {/* No sheen overlay here any more. The per-rank square colors above
+                are sampled from the reference and already carry its lighting, so
+                a second gradient on top double-counted it -- darkening the lower
+                board past the render and washing out the upper. */}
 
             {dragging && squareSize > 0 ? (
               <DragGhost
@@ -244,6 +225,7 @@ export function ChessBoard({
                 dragY={dragY}
               />
             ) : null}
+            </View>
           </View>
         </LinearGradient>
       </View>
@@ -268,8 +250,9 @@ function GlowRing() {
 interface SquareProps {
   square: string;
   piece: string;
+  /** Measured per-rank tone for this square; see BoardSquares in the theme. */
+  squareColor: string;
   isLight: boolean;
-  isWhitePiece: boolean;
   isSelected: boolean;
   isLegalTarget: boolean;
   isCapture: boolean;
@@ -295,8 +278,8 @@ interface SquareProps {
 const Square = memo(function Square({
   square,
   piece,
+  squareColor,
   isLight,
-  isWhitePiece,
   isSelected,
   isLegalTarget,
   isCapture,
@@ -351,7 +334,7 @@ const Square = memo(function Square({
       <View
         style={[
           styles.square,
-          { backgroundColor: isLight ? Colors.boardLight : Colors.boardDark },
+          { width: squareSize, height: squareSize, backgroundColor: squareColor },
         ]}
       >
         {isLastMove ? <View style={[StyleSheet.absoluteFill, styles.lastMoveTint]} /> : null}
@@ -366,7 +349,7 @@ const Square = memo(function Square({
         ) : null}
 
         {piece && !isBeingDragged ? (
-          <PieceGlyph piece={piece} size={squareSize * 0.92} isWhitePiece={isWhitePiece} />
+          <PieceGlyph piece={piece} squareSize={squareSize} />
         ) : null}
 
         {isCapture ? <View style={styles.captureRing} /> : null}
@@ -391,7 +374,6 @@ function DragGhost({
   dragX: SharedValue<number>;
   dragY: SharedValue<number>;
 }) {
-  const isWhitePiece = piece === piece.toUpperCase();
   // Lifts the piece well above the fingertip while dragging (like chess.com)
   // so the hand holding it doesn't cover the piece or the destination square.
   const liftOffset = -squareSize * 1.0;
@@ -413,83 +395,80 @@ function DragGhost({
         animatedStyle,
       ]}
     >
-      <PieceGlyph piece={piece} size={squareSize * 0.92} isWhitePiece={isWhitePiece} />
+      <PieceGlyph piece={piece} squareSize={squareSize} />
     </Animated.View>
   );
 }
 
-// Turns the flat icon glyphs into sculpted, ornate pieces like the reference
-// screenshot. Four stacked layers, back to front:
-//
-//   1. Contact shadow -- a soft dark ellipse at the base, so the piece sits ON
-//      the square instead of floating above it.
-//   2. Shape drop shadow -- a copy of the same glyph, dark + offset down-right.
-//      Follows the piece silhouette exactly, unlike a boxShadow (a rectangle).
-//   3. Rim -- the same glyph scaled up behind the body. The overhang is the
-//      visible result: gold trim on the black set (matching the gold filigree
-//      and crowns in the reference) and cool chrome shading on the white set.
-//   4. Body + gloss -- one MaskedView clips both a diagonal body gradient and a
-//      top-down specular highlight to the glyph's alpha shape. Kept to a single
-//      MaskedView per piece because masking is the expensive layer on Android.
-function PieceGlyph({ piece, size, isWhitePiece }: { piece: string; size: number; isWhitePiece: boolean }) {
-  const iconName = PIECE_ICON[piece.toLowerCase()];
+// Every piece is drawn by ChessPiece as vectors, plus one contact shadow so it
+// sits ON its square instead of floating. The shadow lives here rather than in
+// the art because it belongs to the board's lighting, not to the piece, and
+// keeping it in one place is what makes it identical across all twelve.
+/** Board letter -> sprite key. 'K' -> 'wk', 'q' -> 'bq'. */
+function spriteKey(piece: string): string {
+  return (piece === piece.toUpperCase() ? 'w' : 'b') + piece.toLowerCase();
+}
 
-  const bodyColors = isWhitePiece
-    ? ([Colors.pieceWhiteHi, Colors.pieceWhiteMid, Colors.pieceWhiteLo] as const)
-    : ([Colors.pieceBlackHi, Colors.pieceBlackMid, Colors.pieceBlackLo] as const);
-  const rimColor = isWhitePiece ? withOpacity(Colors.chromeDark, 0.9) : Colors.gold;
-  const glossColors = isWhitePiece
-    ? ([withOpacity(Colors.chrome, 0.9), withOpacity(Colors.chrome, 0)] as const)
-    : ([withOpacity(Colors.gold, 0.95), withOpacity(Colors.gold, 0)] as const);
+function PieceGlyph({ piece, squareSize }: { piece: string; squareSize: number }) {
+  const sprite = PIECE_SPRITES[spriteKey(piece)];
+  if (!sprite) return null;
 
   return (
-    <View style={{ width: size, height: size }}>
+    <View style={{ width: squareSize, height: squareSize }}>
+      {/* Two stacked ellipses rather than one: a wide faint pool with a tighter,
+          darker core inside it. That falloff is what reads as a piece standing
+          ABOVE the board -- a single flat ellipse just looks like a decal
+          printed on the square. Built from plain views so it renders the same on
+          both platforms, where a blurred colored shadow would not. */}
       <View
         style={[
-          styles.contactShadow,
-          { width: size * 0.6, height: size * 0.13, left: size * 0.2, top: size * 0.78 },
+          styles.shadowPool,
+          {
+            width: squareSize * 0.66,
+            height: squareSize * 0.19,
+            left: squareSize * 0.15,
+            top: squareSize * 0.755,
+          },
+        ]}
+      />
+      <View
+        style={[
+          styles.shadowCore,
+          {
+            width: squareSize * 0.44,
+            height: squareSize * 0.11,
+            left: squareSize * 0.25,
+            top: squareSize * 0.795,
+          },
         ]}
       />
 
-      <MaterialCommunityIcons
-        name={iconName}
-        size={size}
-        color={withOpacity(Colors.bgBase, 0.5)}
-        style={[styles.pieceLayer, styles.pieceDropShadow]}
+      <Image
+        source={sprite}
+        contentFit="contain"
+        // Cut per whole square, so the sprite fills it edge to edge and keeps
+        // the render's own framing and scale. Lifted a few percent off its own
+        // baseline so it clears the shadow beneath it and reads as raised.
+        style={[StyleSheet.absoluteFill, { transform: [{ translateY: -squareSize * 0.035 }] }]}
       />
-
-      <MaterialCommunityIcons
-        name={iconName}
-        size={size}
-        color={rimColor}
-        style={[styles.pieceLayer, { transform: [{ scale: RIM_SCALE }] }]}
-      />
-
-      <MaskedView
-        style={{ width: size, height: size }}
-        maskElement={<MaterialCommunityIcons name={iconName} size={size} color={Colors.bgBase} />}
-      >
-        <LinearGradient
-          colors={bodyColors}
-          locations={[0, 0.52, 1]}
-          start={{ x: 0.15, y: 0 }}
-          end={{ x: 0.75, y: 1 }}
-          style={{ width: size, height: size }}
-        />
-        <LinearGradient
-          pointerEvents="none"
-          colors={glossColors}
-          start={{ x: 0.35, y: 0 }}
-          end={{ x: 0.5, y: GLOSS_END_Y }}
-          style={StyleSheet.absoluteFill}
-        />
-      </MaskedView>
     </View>
   );
 }
 
+// Machined screw head rather than a flat dot: a lit top-left face falling to a
+// shaded bottom-right, ringed by a dark seat so it sits *in* the bezel.
 function Rivet({ style }: { style: object }) {
-  return <View style={[styles.rivet, style]} />;
+  return (
+    <View style={[styles.rivet, style]}>
+      <LinearGradient
+        colors={[Colors.chrome, Colors.chromeMid, Colors.chromeDark]}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.85, y: 1 }}
+        style={styles.rivetFace}
+      />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -553,38 +532,38 @@ const styles = StyleSheet.create({
   },
   rivet: {
     position: 'absolute',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.chrome,
-    boxShadow: `1px 1px 2px ${withOpacity(Colors.bgBase, 0.5)}`,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    padding: 1,
+    backgroundColor: withOpacity(Colors.bgBase, 0.55),
+    boxShadow: `0px 1px 2px ${withOpacity(Colors.bgBase, 0.6)}`,
     zIndex: 1,
+  },
+  rivetFace: {
+    flex: 1,
+    borderRadius: 3.5,
   },
   gridWrapper: {
     flex: 1,
     position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   boardGrid: {
-    flex: 1,
     borderRadius: 4,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: Colors.boardEdge,
-  },
-  boardSheen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 4,
+    // Recessed playfield: a dark rim tight against the squares reads as the
+    // bezel casting onto the board, which is what stops the grid looking pasted
+    // flat onto the frame.
+    boxShadow: `inset 0px 2px 6px ${withOpacity(Colors.bgBase, 0.6)}, 0px 1px 0px ${withOpacity(Colors.chrome, 0.45)}`,
   },
   boardRow: {
-    flex: 1,
     flexDirection: 'row',
   },
   square: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -631,20 +610,17 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: withOpacity(Colors.cyan, 0.75),
   },
-  pieceLayer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
-  pieceDropShadow: {
-    top: 3,
-    left: 2,
-  },
-  contactShadow: {
+  shadowPool: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: withOpacity(Colors.bgBase, 0.35),
-    boxShadow: `0px 1px 4px ${withOpacity(Colors.bgBase, 0.45)}`,
+    backgroundColor: withOpacity(Colors.bgBase, 0.16),
+    boxShadow: `-2px 3px 10px ${withOpacity(Colors.bgBase, 0.3)}`,
+  },
+  shadowCore: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: withOpacity(Colors.bgBase, 0.34),
+    boxShadow: `-1px 1px 4px ${withOpacity(Colors.bgBase, 0.45)}`,
   },
   dragGhost: {
     position: 'absolute',
