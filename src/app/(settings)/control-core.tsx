@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -16,6 +17,7 @@ interface GameRow {
 
 export default function ControlCoreScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [musicOn, setMusicOn] = useState(false);
   const [soundFxOn, setSoundFxOn] = useState(true);
 
@@ -51,7 +53,7 @@ export default function ControlCoreScreen() {
     <View style={styles.root}>
       <EmberParticles count={10} />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <View style={styles.headerLeft}>
           <PlayerAvatar emoji="🤘" size="small" />
           <Text style={styles.headerTitle}>Control Core</Text>
@@ -59,7 +61,10 @@ export default function ControlCoreScreen() {
         <CurrencyPill type="gems" value={1_400} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <SettingsSection icon="volume-high" title="Audio">
           <RockCard style={styles.sectionCard}>
             <ToggleRow

@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, PlayerAvatar, RockButton, SectionLabel } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -26,6 +27,7 @@ const AVATAR_SLOT = 100;
 
 export default function PickRockstarScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState('axe');
   const [stageName, setStageName] = useState('');
 
@@ -44,7 +46,7 @@ export default function PickRockstarScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
         <View style={styles.topBarLeft}>
           <PlayerAvatar emoji="🎸" size="small" />
           <Text style={styles.brandText}>RockStyle Chess</Text>
@@ -54,7 +56,10 @@ export default function PickRockstarScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.heading}>PICK YOUR ROCKSTAR</Text>
         <Text style={styles.subheading}>Select your stage persona</Text>
 

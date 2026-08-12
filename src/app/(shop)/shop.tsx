@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -108,6 +109,7 @@ type ShopTab = 'chips' | 'gems' | 'vip';
 
 export default function RockShopScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<ShopTab>('chips');
 
   return (
@@ -116,7 +118,7 @@ export default function RockShopScreen() {
       <View style={styles.ambientGlowEmber} />
       <EmberParticles count={12} />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -133,7 +135,10 @@ export default function RockShopScreen() {
         <ShopTabButton label="VIP" active={activeTab === 'vip'} onPress={() => setActiveTab('vip')} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         {activeTab === 'chips' ? (
           <>
             <VipBanner compact onUpgrade={() => setActiveTab('vip')} />

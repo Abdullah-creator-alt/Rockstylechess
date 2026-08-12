@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -47,11 +48,12 @@ const RANKED_LIST: RankRow[] = [
 
 export default function WorldRankingsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('global');
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <View style={styles.headerLeft}>
           <PlayerAvatar emoji="🤘" size="small" />
           <Text style={styles.headerTitle}>World Rankings</Text>
@@ -77,7 +79,10 @@ export default function WorldRankingsScreen() {
         })}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.podiumRow}>
           {PODIUM.map((player) => (
             <View key={player.rank} style={[styles.podiumCol, player.rank === 1 && styles.podiumColFirst]}>

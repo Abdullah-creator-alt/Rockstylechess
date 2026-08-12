@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -34,6 +35,7 @@ interface FloatingReaction {
 
 export default function FrontRowScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
 
   function handleReactionPress(emoji: string) {
@@ -55,7 +57,7 @@ export default function FrontRowScreen() {
         style={styles.crowdImage}
       />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -89,7 +91,7 @@ export default function FrontRowScreen() {
         <ChessBoard />
       </View>
 
-      <View style={styles.reactionsRow}>
+      <View style={[styles.reactionsRow, { paddingBottom: Spacing.lg + insets.bottom }]}>
         {REACTIONS.map((emoji) => (
           <Pressable key={emoji} style={styles.reactionButton} onPress={() => handleReactionPress(emoji)}>
             <Text style={styles.reactionEmoji}>{emoji}</Text>

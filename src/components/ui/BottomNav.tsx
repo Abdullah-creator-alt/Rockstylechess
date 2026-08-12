@@ -1,6 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
 
@@ -19,12 +20,13 @@ const SIDE_TABS: { key: NavTab; label: string; icon: keyof typeof MaterialCommun
 ];
 
 export function BottomNav({ activeTab, onTabPress }: BottomNavProps) {
+  const insets = useSafeAreaInsets();
   const leftTabs = SIDE_TABS.slice(0, 2);
   const rightTabs = SIDE_TABS.slice(2);
 
   return (
     <View style={styles.container}>
-      <View style={styles.bar}>
+      <View style={[styles.bar, { height: BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}>
         <View style={styles.sideGroup}>
           {leftTabs.map((tab) => (
             <NavItem key={tab.key} tab={tab} active={activeTab === tab.key} onPress={onTabPress} />

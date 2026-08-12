@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, PlayerAvatar } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -54,6 +55,7 @@ const SAMPLE_THREAD: Record<string, ChatMessage[]> = {
 
 export default function MessagesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [openConversationId, setOpenConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [extraMessages, setExtraMessages] = useState<Record<string, ChatMessage[]>>({});
@@ -82,7 +84,7 @@ export default function MessagesScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={handleBack} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -99,7 +101,10 @@ export default function MessagesScreen() {
           onSend={handleSend}
         />
       ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.sectionLabel}>Active Sessions</Text>
           <View style={styles.list}>
             {CONVERSATIONS.map((conversation) => (
@@ -147,6 +152,8 @@ function ChatView({
   onDraftChange: (value: string) => void;
   onSend: () => void;
 }) {
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={styles.chatRoot}>
       <ScrollView contentContainerStyle={styles.chatScrollContent} showsVerticalScrollIndicator={false}>
@@ -165,7 +172,7 @@ function ChatView({
         ))}
       </ScrollView>
 
-      <View style={styles.composerRow}>
+      <View style={[styles.composerRow, { paddingBottom: Spacing.md + insets.bottom }]}>
         <Pressable style={styles.composerIconButton} onPress={() => console.log('Attach pressed')}>
           <MaterialCommunityIcons name="plus" size={20} color={Colors.cyan} />
         </Pressable>

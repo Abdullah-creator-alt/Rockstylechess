@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
@@ -50,6 +51,7 @@ function useCountUp(target: number, durationMs = 1200) {
 
 export default function ResultScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { outcome: outcomeParam, reason } = useLocalSearchParams<{ outcome?: string; reason?: string }>();
   const outcome: Outcome = outcomeParam === 'loss' || outcomeParam === 'draw' ? outcomeParam : 'win';
   const isVictory = outcome === 'win';
@@ -65,7 +67,7 @@ export default function ResultScreen() {
   const glowColor = isVictory ? Colors.gold : isDraw ? Colors.chrome : Colors.crimson;
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingTop: Spacing.xl + insets.top, paddingBottom: Spacing.xl + insets.bottom }]}>
       <EmberParticles count={10} />
 
       <View style={styles.bannerWrap}>

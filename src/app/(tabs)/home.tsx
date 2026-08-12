@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -50,6 +51,7 @@ const BENTO_TILES: BentoTile[] = [
 
 export default function HomeLobbyScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [selectedVenue, setSelectedVenue] = useState('arena');
   const [duration, setDuration] = useState<Duration>('5m');
 
@@ -68,7 +70,7 @@ export default function HomeLobbyScreen() {
       <View style={styles.ambientGlowEmber} />
       <EmberParticles count={10} />
 
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
         <View style={styles.topBarLeft}>
           <View style={styles.avatarWrap}>
             <PlayerAvatar emoji="🤘" size="small" />
@@ -108,7 +110,10 @@ export default function HomeLobbyScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}

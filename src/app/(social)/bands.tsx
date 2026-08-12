@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -43,6 +44,7 @@ const TOP_BANDS: LeaderboardRow[] = [
 
 export default function BandsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.root}>
@@ -59,7 +61,7 @@ export default function BandsScreen() {
       />
       <EmberParticles count={10} />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -67,7 +69,10 @@ export default function BandsScreen() {
         <CurrencyPill type="gems" value={1_400} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.sectionLabel}>My Band</Text>
         <RockCard glowColor={Colors.emberLight} style={styles.myBandCard}>
           <View style={styles.myBandRow}>

@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   runOnJS,
@@ -46,6 +47,7 @@ function buildSegmentPath(startAngle: number, endAngle: number): string {
 
 export default function SpinScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const rotation = useSharedValue(0);
   const totalRotationRef = useRef(0);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -89,7 +91,7 @@ export default function SpinScreen() {
     <View style={styles.root}>
       <EmberParticles count={10} />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -97,7 +99,7 @@ export default function SpinScreen() {
         <CurrencyPill type="gems" value={1_400} />
       </View>
 
-      <View style={styles.content}>
+      <View style={[styles.content, { paddingBottom: Spacing.lg + insets.bottom }]}>
         <Text style={styles.subheading}>Test your luck on the 45</Text>
 
         <View style={styles.wheelWrap}>

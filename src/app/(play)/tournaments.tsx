@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, ProgressBar, RockButton, RockCard, SectionLabel } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -50,6 +51,7 @@ const UPCOMING_EVENTS: UpcomingEvent[] = [
 
 export default function TournamentsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.root}>
@@ -76,7 +78,7 @@ export default function TournamentsScreen() {
       <View style={styles.searchlightLeft} />
       <View style={styles.searchlightRight} />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -84,7 +86,10 @@ export default function TournamentsScreen() {
         <CurrencyPill type="chips" value="12.5M" />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 110 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.liveHeader}>
           <Text style={styles.liveLabel}>Live Now</Text>
           <View style={styles.onAirRow}>

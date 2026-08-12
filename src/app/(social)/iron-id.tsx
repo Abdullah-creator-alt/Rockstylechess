@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, PlayerAvatar, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -57,6 +58,7 @@ const MATCH_HISTORY: MatchHistoryItem[] = [
 
 export default function IronIdScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.root}>
@@ -72,7 +74,7 @@ export default function IronIdScreen() {
         style={styles.backgroundImage}
       />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Text style={styles.headerTitle}>Iron ID</Text>
         <View style={styles.headerRight}>
           <CurrencyPill type="gems" value={1_400} />
@@ -88,7 +90,10 @@ export default function IronIdScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.profileHero}>
           {/* The source's rotating conic-gradient ring isn't representable
               with LinearGradient -- reusing PlayerAvatar's existing fire-ring

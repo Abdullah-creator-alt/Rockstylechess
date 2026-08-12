@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -16,6 +17,7 @@ const AUTO_MATCH_DELAY_MS = 3000;
 
 export default function MatchmakingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const pulse = useSharedValue(0);
 
   useEffect(() => {
@@ -36,7 +38,7 @@ export default function MatchmakingScreen() {
   }));
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingTop: Spacing.xl + insets.top, paddingBottom: Spacing.xl + insets.bottom }]}>
       <EmberParticles count={8} />
 
       <Text style={styles.title}>Finding Opponent</Text>

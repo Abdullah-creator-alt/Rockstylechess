@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -48,6 +49,7 @@ const TABS: { key: ForgeCategory; label: string }[] = [
 
 export default function ForgeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<ForgeCategory>('boards');
   const [selected, setSelected] = useState<Record<ForgeCategory, string>>({
     boards: 'classic-chrome',
@@ -73,7 +75,7 @@ export default function ForgeScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -156,7 +158,7 @@ export default function ForgeScreen() {
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      <View style={styles.equipBar}>
+      <View style={[styles.equipBar, { paddingBottom: Spacing.lg + insets.bottom }]}>
         <RockButton
           label={`Equip ${selectedName ?? ''}`}
           variant="primary"

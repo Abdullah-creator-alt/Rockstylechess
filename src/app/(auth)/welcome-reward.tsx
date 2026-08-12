@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RockButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -11,6 +12,7 @@ const COUNT_DURATION_MS = 2000;
 
 export default function WelcomeRewardScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [displayChips, setDisplayChips] = useState(0);
   const countAnim = useRef(new Animated.Value(0)).current;
 
@@ -34,7 +36,7 @@ export default function WelcomeRewardScreen() {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.glowSpot} />
 
       <View style={styles.content}>

@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, ProgressBar, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -34,11 +35,12 @@ const DAYS: DayReward[] = [
 
 export default function DailyBonusScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [claimed, setClaimed] = useState(false);
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -46,7 +48,10 @@ export default function DailyBonusScreen() {
         <CurrencyPill type="gems" value={1_400} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.streakHeading}>
           <Text style={styles.streakLabel}>Login Streak:</Text>
           <Text style={styles.streakValue}>4 Days</Text>

@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -27,6 +28,7 @@ const CHIPS_DECOR_URI =
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -63,7 +65,13 @@ export default function SignUpScreen() {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: Spacing.xl * 2 + insets.top, paddingBottom: Spacing.xl * 2 + insets.bottom },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.brand}>
             <Text style={styles.brandTitle}>RockStyle Chess</Text>
             <Text style={styles.brandTagline}>Join the Arena</Text>

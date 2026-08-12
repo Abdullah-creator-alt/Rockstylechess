@@ -1,6 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   BottomNav,
@@ -17,6 +18,7 @@ import { Colors, Fonts, Spacing } from '@/constants/theme';
 // Temporary screen to review every shared component in one place before
 // any real screens are built on top of them. Safe to delete once approved.
 export default function DevPreviewScreen() {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<NavTab>('home');
 
   return (
@@ -86,7 +88,7 @@ export default function DevPreviewScreen() {
         <SectionLabel label="Bottom Nav" />
         <Text style={styles.cardBody}>Pinned below — tap a tab to test active state.</Text>
 
-        <View style={styles.bottomSpacer} />
+        <View style={[styles.bottomSpacer, { height: 90 + insets.bottom }]} />
       </ScrollView>
 
       <View style={styles.navWrap}>

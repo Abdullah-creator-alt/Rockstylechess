@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, PlayerAvatar } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -80,6 +81,7 @@ const ACCENT_COLOR: Record<Accent, string> = {
 
 export default function BackstageAlertsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [readIds, setReadIds] = useState<Set<string>>(
     new Set(NOTIFICATIONS.filter((n) => n.read).map((n) => n.id)),
   );
@@ -105,7 +107,7 @@ export default function BackstageAlertsScreen() {
         style={styles.backgroundImage}
       />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -113,7 +115,10 @@ export default function BackstageAlertsScreen() {
         <CurrencyPill type="gems" value={1_400} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.sectionRow}>
           <View>
             <Text style={styles.sectionLabel}>Backstage Alerts</Text>

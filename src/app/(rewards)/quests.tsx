@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, ProgressBar, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -73,6 +74,7 @@ type QuestTab = 'daily' | 'weekly';
 
 export default function QuestsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<QuestTab>('daily');
 
   return (
@@ -89,7 +91,7 @@ export default function QuestsScreen() {
         style={styles.backgroundImage}
       />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -113,7 +115,10 @@ export default function QuestsScreen() {
       </View>
 
       {activeTab === 'daily' ? (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+        >
           {DAILY_QUESTS.map((quest) => (
             <QuestRow key={quest.id} quest={quest} />
           ))}
