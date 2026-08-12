@@ -1,6 +1,10 @@
 import { Chess, type Square } from 'chess.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { resolveBotMove, type BotDifficulty, type RequestEngineMove } from '@/lib/botEngine';
+
+export type { BotDifficulty } from '@/lib/botEngine';
+
 export type GameMode = 'bot' | 'local';
 
 export type ChessGameResult =
@@ -21,13 +25,24 @@ interface GameSnapshot {
 
 interface UseChessGameOptions {
   mode: GameMode;
+  /** Which of the four bot engines to use. Only relevant when mode === 'bot'. */
+  difficulty?: BotDifficulty;
+  /** Bridges to the mounted StockfishEngine; required for the two Stockfish difficulties. */
+  requestEngineMove?: RequestEngineMove;
   /** Bot always plays black; human is white. Only relevant when mode === 'bot'. */
   onGameOver?: (result: ChessGameResult) => void;
 }
 
-// Bot "thinks" for a beat so its move doesn't feel instant -- this is a
-// placeholder random-move opponent, not a real engine (see Prompt 12 notes).
-const BOT_MOVE_DELAY_MS = 650;
+// Bot "thinks" for a beat so its move doesn't feel instant -- long enough
+// that the player has clearly finished seeing their own move settle before
+// the opponent's piece starts sliding. Only used for easy/medium, which
+// resolve near-instantly on their own; the Stockfish tiers get their pacing
+// from the engine's own movetime instead (see HARD_PRE_DELAY_MS).
+const BOT_MOVE_DELAY_MS = 1100;
+// Stockfish's own `go movetime` already provides a "thinking" pause -- stacking
+// the full BOT_MOVE_DELAY_MS on top would make it feel slower than easy/medium
+// for no reason. Still a small delay so the board doesn't flash instantly.
+const HARD_PRE_DELAY_MS = 250;
 
 function buildSnapshot(chess: Chess): GameSnapshot {
   const rows = chess.board();
@@ -67,10 +82,14 @@ function buildSnapshot(chess: Chess): GameSnapshot {
 // real chess logic (legal moves, check/checkmate/stalemate/draw detection) --
 // this hook just asks it questions and mirrors the answers into a snapshot
 // React can render and diff.
-export function useChessGame({ mode, onGameOver }: UseChessGameOptions) {
+export function useChessGame({ mode, difficulty = 'easy', requestEngineMove, onGameOver }: UseChessGameOptions) {
   const chessRef = useRef<Chess>(new Chess());
   const [snapshot, setSnapshot] = useState<GameSnapshot>(() => buildSnapshot(chessRef.current));
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  // Which side made the most recently applied move -- ChessBoard uses this to
+  // only play the slide-in travel animation for the bot's moves, since the
+  // player's own moves already have visual feedback from the tap/drag itself.
+  const [lastMoveSource, setLastMoveSource] = useState<'human' | 'bot' | null>(null);
   const onGameOverRef = useRef(onGameOver);
   onGameOverRef.current = onGameOver;
   const gameOverFiredRef = useRef(false);
@@ -113,6 +132,7 @@ export function useChessGame({ mode, onGameOver }: UseChessGameOptions) {
           console.log('Unexpected illegal move rejected by chess.js', error);
         }
         setSelectedSquare(null);
+        setLastMoveSource('human');
         refresh();
         reportGameOverIfDone();
         return;
@@ -137,29 +157,39 @@ export function useChessGame({ mode, onGameOver }: UseChessGameOptions) {
     onGameOverRef.current?.({ type: 'resignation', winner: resigningColor === 'w' ? 'b' : 'w' });
   }
 
-  // Placeholder opponent: picks a uniformly random legal move. Not a real
-  // engine/difficulty system -- that's a separate, later step.
   useEffect(() => {
     if (mode !== 'bot') return;
     const chess = chessRef.current;
     if (chess.isGameOver() || chess.turn() !== 'b') return;
 
-    const timeout = setTimeout(() => {
-      const moves = chess.moves({ verbose: true });
-      if (moves.length === 0) return;
-      const randomMove = moves[Math.floor(Math.random() * moves.length)];
+    // The Stockfish tiers resolve asynchronously (a round trip through the
+    // WebView), unlike easy/medium's synchronous lookups -- so the move can
+    // arrive after this effect's own cleanup has already fired (unmount,
+    // rapid state changes). `cancelled` stops it from being applied then,
+    // which the old purely-synchronous version never had to guard against.
+    let cancelled = false;
+    const isStockfish = difficulty === 'stockfish-lite' || difficulty === 'stockfish-strong';
+    const delay = isStockfish ? HARD_PRE_DELAY_MS : BOT_MOVE_DELAY_MS;
+
+    const timeout = setTimeout(async () => {
+      const move = await resolveBotMove(chess, difficulty, requestEngineMove);
+      if (cancelled || !move) return;
       try {
-        chess.move({ from: randomMove.from, to: randomMove.to, promotion: 'q' });
+        chess.move(move);
       } catch (error) {
         console.log('Bot move rejected unexpectedly', error);
       }
+      setLastMoveSource('bot');
       refresh();
       reportGameOverIfDone();
-    }, BOT_MOVE_DELAY_MS);
+    }, delay);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, snapshot]);
+  }, [mode, difficulty, snapshot]);
 
   return {
     board: snapshot.board,
@@ -169,6 +199,7 @@ export function useChessGame({ mode, onGameOver }: UseChessGameOptions) {
     capturedByWhite: snapshot.capturedByWhite,
     capturedByBlack: snapshot.capturedByBlack,
     lastMove: snapshot.lastMove,
+    lastMoveSource,
     selectedSquare,
     legalTargets,
     handleSquarePress,

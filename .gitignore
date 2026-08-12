@@ -42,3 +42,6 @@ example
 # generated native folders
 /ios
 /android
+
+# generated from node_modules/stockfish -- run scripts/generate-stockfish-engine.js
+src/lib/stockfishEngineAssets.ts

@@ -2,8 +2,9 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type ColorValue } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -13,8 +14,10 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { BottomNav, ChessBoard, EmberParticles, RockCard } from '@/components/ui';
+import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
-import { useChessGame, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
+import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
+import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -30,14 +33,27 @@ const CAPTURED_GLYPHS: Record<string, string> = {
   p: '♟', n: '♞', b: '♝', r: '♜', q: '♛',
 };
 
-// Navigation params: bots.tsx passes mode=bot; the PvP/"Iron Duel" flow
-// (Setup -> Matchmaking) passes nothing, which defaults to local pass-and-play
-// since there's no real multiplayer backend yet (see Prompt 12 notes).
+// Navigation params: bots.tsx passes mode=bot + difficulty (which of the
+// four bot engines to use); the PvP/"Iron Duel" flow (Setup -> Matchmaking)
+// passes neither, which defaults to local pass-and-play since there's no
+// real multiplayer backend yet (see Prompt 12 notes).
 export default function MatchScreen() {
   const router = useRouter();
-  const { mode: modeParam } = useLocalSearchParams<{ mode?: string }>();
+  const insets = useSafeAreaInsets();
+  const { mode: modeParam, difficulty: difficultyParam } = useLocalSearchParams<{ mode?: string; difficulty?: string }>();
   const mode: GameMode = modeParam === 'bot' ? 'bot' : 'local';
+  const difficulty: BotDifficulty =
+    difficultyParam === 'medium' || difficultyParam === 'stockfish-lite' || difficultyParam === 'stockfish-strong'
+      ? difficultyParam
+      : 'easy';
+  const isStockfishTier = difficulty === 'stockfish-lite' || difficulty === 'stockfish-strong';
   const navigatedRef = useRef(false);
+  const stockfishRef = useRef<StockfishEngineHandle>(null);
+
+  const requestEngineMove = useCallback((fen: string, config: StockfishConfig): Promise<EngineMove | null> => {
+    if (!stockfishRef.current) return Promise.resolve(null);
+    return stockfishRef.current.requestBestMove(fen, config);
+  }, []);
 
   function handleGameOver(result: ChessGameResult) {
     if (navigatedRef.current) return;
@@ -67,10 +83,11 @@ export default function MatchScreen() {
     }, 900);
   }
 
-  const game = useChessGame({ mode, onGameOver: handleGameOver });
+  const game = useChessGame({ mode, difficulty, requestEngineMove, onGameOver: handleGameOver });
 
   return (
     <View style={styles.root}>
+      <StockfishEngine ref={stockfishRef} enabled={isStockfishTier} />
       <Image
         source={{ uri: CROWD_SILHOUETTE_URI }}
         contentFit="cover"
@@ -79,7 +96,7 @@ export default function MatchScreen() {
       />
       <EmberParticles count={8} />
 
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
         <Text style={styles.topBarTitle}>RockStyle Chess</Text>
         <View style={styles.xpPill}>
           <Text style={styles.xpPillText}>XP: 2400</Text>
@@ -105,6 +122,7 @@ export default function MatchScreen() {
           checkSquare={game.checkSquare}
           lastMove={game.lastMove}
           turn={game.turn}
+          animateLastMove={game.lastMoveSource === 'bot'}
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
         />
 

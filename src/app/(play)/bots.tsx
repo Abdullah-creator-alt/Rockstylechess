@@ -1,9 +1,11 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
+import type { BotDifficulty } from '@/hooks/useChessGame';
 
 interface Bot {
   id: string;
@@ -12,6 +14,8 @@ interface Bot {
   stars: number;
   locked: boolean;
   gemPrice?: number;
+  /** A real difficulty ladder, independent of the cosmetic `stars` rating above. */
+  difficulty: BotDifficulty;
 }
 
 // Avatars use emoji via PlayerAvatar, consistent with every other screen's
@@ -19,16 +23,17 @@ interface Bot {
 // pattern (the Stitch source's photo URLs are for character portraits, which
 // we've abstracted to emoji app-wide since Prompt 2).
 const BOTS: Bot[] = [
-  { id: 'roadie-rick', name: 'Roadie Rick', emoji: '🧢', stars: 1, locked: false },
-  { id: 'valkyrie-riff', name: 'Valkyrie Riff', emoji: '⚡', stars: 3, locked: false },
-  { id: 'metal-head', name: 'Metal Head', emoji: '🤘', stars: 4, locked: false },
-  { id: 'the-reaper', name: 'The Reaper', emoji: '💀', stars: 5, locked: true, gemPrice: 120 },
-  { id: 'old-school-roy', name: 'Old School Roy', emoji: '🕶️', stars: 3, locked: false },
-  { id: 'king-axl', name: 'King Axl', emoji: '👑', stars: 5, locked: true, gemPrice: 250 },
+  { id: 'roadie-rick', name: 'Roadie Rick', emoji: '🧢', stars: 1, locked: false, difficulty: 'easy' },
+  { id: 'valkyrie-riff', name: 'Valkyrie Riff', emoji: '⚡', stars: 3, locked: false, difficulty: 'medium' },
+  { id: 'metal-head', name: 'Metal Head', emoji: '🤘', stars: 4, locked: false, difficulty: 'medium' },
+  { id: 'the-reaper', name: 'The Reaper', emoji: '💀', stars: 5, locked: false, difficulty: 'stockfish-lite' },
+  { id: 'old-school-roy', name: 'Old School Roy', emoji: '🕶️', stars: 3, locked: false, difficulty: 'medium' },
+  { id: 'king-axl', name: 'King Axl', emoji: '👑', stars: 5, locked: false, difficulty: 'stockfish-strong' },
 ];
 
 export default function BotsGalleryScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   function handleBotPress(bot: Bot) {
     if (bot.locked) {
@@ -36,12 +41,12 @@ export default function BotsGalleryScreen() {
       return;
     }
     console.log('Bot challenged', bot.name);
-    router.push({ pathname: '/match', params: { mode: 'bot' } });
+    router.push({ pathname: '/match', params: { mode: 'bot', difficulty: bot.difficulty } });
   }
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
@@ -49,7 +54,10 @@ export default function BotsGalleryScreen() {
         <CurrencyPill type="gems" value={1_400} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 110 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.grid}>
           {BOTS.map((bot) => (
             <Pressable key={bot.id} style={styles.gridSlot} onPress={() => handleBotPress(bot)}>

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,10 +11,12 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 
@@ -69,6 +71,13 @@ interface ChessBoardProps {
   lastMove?: { from: string; to: string } | null;
   /** Whose turn it is -- gates which pieces show the "pick up" drag affordance. */
   turn?: 'w' | 'b';
+  /**
+   * Play a slide-in travel animation the next time `lastMove` changes. Only
+   * pass this for moves the player didn't just drag/tap themselves (e.g. the
+   * bot's moves) -- the player's own moves already have feedback from the
+   * gesture that made them, so animating those too would just double up.
+   */
+  animateLastMove?: boolean;
   /** Omit to keep the board read-only/static, e.g. Front Row's spectate view. */
   onSquarePress?: (square: string) => void;
 }
@@ -81,12 +90,53 @@ export function ChessBoard({
   checkSquare = null,
   lastMove = null,
   turn,
+  animateLastMove = false,
   onSquarePress,
 }: ChessBoardProps) {
   const [gridSize, setGridSize] = useState(0);
   const [dragging, setDragging] = useState<DraggingPiece | null>(null);
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
+
+  // Slide-in ghost for moves that appeared without the player dragging/tapping
+  // them into place (the bot's moves) -- see `animateLastMove`. Tracks the
+  // previous lastMove so it only fires once per new move, not on every
+  // unrelated re-render.
+  const [slidingMove, setSlidingMove] = useState<{ from: string; to: string; piece: string } | null>(
+    null,
+  );
+  const slideProgress = useSharedValue(0);
+  const prevLastMoveRef = useRef<{ from: string; to: string } | null>(null);
+  // Bumped every time a new slide starts. A stale withTiming completion
+  // callback from a superseded animation (e.g. two bot moves landing close
+  // together after a JS-thread stall queues up render/input backlog) checks
+  // this before clearing state, so it can't wipe out a newer, still-running
+  // slide out from under it.
+  const slideTokenRef = useRef(0);
+
+  function clearSlideIfCurrent(token: number) {
+    if (slideTokenRef.current === token) setSlidingMove(null);
+  }
+
+  useEffect(() => {
+    const prev = prevLastMoveRef.current;
+    prevLastMoveRef.current = lastMove;
+
+    const isNewMove = lastMove !== null && (!prev || prev.from !== lastMove.from || prev.to !== lastMove.to);
+    if (!isNewMove || !animateLastMove) return;
+
+    const [toRow, toCol] = squareToRowCol(lastMove.to);
+    const piece = board[toRow]?.[toCol];
+    if (!piece) return;
+
+    const token = (slideTokenRef.current += 1);
+    setSlidingMove({ from: lastMove.from, to: lastMove.to, piece });
+    slideProgress.value = 0;
+    slideProgress.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(clearSlideIfCurrent)(token);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastMove, animateLastMove, board]);
 
   // Exact 8x8. Squares are laid out at an integer pixel size rather than with
   // flex:1, because eight flex children of a fractional width get rounded
@@ -189,6 +239,7 @@ export function ChessBoard({
                         isCheck={square === checkSquare}
                         isLastMove={lastMove !== null && (square === lastMove.from || square === lastMove.to)}
                         isBeingDragged={dragging?.square === square}
+                        isSliding={slidingMove?.to === square}
                         showRankLabel={colIndex === 0}
                         rankLabel={8 - rowIndex}
                         showFileLabel={rowIndex === 7}
@@ -214,6 +265,16 @@ export function ChessBoard({
                 are sampled from the reference and already carry its lighting, so
                 a second gradient on top double-counted it -- darkening the lower
                 board past the render and washing out the upper. */}
+
+            {slidingMove && squareSize > 0 ? (
+              <MoveGhost
+                piece={slidingMove.piece}
+                from={slidingMove.from}
+                to={slidingMove.to}
+                squareSize={squareSize}
+                progress={slideProgress}
+              />
+            ) : null}
 
             {dragging && squareSize > 0 ? (
               <DragGhost
@@ -259,6 +320,8 @@ interface SquareProps {
   isCheck: boolean;
   isLastMove: boolean;
   isBeingDragged: boolean;
+  /** True while a slide-in ghost (see MoveGhost) is travelling to this square. */
+  isSliding: boolean;
   showRankLabel: boolean;
   rankLabel: number;
   showFileLabel: boolean;
@@ -286,6 +349,7 @@ const Square = memo(function Square({
   isCheck,
   isLastMove,
   isBeingDragged,
+  isSliding,
   showRankLabel,
   rankLabel,
   showFileLabel,
@@ -348,7 +412,7 @@ const Square = memo(function Square({
           <Text style={[styles.fileLabel, { color: labelColor }]}>{fileLabel}</Text>
         ) : null}
 
-        {piece && !isBeingDragged ? (
+        {piece && !isBeingDragged && !isSliding ? (
           <PieceGlyph piece={piece} squareSize={squareSize} />
         ) : null}
 
@@ -358,6 +422,48 @@ const Square = memo(function Square({
     </GestureDetector>
   );
 });
+
+// Travels a piece from its origin square to its destination square over the
+// board -- gives moves that arrive without a drag/tap (the bot's moves) the
+// same "I can see where that went" legibility a human's own gesture already
+// provides. Piggybacks on the same absolute-positioned-over-the-grid trick as
+// DragGhost, just driven by a timed progress value instead of a finger.
+function MoveGhost({
+  piece,
+  from,
+  to,
+  squareSize,
+  progress,
+}: {
+  piece: string;
+  from: string;
+  to: string;
+  squareSize: number;
+  progress: SharedValue<number>;
+}) {
+  const [fromRow, fromCol] = squareToRowCol(from);
+  const [toRow, toCol] = squareToRowCol(to);
+  const fromX = fromCol * squareSize;
+  const fromY = fromRow * squareSize;
+  const toX = toCol * squareSize;
+  const toY = toRow * squareSize;
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: fromX + (toX - fromX) * progress.value },
+      { translateY: fromY + (toY - fromY) * progress.value },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.dragGhost, { width: squareSize, height: squareSize, left: 0, top: 0 }, animatedStyle]}
+    >
+      <PieceGlyph piece={piece} squareSize={squareSize} />
+    </Animated.View>
+  );
+}
 
 function DragGhost({
   piece,

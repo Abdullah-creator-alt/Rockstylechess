@@ -8,6 +8,10 @@ Shared, reusable UI building blocks — not full screens.
   Import from `@/components/ui`.
 - `layout/` — headers, modal chrome (not built yet — `BottomNav` lives in
   `ui/` since it's a reusable primitive on its own, not page layout)
+- `StockfishEngine.tsx` — headless, no themed visual surface, so it lives
+  directly in `components/` rather than `ui/`. Hosts the Stockfish WASM
+  engine (see `src/lib/stockfishProtocol.ts`) inside a hidden WebView for
+  the two Stockfish-tier bots. Mounted by `(play)/match.tsx`.
 
 ## ChessBoard
 
