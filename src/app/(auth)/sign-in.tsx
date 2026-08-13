@@ -17,39 +17,31 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
-import { signup } from '@/lib/api';
+import { login } from '@/lib/api';
 import { setAuthToken } from '@/lib/authStorage';
 import { reauthenticateSocket } from '@/lib/socket';
 
-// Both are real, currently-live Stitch-generated preview assets
-// (lh3.googleusercontent.com/aida-public/...), verified resolvable. No
-// permanence guarantee documented -- swap for bundled assets if either 404s.
+// Same real, currently-live Stitch-generated preview asset sign-up.tsx uses
+// -- kept consistent since this screen mirrors it visually.
 const ARENA_BACKGROUND_URI =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuAGIGwmccIYbieQB-NyH-5DU9wLO7hlo7JSm2EcZhl48jvibUzdkUTHjW-mtjtPTHph6GBFeqercalP2REznRsxHkA7kHho1f4D3rMX0bqst2C36KQ7smWrtE61UcurAqC2iSktusZtchsCgsNbuSWf0dRyLu4e6cHH2P7Td7wIc8EEV3snI0lRCMV9cCZXQlnJ7jJxDbrSBLNmYJEpvEp1ajCmplNidoqs-ReMZz-PSfKNFiNIwDS3tR3NZCSxLrS2vpzOmr6nj88';
-const CHIPS_DECOR_URI =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuBXlmuZBB98efACtx01oF7E3Iq1MKYHgGNqOcZO6S_AQg4OKPVow2up3k5Q8Gn2NcgVsBW9rx4JO-mvGb3orD-xNLJUdav1SyQXfiRKJZeQiwJ0y0kDQ2I3rSlA-qxbpUdBiXiFhiHo1K0gV_0bIpPFXiS3Vc-sSUXGeAbvKk6RctQBCRH8-vLN5QHoBNoS9aWTmZdcsdF0djrVNlwFt1kyxhxX8O755u8re_KBiXhokrCG1VTBWTucHuVXTAOxkSvkq4nHsqcz6f8';
 
-export default function SignUpScreen() {
+export default function SignInScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleCreateAccount() {
-    if (password !== confirmPassword) {
-      setErrorMessage("Passwords don't match");
-      return;
-    }
+  async function handleSignIn() {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const { token } = await signup(email.trim().toLowerCase(), password);
+      const { token } = await login(email.trim().toLowerCase(), password);
       await setAuthToken(token);
       reauthenticateSocket(token);
-      router.replace('/pick-rockstar');
+      router.replace('/home');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Something went wrong');
     } finally {
@@ -66,9 +58,6 @@ export default function SignUpScreen() {
         transition={300}
         style={styles.backgroundImage}
       />
-      {/* Matches the source's `bg-gradient-to-t from-base-black
-          via-transparent to-base-black/40` -- dark at the very top and
-          bottom edges, clearer in the middle where the form panel sits. */}
       <LinearGradient
         pointerEvents="none"
         colors={[Colors.bgBase, withOpacity(Colors.bgBase, 0), withOpacity(Colors.bgBase, 0.4)]}
@@ -77,18 +66,9 @@ export default function SignUpScreen() {
         end={{ x: 0, y: 0 }}
         style={styles.backgroundImage}
       />
-      <Image
-        source={{ uri: CHIPS_DECOR_URI }}
-        contentFit="contain"
-        cachePolicy="memory-disk"
-        style={styles.chipsDecor}
-      />
       <EmberParticles count={12} />
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
@@ -98,11 +78,11 @@ export default function SignUpScreen() {
         >
           <View style={styles.brand}>
             <Text style={styles.brandTitle}>RockStyle Chess</Text>
-            <Text style={styles.brandTagline}>Join the Arena</Text>
+            <Text style={styles.brandTagline}>Welcome Back</Text>
           </View>
 
-          <RockCard glowColor={Colors.emberLight} style={styles.formCard}>
-            <Text style={styles.formHeading}>Enter the Game. Rule the Table.</Text>
+          <RockCard glowColor={Colors.cyan} style={styles.formCard}>
+            <Text style={styles.formHeading}>Sign back in to the Arena</Text>
 
             <AuthInput
               placeholder="Email"
@@ -111,33 +91,22 @@ export default function SignUpScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
             />
-            <AuthInput
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-            <AuthInput
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-            />
+            <AuthInput placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
 
             {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
             <View style={styles.submitButton}>
               <RockButton
-                label={isSubmitting ? 'Creating...' : 'Create An Account'}
+                label={isSubmitting ? 'Signing in...' : 'Sign In'}
                 variant="primary"
                 disabled={isSubmitting}
-                onPress={handleCreateAccount}
+                onPress={handleSignIn}
               />
             </View>
 
-            <Pressable onPress={() => router.push('/sign-in')} style={styles.divider}>
+            <Pressable onPress={() => router.push('/sign-up')} style={styles.divider}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerLabel}>Already have account?</Text>
+              <Text style={styles.dividerLabel}>Need an account?</Text>
               <View style={styles.dividerLine} />
             </Pressable>
 
@@ -145,16 +114,6 @@ export default function SignUpScreen() {
               <SocialButton icon="google" onPress={() => console.log('Continue with Google')} />
               <SocialButton icon="facebook" onPress={() => console.log('Continue with Facebook')} />
               <SocialButton icon="apple" onPress={() => console.log('Continue with Apple')} />
-            </View>
-          </RockCard>
-
-          <RockCard glowColor={Colors.gold} style={styles.bonusCard}>
-            <View style={styles.bonusRow}>
-              <MaterialCommunityIcons name="treasure-chest" size={40} color={Colors.gold} />
-              <View>
-                <Text style={styles.bonusLabel}>Welcome Bonus:</Text>
-                <Text style={styles.bonusValue}>10M Chips</Text>
-              </View>
             </View>
           </RockCard>
         </ScrollView>
@@ -214,14 +173,6 @@ const styles = StyleSheet.create({
   },
   backgroundImage: {
     ...StyleSheet.absoluteFillObject,
-  },
-  chipsDecor: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    width: '33%',
-    height: 240,
-    opacity: 0.4,
   },
   scrollContent: {
     flexGrow: 1,
@@ -317,31 +268,5 @@ const styles = StyleSheet.create({
     backgroundColor: withOpacity(Colors.chrome, 0.08),
     borderWidth: 1,
     borderColor: withOpacity(Colors.chromeDark, 0.5),
-  },
-  bonusCard: {
-    width: '100%',
-    maxWidth: 440,
-    marginTop: Spacing.lg,
-  },
-  bonusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.lg,
-  },
-  bonusLabel: {
-    fontFamily: Fonts.heading,
-    fontSize: 13,
-    color: Colors.emberLight,
-    textTransform: 'uppercase',
-    letterSpacing: 2,
-  },
-  bonusValue: {
-    fontFamily: Fonts.display,
-    fontSize: 22,
-    color: Colors.gold,
-    textShadowColor: withOpacity(Colors.gold, 0.5),
-    textShadowRadius: 10,
-    textShadowOffset: { width: 0, height: 2 },
   },
 });

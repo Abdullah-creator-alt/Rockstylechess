@@ -10,11 +10,19 @@ files without adding `/play` to the URL/deep-link path.
 
 - `setup.tsx` — venue ladder + venue detail hero, built from the deferred venue-ladder
   concept plus the existing Home hero-card pattern. Entry point for "Play Now"/"Iron
-  Duel".
-- `matchmaking.tsx` — searching-for-opponent screen, auto-advances to `match.tsx`.
+  Duel"; the selected venue's id is forwarded to `matchmaking.tsx` as `venueTier`.
+- `matchmaking.tsx` — joins the companion `server/`'s real matchmaking queue over
+  Socket.IO (`queue:join` with the venue tier, `queue:matched` to advance) — no
+  longer simulated. Re-joins on every socket `connect` (including automatic
+  reconnects) so a network blip while still queued doesn't strand the player.
+  Leaving the screen emits `queue:leave`.
 - `match.tsx` — the chess board itself, built from `the_match_pro_stage_production_ready`.
-  Reads `mode`/`difficulty` route params and passes them into `useChessGame`;
-  mounts `StockfishEngine` when `difficulty` is one of the two Stockfish tiers.
+  Reads `mode`/`difficulty` route params (bot matches) or `mode=online` +
+  `matchId`/`color`/`fen`/`opponentName` (real multiplayer, passed by
+  `matchmaking.tsx` once the server pairs an opponent) and passes them into
+  `useChessGame`, which routes online moves through `src/lib/socket.ts` instead
+  of applying them locally. Mounts `StockfishEngine` when `difficulty` is one of
+  the two Stockfish tiers.
 - `result-placeholder.tsx` — stub destination for Resign until the real Win/Loss
   screen is built.
 - `bots.tsx` — AI opponent gallery, built from `bots_pro_stage_animated`. Each

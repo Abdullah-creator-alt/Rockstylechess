@@ -148,7 +148,7 @@ export default function PlaySetupScreen() {
               icon={<MaterialCommunityIcons name="play" size={20} color={Colors.bgBase} />}
               onPress={() => {
                 console.log('Play Now pressed', { venue: selectedVenue.id, duration });
-                router.push('/matchmaking');
+                router.push({ pathname: '/matchmaking', params: { venueTier: selectedVenue.id } });
               }}
             />
           </View>

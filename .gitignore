@@ -31,7 +31,12 @@ expo-dev*.log
 .DS_Store
 *.pem
 
-# local env files
+# editor -- personal Obsidian vault config, not project content
+.obsidian/
+
+# local env files -- EXPO_PUBLIC_SERVER_URL is per-developer (LAN IP in dev),
+# see .env.example
+.env
 .env*.local
 
 # typescript

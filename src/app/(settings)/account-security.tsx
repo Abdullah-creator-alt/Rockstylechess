@@ -1,10 +1,14 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, PlayerAvatar, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { deleteAccount } from '@/lib/api';
+import { clearAuthToken, getAuthToken } from '@/lib/authStorage';
+import { clearSocketAuth } from '@/lib/socket';
 
 type LinkedStatus = 'connected' | 'not-linked';
 
@@ -25,6 +29,40 @@ const LINKED_ACCOUNTS: LinkedAccount[] = [
 export default function AccountSecurityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  function handleDeletePress() {
+    Alert.alert(
+      'Delete Account',
+      'This is permanent. All ranks, currency, and digital assets will be forfeited immediately.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete Account', style: 'destructive', onPress: confirmDelete },
+      ],
+    );
+  }
+
+  async function confirmDelete() {
+    setIsDeleting(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) {
+        // Not signed in (e.g. still a guest) -- nothing server-side to
+        // delete, just bail back to the previous screen.
+        router.back();
+        return;
+      }
+      await deleteAccount(token);
+      await clearAuthToken();
+      clearSocketAuth();
+      router.replace('/sign-up');
+    } catch (error) {
+      console.log('Delete account failed', error);
+      Alert.alert('Something went wrong', 'Could not delete your account. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   return (
     <View style={styles.root}>
@@ -96,10 +134,11 @@ export default function AccountSecurityScreen() {
             forfeited immediately.
           </Text>
           <RockButton
-            label="Delete Account"
+            label={isDeleting ? 'Deleting...' : 'Delete Account'}
             variant="danger"
+            disabled={isDeleting}
             icon={<MaterialCommunityIcons name="delete-alert-outline" size={20} color={Colors.textPrimary} />}
-            onPress={() => console.log('Delete account pressed')}
+            onPress={handleDeletePress}
           />
         </View>
 

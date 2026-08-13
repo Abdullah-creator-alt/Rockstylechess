@@ -34,19 +34,38 @@ const CAPTURED_GLYPHS: Record<string, string> = {
 };
 
 // Navigation params: bots.tsx passes mode=bot + difficulty (which of the
-// four bot engines to use); the PvP/"Iron Duel" flow (Setup -> Matchmaking)
-// passes neither, which defaults to local pass-and-play since there's no
-// real multiplayer backend yet (see Prompt 12 notes).
+// four bot engines to use); matchmaking.tsx passes mode=online + matchId/
+// color/fen/opponentName once the server has paired a real opponent; the
+// PvP/"Iron Duel" flow otherwise defaults to local pass-and-play.
 export default function MatchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { mode: modeParam, difficulty: difficultyParam } = useLocalSearchParams<{ mode?: string; difficulty?: string }>();
-  const mode: GameMode = modeParam === 'bot' ? 'bot' : 'local';
+  const {
+    mode: modeParam,
+    difficulty: difficultyParam,
+    matchId,
+    color: colorParam,
+    fen: fenParam,
+    opponentName,
+  } = useLocalSearchParams<{
+    mode?: string;
+    difficulty?: string;
+    matchId?: string;
+    color?: string;
+    fen?: string;
+    opponentName?: string;
+  }>();
+  const mode: GameMode = modeParam === 'bot' ? 'bot' : modeParam === 'online' ? 'online' : 'local';
   const difficulty: BotDifficulty =
     difficultyParam === 'medium' || difficultyParam === 'stockfish-lite' || difficultyParam === 'stockfish-strong'
       ? difficultyParam
       : 'easy';
   const isStockfishTier = difficulty === 'stockfish-lite' || difficulty === 'stockfish-strong';
+  const playerColor: 'w' | 'b' = colorParam === 'b' ? 'b' : 'w';
+  const online =
+    mode === 'online' && matchId && fenParam
+      ? { matchId, playerColor, initialFen: fenParam }
+      : undefined;
   const navigatedRef = useRef(false);
   const stockfishRef = useRef<StockfishEngineHandle>(null);
 
@@ -62,11 +81,14 @@ export default function MatchScreen() {
     let outcome: 'win' | 'loss' | 'draw';
     let reason: string;
     if (result.type === 'checkmate') {
-      outcome = result.winner === 'w' ? 'win' : 'loss';
+      outcome = result.winner === playerColor ? 'win' : 'loss';
       reason = 'checkmate';
     } else if (result.type === 'resignation') {
-      outcome = result.winner === 'w' ? 'win' : 'loss';
+      outcome = result.winner === playerColor ? 'win' : 'loss';
       reason = 'resignation';
+    } else if (result.type === 'forfeit') {
+      outcome = result.winner === playerColor ? 'win' : 'loss';
+      reason = 'forfeit';
     } else if (result.type === 'stalemate') {
       outcome = 'draw';
       reason = 'stalemate';
@@ -83,7 +105,8 @@ export default function MatchScreen() {
     }, 900);
   }
 
-  const game = useChessGame({ mode, difficulty, requestEngineMove, onGameOver: handleGameOver });
+  const game = useChessGame({ mode, difficulty, requestEngineMove, online, onGameOver: handleGameOver });
+  const animateOpponentMove = game.lastMoveSource !== null && game.lastMoveSource !== 'human';
 
   return (
     <View style={styles.root}>
@@ -105,7 +128,7 @@ export default function MatchScreen() {
 
       <View style={styles.middle}>
         <PlayerRow
-          name="STORM_KING"
+          name={mode === 'online' ? opponentName || 'OPPONENT' : 'STORM_KING'}
           rank="GRANDMASTER (2150)"
           time="03:45"
           accent={Colors.crimson}
@@ -122,11 +145,11 @@ export default function MatchScreen() {
           checkSquare={game.checkSquare}
           lastMove={game.lastMove}
           turn={game.turn}
-          animateLastMove={game.lastMoveSource === 'bot'}
+          animateLastMove={animateOpponentMove}
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
         />
 
-        <ActionBar onResign={() => game.resign('w')} />
+        <ActionBar onResign={() => game.resign(playerColor)} />
 
         <PlayerRow
           name="AXL_CHESS"

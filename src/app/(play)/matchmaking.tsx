@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,25 +12,72 @@ import Animated, {
 
 import { EmberParticles, PlayerAvatar, RockButton } from '@/components/ui';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
-
-const AUTO_MATCH_DELAY_MS = 3000;
+import { getPlayerId } from '@/lib/playerId';
+import { ensureAuthenticated, getSocket } from '@/lib/socket';
+import { isVenueTier, type QueueMatchedPayload } from '@/lib/onlineMatch';
 
 export default function MatchmakingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const pulse = useSharedValue(0);
+  const { venueTier: venueTierParam } = useLocalSearchParams<{ venueTier?: string }>();
+  const venueTier = isVenueTier(venueTierParam) ? venueTierParam : 'garage';
 
   useEffect(() => {
     pulse.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }), -1, true);
   }, [pulse]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      console.log('Opponent found (simulated)');
-      router.replace('/match');
-    }, AUTO_MATCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [router]);
+    let cancelled = false;
+    const socket = getSocket();
+
+    function handleMatched(payload: QueueMatchedPayload) {
+      if (cancelled) return;
+      router.replace({
+        pathname: '/match',
+        params: {
+          mode: 'online',
+          matchId: payload.matchId,
+          color: payload.color,
+          fen: payload.fen,
+          opponentName: payload.opponent.displayName,
+        },
+      });
+    }
+
+    socket.on('queue:matched', handleMatched);
+
+    // Wait for the connection's auth token (if any) to attach before
+    // emitting -- otherwise a signed-in player's join can race the async
+    // SecureStore read in ensureAuthenticated() and go out on the
+    // still-anonymous initial connection, silently downgrading them to a
+    // guest for that match (no rating/history persisted).
+    function joinQueue() {
+      Promise.all([ensureAuthenticated(), getPlayerId()]).then(([, guestId]) => {
+        if (cancelled) return;
+        socket.emit('queue:join', { guestId, displayName: 'AXL_CHESS', venueTier });
+      });
+    }
+
+    // Re-join on every 'connect' -- Socket.IO fires this for the initial
+    // connection AND for every automatic reconnect after a network blip.
+    // The server only knows about a waiting player via their current
+    // socket.id, so without re-emitting here, a reconnect while still
+    // queued (not yet matched) would leave the player stuck forever: the
+    // server's queue entry is now stale, and the client never asks again.
+    // (server/src/matchmaking.ts's joinQueue treats a repeat join from the
+    // same guestId as a refresh, not a duplicate, so this is safe to call
+    // more than once.)
+    socket.on('connect', joinQueue);
+    if (socket.connected) joinQueue();
+
+    return () => {
+      cancelled = true;
+      socket.off('queue:matched', handleMatched);
+      socket.off('connect', joinQueue);
+      socket.emit('queue:leave');
+    };
+  }, [router, venueTier]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     opacity: 0.5 + pulse.value * 0.5,
@@ -64,7 +111,7 @@ export default function MatchmakingScreen() {
           label="Cancel"
           variant="danger"
           onPress={() => {
-            console.log('Matchmaking cancelled');
+            getSocket().emit('queue:leave');
             router.back();
           }}
         />

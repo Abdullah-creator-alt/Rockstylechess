@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, PlayerAvatar, RockButton, SectionLabel } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { updateProfile } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
 
 interface RockstarOption {
   id: string;
@@ -30,6 +32,7 @@ export default function PickRockstarScreen() {
   const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState('axe');
   const [stageName, setStageName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function handleSelect(option: RockstarOption) {
     if (option.locked) {
@@ -39,9 +42,22 @@ export default function PickRockstarScreen() {
     setSelectedId(option.id);
   }
 
-  function handleContinue() {
-    console.log('Continue with rockstar', { selectedId, stageName });
-    router.replace('/welcome-reward');
+  async function handleContinue() {
+    setIsSubmitting(true);
+    try {
+      const token = await getAuthToken();
+      if (token) {
+        await updateProfile(token, { displayName: stageName || undefined, avatarId: selectedId });
+      }
+    } catch (error) {
+      // Non-fatal -- the onboarding flow shouldn't get stuck over a profile
+      // update failing; the player can still play, just without a saved
+      // stage name/avatar until they update their profile again later.
+      console.log('Profile update failed', error);
+    } finally {
+      setIsSubmitting(false);
+      router.replace('/welcome-reward');
+    }
   }
 
   return (
@@ -120,7 +136,12 @@ export default function PickRockstarScreen() {
         </View>
 
         <View style={styles.ctaWrap}>
-          <RockButton label="Let's Rock" variant="primary" onPress={handleContinue} />
+          <RockButton
+            label={isSubmitting ? 'Loading...' : "Let's Rock"}
+            variant="primary"
+            disabled={isSubmitting}
+            onPress={handleContinue}
+          />
         </View>
       </ScrollView>
 

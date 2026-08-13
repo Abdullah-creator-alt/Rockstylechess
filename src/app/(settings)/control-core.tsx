@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { clearAuthToken } from '@/lib/authStorage';
+import { clearSocketAuth } from '@/lib/socket';
 
 interface GameRow {
   id: string;
@@ -20,6 +22,12 @@ export default function ControlCoreScreen() {
   const insets = useSafeAreaInsets();
   const [musicOn, setMusicOn] = useState(false);
   const [soundFxOn, setSoundFxOn] = useState(true);
+
+  async function handleLogout() {
+    await clearAuthToken();
+    clearSocketAuth();
+    router.replace('/sign-up');
+  }
 
   const gameRows: GameRow[] = [
     {
@@ -129,7 +137,7 @@ export default function ControlCoreScreen() {
             label="Logout"
             variant="danger"
             icon={<MaterialCommunityIcons name="logout" size={20} color={Colors.textPrimary} />}
-            onPress={() => console.log('Logout pressed')}
+            onPress={handleLogout}
           />
           <Text style={styles.versionText}>App Version 2.4.0-STAGE-CORE</Text>
         </View>

@@ -2,16 +2,25 @@ import { Chess, type Square } from 'chess.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { resolveBotMove, type BotDifficulty, type RequestEngineMove } from '@/lib/botEngine';
+import { getSocket } from '@/lib/socket';
+import type { MatchEndedPayload, MoveAppliedPayload } from '@/lib/onlineMatch';
 
 export type { BotDifficulty } from '@/lib/botEngine';
 
-export type GameMode = 'bot' | 'local';
+export type GameMode = 'bot' | 'local' | 'online';
 
 export type ChessGameResult =
   | { type: 'checkmate'; winner: 'w' | 'b' }
   | { type: 'stalemate' }
   | { type: 'draw' }
-  | { type: 'resignation'; winner: 'w' | 'b' };
+  | { type: 'resignation'; winner: 'w' | 'b' }
+  | { type: 'forfeit'; winner: 'w' | 'b' };
+
+export interface OnlineMatchInfo {
+  matchId: string;
+  playerColor: 'w' | 'b';
+  initialFen: string;
+}
 
 interface GameSnapshot {
   board: string[][];
@@ -31,6 +40,9 @@ interface UseChessGameOptions {
   requestEngineMove?: RequestEngineMove;
   /** Bot always plays black; human is white. Only relevant when mode === 'bot'. */
   onGameOver?: (result: ChessGameResult) => void;
+  /** Match id, which color this device plays, and the starting FEN handed
+   * back by the server's queue:matched event. Required when mode === 'online'. */
+  online?: OnlineMatchInfo;
 }
 
 // Bot "thinks" for a beat so its move doesn't feel instant -- long enough
@@ -82,14 +94,16 @@ function buildSnapshot(chess: Chess): GameSnapshot {
 // real chess logic (legal moves, check/checkmate/stalemate/draw detection) --
 // this hook just asks it questions and mirrors the answers into a snapshot
 // React can render and diff.
-export function useChessGame({ mode, difficulty = 'easy', requestEngineMove, onGameOver }: UseChessGameOptions) {
-  const chessRef = useRef<Chess>(new Chess());
+export function useChessGame({ mode, difficulty = 'easy', requestEngineMove, onGameOver, online }: UseChessGameOptions) {
+  const chessRef = useRef<Chess>(new Chess(online?.initialFen));
   const [snapshot, setSnapshot] = useState<GameSnapshot>(() => buildSnapshot(chessRef.current));
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   // Which side made the most recently applied move -- ChessBoard uses this to
-  // only play the slide-in travel animation for the bot's moves, since the
-  // player's own moves already have visual feedback from the tap/drag itself.
-  const [lastMoveSource, setLastMoveSource] = useState<'human' | 'bot' | null>(null);
+  // only play the slide-in travel animation for moves that weren't this
+  // device's own tap/drag (bot moves, or an online opponent's moves), since
+  // the local player's own moves already have visual feedback from the
+  // gesture itself.
+  const [lastMoveSource, setLastMoveSource] = useState<'human' | 'bot' | 'opponent' | null>(null);
   const onGameOverRef = useRef(onGameOver);
   onGameOverRef.current = onGameOver;
   const gameOverFiredRef = useRef(false);
@@ -122,12 +136,17 @@ export function useChessGame({ mode, difficulty = 'easy', requestEngineMove, onG
   function handleSquarePress(square: Square) {
     const chess = chessRef.current;
     if (chess.isGameOver()) return;
+    // Online: only this device's own color may act, and only on its turn --
+    // the opponent's moves arrive exclusively via the server (see the online
+    // effect below), never through local taps.
+    if (mode === 'online' && online && chess.turn() !== online.playerColor) return;
 
     if (selectedSquare) {
       if (legalTargets.includes(square)) {
+        const from = selectedSquare;
         try {
           // promotion is always auto-queened -- no under-promotion picker yet.
-          chess.move({ from: selectedSquare, to: square, promotion: 'q' });
+          chess.move({ from, to: square, promotion: 'q' });
         } catch (error) {
           console.log('Unexpected illegal move rejected by chess.js', error);
         }
@@ -135,6 +154,12 @@ export function useChessGame({ mode, difficulty = 'easy', requestEngineMove, onG
         setLastMoveSource('human');
         refresh();
         reportGameOverIfDone();
+        if (mode === 'online' && online) {
+          // Applied locally already for instant feedback; this is the
+          // server's authoritative copy. A rejection here would only mean a
+          // prior desync -- not handled beyond logging, see move:rejected below.
+          getSocket().emit('move:make', { matchId: online.matchId, from, to: square, promotion: 'q' });
+        }
         return;
       }
 
@@ -153,9 +178,50 @@ export function useChessGame({ mode, difficulty = 'easy', requestEngineMove, onG
 
   function resign(resigningColor: 'w' | 'b') {
     if (gameOverFiredRef.current) return;
+    if (mode === 'online' && online) {
+      // Wait for the server's match:ended broadcast (below) rather than
+      // firing locally -- it needs to reach the opponent too.
+      getSocket().emit('match:resign', { matchId: online.matchId });
+      return;
+    }
     gameOverFiredRef.current = true;
     onGameOverRef.current?.({ type: 'resignation', winner: resigningColor === 'w' ? 'b' : 'w' });
   }
+
+  useEffect(() => {
+    if (mode !== 'online' || !online) return;
+    const socket = getSocket();
+    const chess = chessRef.current;
+
+    function handleMoveApplied(payload: MoveAppliedPayload) {
+      // Our own moves are applied locally the instant the player taps (see
+      // handleSquarePress) -- this broadcast only needs acting on when it's
+      // the opponent's move, identifiable because the turn just became ours.
+      if (!online || payload.turn !== online.playerColor) return;
+      try {
+        chess.move({ from: payload.from, to: payload.to, promotion: payload.promotion ?? 'q' });
+      } catch (error) {
+        console.log('Opponent move rejected unexpectedly', error);
+      }
+      setLastMoveSource('opponent');
+      refresh();
+      reportGameOverIfDone();
+    }
+
+    function handleMatchEnded(payload: MatchEndedPayload) {
+      if (gameOverFiredRef.current) return;
+      gameOverFiredRef.current = true;
+      onGameOverRef.current?.(payload.result);
+    }
+
+    socket.on('move:applied', handleMoveApplied);
+    socket.on('match:ended', handleMatchEnded);
+    return () => {
+      socket.off('move:applied', handleMoveApplied);
+      socket.off('match:ended', handleMatchEnded);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, online?.matchId]);
 
   useEffect(() => {
     if (mode !== 'bot') return;
