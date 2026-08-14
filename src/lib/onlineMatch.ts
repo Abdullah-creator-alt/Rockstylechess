@@ -20,6 +20,21 @@ export interface MatchEndedPayload {
   result: { type: 'resignation' | 'forfeit'; winner: 'w' | 'b' };
 }
 
+export interface ChatMessagePayload {
+  color: 'w' | 'b';
+  displayName: string;
+  text: string;
+  sentAt: number;
+}
+
+export interface RoomCreatedPayload {
+  code: string;
+}
+
+export interface RoomErrorPayload {
+  reason: 'not-found' | 'own-room';
+}
+
 export function isVenueTier(value: unknown): value is VenueTier {
   return (
     value === 'garage' ||

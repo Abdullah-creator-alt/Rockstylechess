@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { asc, count, desc, eq, gt, inArray } from 'drizzle-orm';
 import { Router } from 'express';
 
 import { asyncHandler } from './asyncHandler.js';
@@ -190,6 +190,9 @@ authRouter.delete(
 
 // Public -- no requireAuth. Plain ORDER BY on player_profiles.rating, per
 // the original schema design (no separate leaderboard table to keep in sync).
+// Secondary sort on userId -- rating alone has no deterministic order for
+// ties, which would otherwise let equal-rated players visibly reshuffle
+// between requests.
 authRouter.get(
   '/leaderboard',
   asyncHandler(async (req, res) => {
@@ -205,8 +208,38 @@ authRouter.get(
         draws: playerProfiles.draws,
       })
       .from(playerProfiles)
-      .orderBy(desc(playerProfiles.rating))
+      .orderBy(desc(playerProfiles.rating), asc(playerProfiles.userId))
       .limit(limit);
     res.json({ leaderboard: rows });
+  }),
+);
+
+// Reports the caller's own position even when it falls outside /leaderboard's
+// top page -- deliberately minimal (just rank + total) since every other
+// field the "YOU" card needs (rating, displayName, avatarId, wins/losses/
+// draws) already comes from GET /me/profile; the client combines both
+// rather than this endpoint duplicating profile fields.
+authRouter.get(
+  '/leaderboard/me',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userId = req.userId as string;
+    const [profile] = await db
+      .select({ rating: playerProfiles.rating })
+      .from(playerProfiles)
+      .where(eq(playerProfiles.userId, userId))
+      .limit(1);
+    if (!profile) {
+      res.status(404).json({ error: 'profile-not-found' });
+      return;
+    }
+
+    const [{ higherRated }] = await db
+      .select({ higherRated: count() })
+      .from(playerProfiles)
+      .where(gt(playerProfiles.rating, profile.rating));
+    const [{ totalPlayers }] = await db.select({ totalPlayers: count() }).from(playerProfiles);
+
+    res.json({ rank: higherRated + 1, totalPlayers });
   }),
 );

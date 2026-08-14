@@ -2,11 +2,16 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, PlayerAvatar, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { getAvatarEmoji } from '@/constants/avatars';
+import { getMyMatches, getMyProfile, type MatchHistoryEntry, type PlayerProfile } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
+import { formatRelativeTime } from '@/lib/time';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -35,30 +40,86 @@ interface TrophyItem {
   label: string;
 }
 
+// No achievements backend exists yet (same deliberately-deferred pattern as
+// the rest of the app's social/rewards features) -- left as flavor.
 const TROPHIES: TrophyItem[] = [
   { id: 'masters-open', icon: 'trophy', accent: Colors.cyan, label: "MASTERS OPEN '24" },
   { id: 'iron-knight', icon: 'shield-sword', accent: Colors.emberLight, label: 'IRON KNIGHT' },
   { id: 'stage-boss', icon: 'crown', accent: Colors.gold, label: 'THE STAGE BOSS' },
 ];
 
-interface MatchHistoryItem {
-  id: string;
-  outcome: 'W' | 'L';
-  opponent: string;
-  meta: string;
-  delta: string;
-  ratingAfter: string;
+const RESULT_LABEL: Record<MatchHistoryEntry['resultType'], string> = {
+  checkmate: 'Checkmate',
+  stalemate: 'Stalemate',
+  draw: 'Draw',
+  resignation: 'Resignation',
+  forfeit: 'Forfeit',
+};
+
+// Purely cosmetic -- no "tier"/"season" concept exists anywhere in the
+// schema/backend. Maps rating to a flavor label so the profile header
+// keeps its stage-name feel without inventing a fake season number.
+function tierLabel(rating: number): string {
+  if (rating >= 2200) return 'GRANDMASTER STAGE';
+  if (rating >= 1800) return 'MASTER STAGE';
+  if (rating >= 1400) return 'CHALLENGER STAGE';
+  return 'ROOKIE STAGE';
 }
 
-const MATCH_HISTORY: MatchHistoryItem[] = [
-  { id: 'm1', outcome: 'W', opponent: 'VS. GM_SPECTRE', meta: '10 mins ago • Ranked Blitz', delta: '+12', ratingAfter: '2,842' },
-  { id: 'm2', outcome: 'L', opponent: 'VS. QUEEN_OFF_PAWN', meta: '2 hours ago • Ranked Blitz', delta: '-8', ratingAfter: '2,830' },
-  { id: 'm3', outcome: 'W', opponent: 'VS. ROOKIE_KILLER', meta: '5 hours ago • Tournament Round 2', delta: '+15', ratingAfter: '2,838' },
-];
+function formatDelta(delta: number): string {
+  return delta > 0 ? `+${delta}` : `${delta}`;
+}
+
+type Status = 'loading' | 'ready' | 'error' | 'guest';
 
 export default function IronIdScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [status, setStatus] = useState<Status>('loading');
+  const [refreshing, setRefreshing] = useState(false);
+  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [matches, setMatches] = useState<MatchHistoryEntry[]>([]);
+  const [matchesExpanded, setMatchesExpanded] = useState(false);
+
+  const load = useCallback(async (matchLimit: number) => {
+    const token = await getAuthToken();
+    if (!token) {
+      setStatus('guest');
+      return;
+    }
+    setStatus('loading');
+    try {
+      const [{ profile: fetchedProfile }, { matches: fetchedMatches }] = await Promise.all([
+        getMyProfile(token),
+        getMyMatches(token, matchLimit),
+      ]);
+      setProfile(fetchedProfile);
+      setMatches(fetchedMatches);
+      setStatus('ready');
+    } catch (error) {
+      console.log('Failed to load profile', error);
+      setStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    load(10);
+  }, [load]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await load(matchesExpanded ? 50 : 10);
+    setRefreshing(false);
+  }
+
+  async function handleShowAllMatches() {
+    setMatchesExpanded(true);
+    await load(50);
+  }
+
+  const games = profile ? profile.wins + profile.losses + profile.draws : 0;
+  const winRate = games > 0 ? `${((profile!.wins / games) * 100).toFixed(1)}%` : '—';
+  const latestDelta = matches.length > 0 ? matches[0].ratingDelta : null;
 
   return (
     <View style={styles.root}>
@@ -90,131 +151,171 @@ export default function IronIdScreen() {
         </View>
       </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.profileHero}>
-          {/* The source's rotating conic-gradient ring isn't representable
-              with LinearGradient -- reusing PlayerAvatar's existing fire-ring
-              approximation (already our established solution to this exact
-              CSS trick) instead of building a second bespoke ring. */}
-          <PlayerAvatar emoji="🤘" size="large" level={74} />
-          <Text style={styles.profileName}>AXL_CHESS</Text>
-          <View style={styles.profileSubRow}>
-            <MaterialCommunityIcons name="medal" size={16} color={Colors.cyan} />
-            <Text style={styles.profileSubtitle}>GRANDMASTER STAGE • SEASON 4</Text>
-          </View>
+      {status === 'guest' ? (
+        <View style={styles.guestWrap}>
+          <Text style={styles.guestText}>Sign in to see your stats.</Text>
+          <RockButton label="Sign In" variant="primary" onPress={() => router.push('/sign-in')} />
         </View>
+      ) : status === 'loading' && !profile ? (
+        <ActivityIndicator color={Colors.cyan} style={styles.loadingSpinner} />
+      ) : status === 'error' && !profile ? (
+        <View style={styles.errorWrap}>
+          <Text style={styles.errorText}>Couldn't load your profile.</Text>
+          <RockButton label="Retry" variant="primary" onPress={() => load(matchesExpanded ? 50 : 10)} />
+        </View>
+      ) : profile ? (
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.cyan} />}
+        >
+          <View style={styles.profileHero}>
+            {/* The source's rotating conic-gradient ring isn't representable
+                with LinearGradient -- reusing PlayerAvatar's existing fire-ring
+                approximation (already our established solution to this exact
+                CSS trick) instead of building a second bespoke ring. */}
+            <PlayerAvatar emoji={getAvatarEmoji(profile.avatarId)} size="large" level={profile.level} />
+            <Text style={styles.profileName}>{profile.displayName ?? 'Player'}</Text>
+            <View style={styles.profileSubRow}>
+              <MaterialCommunityIcons name="medal" size={16} color={Colors.cyan} />
+              <Text style={styles.profileSubtitle}>{tierLabel(profile.rating)}</Text>
+            </View>
+          </View>
 
-        <View style={styles.socialRow}>
-          {SOCIAL_LINKS.map((link) => (
-            <Pressable
-              key={link.id}
-              style={styles.socialCard}
-              onPress={() => {
-                console.log(`${link.label} entry point pressed`);
-                router.push(link.route);
-              }}
-            >
-              <RockCard glowColor={link.accent}>
-                <View style={styles.socialPressable}>
-                  <MaterialCommunityIcons name={link.icon} size={24} color={link.accent} />
-                  <Text style={styles.socialLabel}>{link.label}</Text>
+          <View style={styles.socialRow}>
+            {SOCIAL_LINKS.map((link) => (
+              <Pressable
+                key={link.id}
+                style={styles.socialCard}
+                onPress={() => {
+                  console.log(`${link.label} entry point pressed`);
+                  router.push(link.route);
+                }}
+              >
+                <RockCard glowColor={link.accent}>
+                  <View style={styles.socialPressable}>
+                    <MaterialCommunityIcons name={link.icon} size={24} color={link.accent} />
+                    <Text style={styles.socialLabel}>{link.label}</Text>
+                  </View>
+                </RockCard>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.statsGrid}>
+            <RockCard style={styles.ratingCard}>
+              <View style={styles.ratingInner}>
+                <Text style={styles.statLabelMuted}>GLOBAL RATING</Text>
+                <View style={styles.ratingValueRow}>
+                  <Text style={styles.ratingValue}>{profile.rating}</Text>
+                  {latestDelta !== null ? <Text style={styles.ratingDelta}>{formatDelta(latestDelta)}</Text> : null}
+                </View>
+              </View>
+              <MaterialCommunityIcons
+                name="trending-up"
+                size={100}
+                color={withOpacity(Colors.cyan, 0.1)}
+                style={styles.ratingBgIcon}
+              />
+            </RockCard>
+
+            <View style={styles.statsRowSmall}>
+              <RockCard style={styles.statCardSmall}>
+                <Text style={styles.statLabelMuted}>WIN RATE</Text>
+                <Text style={[styles.statValueSmall, { color: Colors.emberLight }]}>{winRate}</Text>
+                <ProgressBar progress={games > 0 ? profile.wins / games : 0} height={4} />
+              </RockCard>
+              <RockCard style={styles.statCardSmall}>
+                <Text style={styles.statLabelMuted}>WIN STREAK</Text>
+                <Text style={[styles.statValueSmall, { color: Colors.emberLight }]}>{profile.winStreak}</Text>
+                <View style={styles.streakRow}>
+                  {Array.from({ length: Math.min(profile.winStreak, 3) }).map((_, i) => (
+                    <MaterialCommunityIcons key={i} name="fire" size={16} color={Colors.emberLight} />
+                  ))}
                 </View>
               </RockCard>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.statsGrid}>
-          <RockCard style={styles.ratingCard}>
-            <View style={styles.ratingInner}>
-              <Text style={styles.statLabelMuted}>GLOBAL RATING</Text>
-              <View style={styles.ratingValueRow}>
-                <Text style={styles.ratingValue}>2,842</Text>
-                <Text style={styles.ratingDelta}>+14</Text>
-              </View>
             </View>
-            <MaterialCommunityIcons
-              name="trending-up"
-              size={100}
-              color={withOpacity(Colors.cyan, 0.1)}
-              style={styles.ratingBgIcon}
-            />
-          </RockCard>
-
-          <View style={styles.statsRowSmall}>
-            <RockCard style={styles.statCardSmall}>
-              <Text style={styles.statLabelMuted}>WIN RATE</Text>
-              <Text style={[styles.statValueSmall, { color: Colors.emberLight }]}>68.4%</Text>
-              <ProgressBar progress={0.684} height={4} />
-            </RockCard>
-            <RockCard style={styles.statCardSmall}>
-              <Text style={styles.statLabelMuted}>WIN STREAK</Text>
-              <Text style={[styles.statValueSmall, { color: Colors.emberLight }]}>12</Text>
-              <View style={styles.streakRow}>
-                <MaterialCommunityIcons name="fire" size={16} color={Colors.emberLight} />
-                <MaterialCommunityIcons name="fire" size={16} color={Colors.emberLight} />
-                <MaterialCommunityIcons name="fire" size={16} color={Colors.emberLight} />
-              </View>
-            </RockCard>
           </View>
-        </View>
 
-        <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>Trophy Case</Text>
-          <Text style={styles.viewAll} onPress={() => console.log('View all trophies pressed')}>
-            VIEW ALL
-          </Text>
-        </View>
-        <View style={styles.trophyGrid}>
-          {TROPHIES.map((trophy) => (
-            <View key={trophy.id} style={styles.trophySlot}>
-              <View style={[styles.trophyIconCircle, { boxShadow: `0px 0px 15px ${withOpacity(trophy.accent, 0.25)}` }]}>
-                <MaterialCommunityIcons name={trophy.icon} size={32} color={trophy.accent} />
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionTitle}>Trophy Case</Text>
+            <Text style={styles.viewAll} onPress={() => console.log('View all trophies pressed')}>
+              VIEW ALL
+            </Text>
+          </View>
+          <View style={styles.trophyGrid}>
+            {TROPHIES.map((trophy) => (
+              <View key={trophy.id} style={styles.trophySlot}>
+                <View style={[styles.trophyIconCircle, { boxShadow: `0px 0px 15px ${withOpacity(trophy.accent, 0.25)}` }]}>
+                  <MaterialCommunityIcons name={trophy.icon} size={32} color={trophy.accent} />
+                </View>
+                <Text style={styles.trophyLabel}>{trophy.label}</Text>
               </View>
-              <Text style={styles.trophyLabel}>{trophy.label}</Text>
+            ))}
+          </View>
+
+          <Text style={[styles.sectionTitle, styles.matchHistoryTitle]}>Match History</Text>
+          {matches.length === 0 ? (
+            <Text style={styles.emptyText}>No matches played yet.</Text>
+          ) : (
+            <View style={styles.matchList}>
+              {matches.map((match) => (
+                <RockCard key={match.matchId} style={styles.matchCard}>
+                  <View style={styles.matchRow}>
+                    <View
+                      style={[
+                        styles.matchOutcomeBox,
+                        match.outcome === 'win'
+                          ? styles.matchOutcomeWin
+                          : match.outcome === 'loss'
+                            ? styles.matchOutcomeLoss
+                            : styles.matchOutcomeDraw,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.matchOutcomeText,
+                          {
+                            color:
+                              match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold,
+                          },
+                        ]}
+                      >
+                        {match.outcome === 'win' ? 'W' : match.outcome === 'loss' ? 'L' : 'D'}
+                      </Text>
+                    </View>
+                    <View style={styles.matchInfo}>
+                      <Text style={styles.matchOpponent}>VS. {match.opponentDisplayName.toUpperCase()}</Text>
+                      <Text style={styles.matchMeta}>
+                        {formatRelativeTime(match.playedAt)} • {RESULT_LABEL[match.resultType]}
+                      </Text>
+                    </View>
+                    <View style={styles.matchDeltaCol}>
+                      <Text
+                        style={[
+                          styles.matchDelta,
+                          { color: match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold },
+                        ]}
+                      >
+                        {formatDelta(match.ratingDelta)}
+                      </Text>
+                      <Text style={styles.matchRatingAfter}>{match.ratingAfter}</Text>
+                    </View>
+                  </View>
+                </RockCard>
+              ))}
             </View>
-          ))}
-        </View>
+          )}
 
-        <Text style={[styles.sectionTitle, styles.matchHistoryTitle]}>Match History</Text>
-        <View style={styles.matchList}>
-          {MATCH_HISTORY.map((match) => (
-            <RockCard key={match.id} style={styles.matchCard}>
-              <View style={styles.matchRow}>
-                <View
-                  style={[
-                    styles.matchOutcomeBox,
-                    match.outcome === 'W' ? styles.matchOutcomeWin : styles.matchOutcomeLoss,
-                  ]}
-                >
-                  <Text style={[styles.matchOutcomeText, { color: match.outcome === 'W' ? Colors.cyan : Colors.crimson }]}>
-                    {match.outcome}
-                  </Text>
-                </View>
-                <View style={styles.matchInfo}>
-                  <Text style={styles.matchOpponent}>{match.opponent}</Text>
-                  <Text style={styles.matchMeta}>{match.meta}</Text>
-                </View>
-                <View style={styles.matchDeltaCol}>
-                  <Text style={[styles.matchDelta, { color: match.outcome === 'W' ? Colors.cyan : Colors.crimson }]}>
-                    {match.delta}
-                  </Text>
-                  <Text style={styles.matchRatingAfter}>{match.ratingAfter}</Text>
-                </View>
-              </View>
-            </RockCard>
-          ))}
-        </View>
+          {!matchesExpanded && matches.length >= 10 ? (
+            <View style={styles.showAllButtonWrap}>
+              <RockButton label="Show All Matches" variant="primary" onPress={handleShowAllMatches} />
+            </View>
+          ) : null}
 
-        <View style={styles.showAllButtonWrap}>
-          <RockButton label="Show All Matches" variant="primary" onPress={() => console.log('Show all matches pressed')} />
-        </View>
-
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+      ) : null}
 
       <View style={styles.navWrap}>
         <BottomNav
@@ -271,6 +372,38 @@ const styles = StyleSheet.create({
     backgroundColor: withOpacity(Colors.bgPanel, 0.85),
     borderWidth: 1,
     borderColor: withOpacity(Colors.chromeDark, 0.4),
+  },
+  guestWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+  },
+  guestText: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  loadingSpinner: {
+    marginTop: Spacing.xl * 2,
+  },
+  errorWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+  },
+  errorText: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+  emptyText: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.textMuted,
   },
   scrollContent: {
     padding: Spacing.lg,
@@ -444,6 +577,10 @@ const styles = StyleSheet.create({
   matchOutcomeLoss: {
     backgroundColor: withOpacity(Colors.crimson, 0.12),
     borderColor: withOpacity(Colors.crimson, 0.3),
+  },
+  matchOutcomeDraw: {
+    backgroundColor: withOpacity(Colors.gold, 0.12),
+    borderColor: withOpacity(Colors.gold, 0.3),
   },
   matchOutcomeText: {
     fontFamily: Fonts.display,

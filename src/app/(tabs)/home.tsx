@@ -37,7 +37,7 @@ interface BentoTile {
   accent: string;
   size: 'lg' | 'sm';
   /** Omit for tiles with no destination screen yet (still console.log-only). */
-  route?: '/setup' | '/tournaments' | '/bots';
+  route?: '/setup' | '/tournaments' | '/bots' | '/game-room';
 }
 
 const BENTO_TILES: BentoTile[] = [
@@ -46,7 +46,11 @@ const BENTO_TILES: BentoTile[] = [
   { id: 'bots', title: 'Vs Bots', icon: 'robot', accent: Colors.cyan, size: 'sm', route: '/bots' },
   { id: 'puzzles', title: 'Puzzles', icon: 'puzzle', accent: Colors.cyan, size: 'sm' },
   { id: 'learn', title: 'Learn', icon: 'school', accent: Colors.cyan, size: 'sm' },
-  { id: 'watch', title: 'Watch', icon: 'eye', accent: Colors.cyan, size: 'sm' },
+  // Replaces the old decorative, unwired "Watch" tile -- distinct warm
+  // accent (rather than the cyan every other small tile uses) so the one
+  // real, newly-functional tile doesn't blend into the still-decorative
+  // ones next to it (Puzzles/Learn).
+  { id: 'game-room', title: 'Game Room', subtitle: 'Play a Friend', icon: 'door-open', accent: Colors.emberLight, size: 'sm', route: '/game-room' },
 ];
 
 export default function HomeLobbyScreen() {

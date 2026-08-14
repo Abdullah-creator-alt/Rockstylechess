@@ -19,3 +19,7 @@ export type { NavTab } from './BottomNav';
 export { EmberParticles } from './EmberParticles';
 
 export { ChessBoard } from './ChessBoard';
+
+export { ChatPanel } from './ChatPanel';
+
+export { ChatToast } from './ChatToast';

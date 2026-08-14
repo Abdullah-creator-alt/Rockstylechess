@@ -68,13 +68,21 @@ second Railway Postgres and swapping the env var.
 Client -> Server:
 - `queue:join { guestId, displayName, venueTier }`
 - `queue:leave`
+- `room:create { guestId, displayName }`
+- `room:join { guestId, displayName, code }`
+- `room:cancel`
 - `move:make { matchId, from, to, promotion? }`
 - `match:resign { matchId }`
 - `match:rejoin { matchId, guestId }`
 - `match:chat:send { matchId, text }`
 
 Server -> Client:
-- `queue:matched { matchId, color, opponent: { displayName }, fen }`
+- `queue:matched { matchId, color, opponent: { displayName }, fen }` --
+  emitted for a tier-queue pairing, a room-code pairing, or a rejoin alike
+  (see `gameRoom.ts` below); the client doesn't need to know which path
+  produced it.
+- `room:created { code }`
+- `room:error { reason: 'not-found' | 'own-room' }`
 - `move:applied { from, to, promotion, fen, turn, isGameOver }`
 - `move:rejected { reason }`
 - `match:opponentDisconnected { color }`
@@ -84,6 +92,18 @@ Server -> Client:
   (`move:applied`'s `isGameOver`), same as how the bot/local modes already
   detect game-over locally via chess.js.
 - `match:chat:message { color, displayName, text, sentAt }`
+
+**Game Room** (`gameRoom.ts`) is a second way to pair two players, alongside
+the venue-tier queue above -- one player calls `room:create` and gets back
+a 6-character code (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789` alphabet, excludes
+visually ambiguous characters), shares it out-of-band, and the other player
+calls `room:join { code }`. Both paths bottom out in the same
+`createMatch()` + `queue:matched` broadcast (factored into `index.ts`'s
+`notifyMatched` helper) -- everything downstream (moves, resign, chat,
+disconnect/reconnect grace) is identical regardless of how the pairing
+happened. Unclaimed codes expire after 10 minutes, and a creator
+disconnecting before anyone joins releases the code immediately rather than
+waiting out the full TTL.
 
 In-match chat (`chat.ts`) is scoped to the two seated players -- `match:chat:send`
 is only accepted from a socket that `colorOf` resolves as one of the match's

@@ -103,3 +103,10 @@ export function getLeaderboard(limit?: number): Promise<{ leaderboard: Leaderboa
   const query = limit ? `?limit=${limit}` : '';
   return request(`/leaderboard${query}`, { method: 'GET' });
 }
+
+// Deliberately just rank + total -- every other field the "YOU" card needs
+// (rating, displayName, avatarId, wins/losses/draws) already comes from
+// getMyProfile, so callers combine both rather than this duplicating them.
+export function getMyRank(token: string): Promise<{ rank: number; totalPlayers: number }> {
+  return request('/leaderboard/me', { method: 'GET', token });
+}

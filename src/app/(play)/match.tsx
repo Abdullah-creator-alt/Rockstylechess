@@ -13,10 +13,11 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { BottomNav, ChessBoard, EmberParticles, RockCard } from '@/components/ui';
+import { BottomNav, ChatPanel, ChatToast, ChessBoard, EmberParticles, RockCard } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
+import { useMatchChat } from '@/hooks/useMatchChat';
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
@@ -68,6 +69,7 @@ export default function MatchScreen() {
       : undefined;
   const navigatedRef = useRef(false);
   const stockfishRef = useRef<StockfishEngineHandle>(null);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const requestEngineMove = useCallback((fen: string, config: StockfishConfig): Promise<EngineMove | null> => {
     if (!stockfishRef.current) return Promise.resolve(null);
@@ -77,6 +79,9 @@ export default function MatchScreen() {
   function handleGameOver(result: ChessGameResult) {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
+    // Close the chat panel before the transition below so it doesn't just
+    // vanish abruptly with the rest of the screen.
+    setChatOpen(false);
 
     let outcome: 'win' | 'loss' | 'draw';
     let reason: string;
@@ -106,6 +111,7 @@ export default function MatchScreen() {
   }
 
   const game = useChessGame({ mode, difficulty, requestEngineMove, online, onGameOver: handleGameOver });
+  const chat = useMatchChat({ mode, online, isOpen: chatOpen });
   const animateOpponentMove = game.lastMoveSource !== null && game.lastMoveSource !== 'human';
 
   return (
@@ -149,7 +155,12 @@ export default function MatchScreen() {
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
         />
 
-        <ActionBar onResign={() => game.resign(playerColor)} />
+        <ActionBar
+          onResign={() => game.resign(playerColor)}
+          mode={mode}
+          unreadCount={chat.unreadCount}
+          onOpenChat={() => setChatOpen(true)}
+        />
 
         <PlayerRow
           name="AXL_CHESS"
@@ -171,6 +182,19 @@ export default function MatchScreen() {
           }}
         />
       </View>
+
+      <ChatPanel
+        visible={chatOpen}
+        onClose={() => setChatOpen(false)}
+        messages={chat.messages}
+        myColor={playerColor}
+        onSend={chat.send}
+        canSend={chat.canSend && !game.isGameOver}
+      />
+
+      {chat.toastMessage ? (
+        <ChatToast key={chat.toastMessage.id} message={chat.toastMessage} onDismiss={chat.dismissToast} />
+      ) : null}
     </View>
   );
 }
@@ -257,16 +281,28 @@ function MoveTicker() {
   );
 }
 
-function ActionBar({ onResign }: { onResign: () => void }) {
+function ActionBar({
+  onResign,
+  mode,
+  unreadCount,
+  onOpenChat,
+}: {
+  onResign: () => void;
+  mode: GameMode;
+  unreadCount: number;
+  onOpenChat: () => void;
+}) {
   return (
     <View style={styles.actionBarWrap}>
       <RockCard style={styles.actionBarCard}>
         <View style={styles.actionBarRow}>
           <ActionButton
-            icon="emoticon-outline"
-            label="Emote"
+            icon="message-text-outline"
+            label="Chat"
             colors={[Colors.chromeDark, Colors.bgBase]}
-            onPress={() => console.log('Emote pressed')}
+            onPress={onOpenChat}
+            badgeCount={mode === 'online' ? unreadCount : 0}
+            disabled={mode !== 'online'}
           />
           <ActionButton
             icon="lightbulb-on-outline"
@@ -279,8 +315,8 @@ function ActionBar({ onResign }: { onResign: () => void }) {
             label=""
             colors={[Colors.crimson, Colors.crimson]}
             shape="circle"
-            size={68}
-            iconSize={28}
+            size={60}
+            iconSize={24}
             onPress={onResign}
           />
           <ActionButton
@@ -307,8 +343,10 @@ function ActionButton({
   colors,
   onPress,
   shape = 'square',
-  size = 60,
-  iconSize = 22,
+  size = 52,
+  iconSize = 20,
+  badgeCount = 0,
+  disabled = false,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   label: string;
@@ -317,11 +355,13 @@ function ActionButton({
   shape?: 'square' | 'circle';
   size?: number;
   iconSize?: number;
+  badgeCount?: number;
+  disabled?: boolean;
 }) {
   const radius = shape === 'circle' ? size / 2 : Radius.md;
   return (
     <Pressable
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
       style={({ pressed }) => [
         styles.actionButton,
         {
@@ -330,6 +370,7 @@ function ActionButton({
           borderRadius: radius,
           boxShadow: `0px 4px 12px ${withOpacity(Colors.bgBase, 0.7)}, 0px 0px 14px ${withOpacity(String(colors[0]), 0.4)}`,
           transform: [{ scale: pressed ? 0.92 : 1 }],
+          opacity: disabled ? 0.4 : 1,
         },
       ]}
     >
@@ -345,6 +386,11 @@ function ActionButton({
       />
       <MaterialCommunityIcons name={icon} size={iconSize} color={Colors.textPrimary} />
       {label ? <Text style={styles.actionButtonLabel}>{label}</Text> : null}
+      {badgeCount > 0 ? (
+        <View style={styles.actionButtonBadge}>
+          <Text style={styles.actionButtonBadgeText}>{badgeCount > 9 ? '9+' : badgeCount}</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -486,9 +532,33 @@ const styles = StyleSheet.create({
   actionButtonLabel: {
     fontFamily: Fonts.heading,
     fontSize: 9,
+    // Pinned explicitly (not left to the font's natural metrics) -- custom
+    // TTFs like Oswald can report a much taller default line height on
+    // native than in a browser, which combined with actionButton's
+    // overflow: 'hidden' silently clipped the bottom of this label on
+    // native even though it looked fine on web.
+    lineHeight: 11,
     color: withOpacity(Colors.textPrimary, 0.85),
     textTransform: 'uppercase',
     marginTop: 2,
+  },
+  actionButtonBadge: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.emberLight,
+    boxShadow: `0px 0px 8px ${withOpacity(Colors.emberLight, 0.6)}`,
+  },
+  actionButtonBadgeText: {
+    fontFamily: Fonts.heading,
+    fontSize: 9,
+    color: Colors.bgBase,
   },
   navWrap: {
     left: 0,

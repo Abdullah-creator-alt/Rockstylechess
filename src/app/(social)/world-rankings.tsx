@@ -1,12 +1,14 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomNav, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
+import { BottomNav, CurrencyPill, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { getAvatarEmoji } from '@/constants/avatars';
+import { getLeaderboard, getMyProfile, getMyRank, type LeaderboardEntry, type PlayerProfile } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
 
 type FilterTab = 'global' | 'friends' | 'venue' | 'country';
 const FILTER_TABS: { key: FilterTab; label: string }[] = [
@@ -16,40 +18,80 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
   { key: 'country', label: 'Country' },
 ];
 
-interface PodiumPlayer {
-  rank: 1 | 2 | 3;
-  name: string;
-  emoji: string;
-  country: string;
-  accent: string;
-  pedestalHeight: number;
+// Rank position -- not per-player data -- drives the podium's visual design,
+// same purely-presentational role these had with the old mock data.
+const PODIUM_ACCENT: Record<1 | 2 | 3, string> = { 1: Colors.gold, 2: Colors.chromeMid, 3: Colors.emberLight };
+const PODIUM_HEIGHT: Record<1 | 2 | 3, number> = { 1: 96, 2: 64, 3: 48 };
+
+function formatRecord(entry: LeaderboardEntry): string {
+  if (entry.wins + entry.losses + entry.draws === 0) return 'No games yet';
+  return `${entry.wins}W ${entry.losses}L ${entry.draws}D`;
 }
 
-// Sample data matching the source's podium names -- no live leaderboard backend yet.
-const PODIUM: PodiumPlayer[] = [
-  { rank: 2, name: 'XIN_CHESS', emoji: '🥈', country: 'CN', accent: Colors.chromeMid, pedestalHeight: 64 },
-  { rank: 1, name: 'KINGS_GAMBIT', emoji: '👑', country: 'US', accent: Colors.gold, pedestalHeight: 96 },
-  { rank: 3, name: 'EN_PASSANT', emoji: '🥉', country: 'FR', accent: Colors.emberLight, pedestalHeight: 48 },
-];
-
-interface RankRow {
-  rank: number;
-  name: string;
-  emoji: string;
-  tier: string;
-  points: string;
-}
-
-const RANKED_LIST: RankRow[] = [
-  { rank: 4, name: 'CHESS_WIZARD_99', emoji: '🧙', tier: 'Master Rank • 2840 ELO', points: '2.4k pts' },
-  { rank: 5, name: 'QUEEN_PIN_88', emoji: '♛', tier: 'Grandmaster Rank • 2795 ELO', points: '2.1k pts' },
-  { rank: 6, name: 'ROOK_RAIDER', emoji: '🏰', tier: 'Master Rank • 2750 ELO', points: '1.9k pts' },
-];
+type LoadStatus = 'loading' | 'ready' | 'error';
+type MineStatus = 'loading' | 'ready' | 'error' | 'guest';
 
 export default function WorldRankingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('global');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [listStatus, setListStatus] = useState<LoadStatus>('loading');
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+
+  const [mineStatus, setMineStatus] = useState<MineStatus>('loading');
+  const [myProfile, setMyProfile] = useState<PlayerProfile | null>(null);
+  const [myRank, setMyRank] = useState<{ rank: number; totalPlayers: number } | null>(null);
+
+  const loadList = useCallback(async () => {
+    setListStatus('loading');
+    try {
+      const { leaderboard } = await getLeaderboard(20);
+      setEntries(leaderboard);
+      setListStatus('ready');
+    } catch (error) {
+      console.log('Failed to load leaderboard', error);
+      setListStatus('error');
+    }
+  }, []);
+
+  const loadMine = useCallback(async () => {
+    const token = await getAuthToken();
+    if (!token) {
+      setMineStatus('guest');
+      return;
+    }
+    setMineStatus('loading');
+    try {
+      const [{ profile }, rank] = await Promise.all([getMyProfile(token), getMyRank(token)]);
+      setMyProfile(profile);
+      setMyRank(rank);
+      setMineStatus('ready');
+    } catch (error) {
+      console.log('Failed to load own rank', error);
+      setMineStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadList();
+    loadMine();
+  }, [loadList, loadMine]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await Promise.all([loadList(), loadMine()]);
+    setRefreshing(false);
+  }
+
+  const podium = entries.slice(0, 3);
+  // Visual order is 2nd-1st-3rd (1st in the middle, tallest) -- entries
+  // itself stays rank-ordered (1st, 2nd, 3rd) since the ranked list below
+  // reuses the same array by index.
+  const podiumVisualOrder = [podium[1], podium[0], podium[2]];
+  const rankedList = entries.slice(3);
+  const percentile = myRank ? Math.max(1, Math.ceil((myRank.rank / myRank.totalPlayers) * 100)) : null;
 
   return (
     <View style={styles.root}>
@@ -68,10 +110,7 @@ export default function WorldRankingsScreen() {
             <Pressable
               key={tab.key}
               style={[styles.filterTab, active && styles.filterTabActive]}
-              onPress={() => {
-                setActiveFilter(tab.key);
-                console.log('Filter selected', tab.key);
-              }}
+              onPress={() => setActiveFilter(tab.key)}
             >
               <Text style={[styles.filterTabText, active && styles.filterTabTextActive]}>{tab.label}</Text>
             </Pressable>
@@ -79,75 +118,108 @@ export default function WorldRankingsScreen() {
         })}
       </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.podiumRow}>
-          {PODIUM.map((player) => (
-            <View key={player.rank} style={[styles.podiumCol, player.rank === 1 && styles.podiumColFirst]}>
-              <PlayerAvatar emoji={player.emoji} size={player.rank === 1 ? 'medium' : 'small'} />
-              <LinearGradient
-                colors={[player.accent, Colors.bgBase]}
-                style={[
-                  styles.pedestal,
-                  {
-                    height: player.pedestalHeight,
-                    boxShadow: player.rank === 1 ? `0px 0px 24px ${withOpacity(Colors.gold, 0.4)}` : undefined,
-                  },
-                ]}
-              >
-                <Text style={[styles.pedestalRank, { color: player.rank === 1 ? Colors.bgBase : Colors.textPrimary }]}>
-                  {player.rank}
-                </Text>
-              </LinearGradient>
-              <Text style={[styles.podiumName, { color: player.accent }]} numberOfLines={1}>
-                {player.name}
-              </Text>
-            </View>
-          ))}
+      {activeFilter !== 'global' ? (
+        <View style={styles.comingSoonWrap}>
+          <Text style={styles.comingSoonText}>COMING SOON</Text>
         </View>
-
-        <View style={styles.list}>
-          {RANKED_LIST.map((row) => (
-            <RockCard key={row.rank} style={styles.rowCard}>
-              <View style={styles.rowInner}>
-                <Text style={styles.rowRank}>{row.rank}</Text>
-                <PlayerAvatar emoji={row.emoji} size="small" />
-                <View style={styles.rowInfo}>
-                  <Text style={styles.rowName}>{row.name}</Text>
-                  <Text style={styles.rowTier}>{row.tier}</Text>
+      ) : (
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.cyan} />}
+        >
+          {listStatus === 'loading' ? (
+            <ActivityIndicator color={Colors.cyan} style={styles.loadingSpinner} />
+          ) : listStatus === 'error' ? (
+            <View style={styles.errorWrap}>
+              <Text style={styles.errorText}>Couldn't load the leaderboard.</Text>
+              <RockButton label="Retry" variant="primary" onPress={loadList} />
+            </View>
+          ) : (
+            <>
+              {podium.length > 0 ? (
+                <View style={styles.podiumRow}>
+                  {podiumVisualOrder.map((entry, index) => {
+                    if (!entry) return null;
+                    const rank = (index === 1 ? 1 : index === 0 ? 2 : 3) as 1 | 2 | 3;
+                    const accent = PODIUM_ACCENT[rank];
+                    return (
+                      <View key={entry.userId} style={[styles.podiumCol, rank === 1 && styles.podiumColFirst]}>
+                        <PlayerAvatar emoji={getAvatarEmoji(entry.avatarId)} size={rank === 1 ? 'medium' : 'small'} />
+                        <LinearGradient
+                          colors={[accent, Colors.bgBase]}
+                          style={[
+                            styles.pedestal,
+                            {
+                              height: PODIUM_HEIGHT[rank],
+                              boxShadow: rank === 1 ? `0px 0px 24px ${withOpacity(Colors.gold, 0.4)}` : undefined,
+                            },
+                          ]}
+                        >
+                          <Text style={[styles.pedestalRank, { color: rank === 1 ? Colors.bgBase : Colors.textPrimary }]}>
+                            {rank}
+                          </Text>
+                        </LinearGradient>
+                        <Text style={[styles.podiumName, { color: accent }]} numberOfLines={1}>
+                          {entry.displayName ?? 'Anonymous'}
+                        </Text>
+                        <Text style={styles.podiumRating}>{entry.rating}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
-                <Text style={styles.rowPoints}>{row.points}</Text>
-              </View>
-            </RockCard>
-          ))}
-          <View style={styles.teaserRow}>
-            <Text style={styles.teaserText}>CLIMB THE RANKS TO REVEAL MORE</Text>
-          </View>
-        </View>
+              ) : null}
 
-        <RockCard glowColor={Colors.emberLight} style={styles.pinnedCard}>
-          <View style={styles.pinnedInner}>
-            <Text style={styles.pinnedRank}>124</Text>
-            <PlayerAvatar emoji="🤘" size="medium" />
-            <View style={styles.pinnedInfo}>
-              <Text style={styles.pinnedName}>YOU (PLAYER_01)</Text>
-              <View style={styles.pinnedSubRow}>
-                <Text style={styles.pinnedTop}>TOP 5%</Text>
-                <Text style={styles.pinnedDot}>•</Text>
-                <Text style={styles.pinnedElo}>1650 ELO</Text>
-              </View>
-            </View>
-            <View style={styles.pinnedXpCol}>
-              <Text style={styles.pinnedXpLabel}>Next Rank in</Text>
-              <Text style={styles.pinnedXpValue}>150 XP</Text>
-            </View>
-          </View>
-        </RockCard>
+              {rankedList.length > 0 ? (
+                <View style={styles.list}>
+                  {rankedList.map((entry, index) => (
+                    <RockCard key={entry.userId} style={styles.rowCard}>
+                      <View style={styles.rowInner}>
+                        <Text style={styles.rowRank}>{index + 4}</Text>
+                        <PlayerAvatar emoji={getAvatarEmoji(entry.avatarId)} size="small" />
+                        <View style={styles.rowInfo}>
+                          <Text style={styles.rowName}>{entry.displayName ?? 'Anonymous'}</Text>
+                          <Text style={styles.rowTier}>{formatRecord(entry)}</Text>
+                        </View>
+                        <Text style={styles.rowPoints}>{entry.rating}</Text>
+                      </View>
+                    </RockCard>
+                  ))}
+                </View>
+              ) : null}
 
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+              {entries.length === 0 ? (
+                <Text style={styles.emptyText}>No ranked players yet.</Text>
+              ) : null}
+
+              {mineStatus === 'ready' && myProfile && myRank ? (
+                <RockCard glowColor={Colors.emberLight} style={styles.pinnedCard}>
+                  <View style={styles.pinnedInner}>
+                    <Text style={styles.pinnedRank}>{myRank.rank}</Text>
+                    <PlayerAvatar emoji={getAvatarEmoji(myProfile.avatarId)} size="medium" />
+                    <View style={styles.pinnedInfo}>
+                      <Text style={styles.pinnedName}>{myProfile.displayName ?? 'You'}</Text>
+                      <View style={styles.pinnedSubRow}>
+                        <Text style={styles.pinnedTop}>TOP {percentile}%</Text>
+                        <Text style={styles.pinnedDot}>•</Text>
+                        <Text style={styles.pinnedElo}>{myProfile.rating} ELO</Text>
+                      </View>
+                    </View>
+                    <View style={styles.pinnedXpCol}>
+                      <Text style={styles.pinnedXpLabel}>Record</Text>
+                      <Text style={styles.pinnedXpValue}>
+                        {myProfile.wins}W {myProfile.losses}L
+                      </Text>
+                    </View>
+                  </View>
+                </RockCard>
+              ) : null}
+            </>
+          )}
+
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+      )}
 
       <View style={styles.navWrap}>
         <BottomNav
@@ -223,11 +295,43 @@ const styles = StyleSheet.create({
   filterTabTextActive: {
     color: Colors.cyan,
   },
+  comingSoonWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  comingSoonText: {
+    fontFamily: Fonts.heading,
+    fontSize: 13,
+    color: Colors.textMuted,
+    letterSpacing: 2,
+  },
   scrollContent: {
     padding: Spacing.lg,
     paddingTop: 0,
     paddingBottom: 120,
     gap: Spacing.xl,
+  },
+  loadingSpinner: {
+    marginTop: Spacing.xl * 2,
+  },
+  errorWrap: {
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginTop: Spacing.xl,
+  },
+  errorText: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+  emptyText: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: Spacing.lg,
   },
   podiumRow: {
     flexDirection: 'row',
@@ -259,6 +363,11 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading,
     fontSize: 11,
     textTransform: 'uppercase',
+  },
+  podiumRating: {
+    fontFamily: Fonts.body,
+    fontSize: 10,
+    color: Colors.textMuted,
   },
   list: {
     gap: Spacing.sm,
@@ -294,17 +403,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading,
     fontSize: 14,
     color: Colors.cyan,
-  },
-  teaserRow: {
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-    opacity: 0.5,
-  },
-  teaserText: {
-    fontFamily: Fonts.heading,
-    fontSize: 11,
-    color: Colors.textMuted,
-    letterSpacing: 1.5,
   },
   pinnedCard: {},
   pinnedInner: {

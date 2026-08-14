@@ -9,7 +9,18 @@ import { authRouter } from './auth.js';
 import { socketAuth } from './authMiddleware.js';
 import { allowChatMessage, clearChatRateLimit, sanitizeChatText } from './chat.js';
 import { persistMatchResult } from './db/persistMatchResult.js';
-import { allMatches, applyMove, colorOf, createMatch, endMatch, getMatch, opponentColor, type PieceColor } from './match.js';
+import { cancelRoomBySocketId, createRoom, joinRoom } from './gameRoom.js';
+import {
+  allMatches,
+  applyMove,
+  colorOf,
+  createMatch,
+  endMatch,
+  getMatch,
+  opponentColor,
+  type MatchState,
+  type PieceColor,
+} from './match.js';
 import { joinQueue, leaveQueue, type QueuedPlayer, type VenueTier } from './matchmaking.js';
 
 const PORT = Number(process.env.PORT) || 4000;
@@ -47,6 +58,26 @@ io.use(socketAuth);
 // can still be matched back to whichever match its previous guestId was in.
 const guestIdBySocket = new Map<string, string>();
 
+// Joins both sockets to the match's Socket.IO room and tells each color's
+// socket who they're playing -- the one piece of "a pair just formed"
+// logic shared by both pairing paths (tier queue and room code), so it
+// isn't duplicated between queue:join and room:join below.
+function notifyMatched(match: MatchState): void {
+  io.sockets.sockets.get(match.players.w.socketId)?.join(match.id);
+  io.sockets.sockets.get(match.players.b.socketId)?.join(match.id);
+
+  for (const color of ['w', 'b'] as PieceColor[]) {
+    const me = match.players[color];
+    const opp = match.players[opponentColor(color)];
+    io.to(me.socketId).emit('queue:matched', {
+      matchId: match.id,
+      color,
+      opponent: { displayName: opp.displayName },
+      fen: match.chess.fen(),
+    });
+  }
+}
+
 io.on('connection', (socket: Socket) => {
   socket.on('queue:join', (payload: { guestId?: string; displayName?: string; venueTier?: string }) => {
     if (!payload?.guestId || !isVenueTier(payload.venueTier)) return;
@@ -61,24 +92,47 @@ io.on('connection', (socket: Socket) => {
     const opponent = joinQueue(payload.venueTier, player);
     if (!opponent) return; // now waiting in queue
 
-    const match = createMatch(opponent, player);
-    socket.join(match.id);
-    io.sockets.sockets.get(opponent.socketId)?.join(match.id);
-
-    for (const color of ['w', 'b'] as PieceColor[]) {
-      const me = match.players[color];
-      const opp = match.players[opponentColor(color)];
-      io.to(me.socketId).emit('queue:matched', {
-        matchId: match.id,
-        color,
-        opponent: { displayName: opp.displayName },
-        fen: match.chess.fen(),
-      });
-    }
+    notifyMatched(createMatch(opponent, player));
   });
 
   socket.on('queue:leave', () => {
     leaveQueue(socket.id);
+  });
+
+  socket.on('room:create', (payload: { guestId?: string; displayName?: string }) => {
+    if (!payload?.guestId) return;
+    guestIdBySocket.set(socket.id, payload.guestId);
+
+    const player: QueuedPlayer = {
+      socketId: socket.id,
+      guestId: payload.guestId,
+      userId: (socket.data.userId as string | undefined) ?? null,
+      displayName: payload.displayName || 'PLAYER',
+    };
+    socket.emit('room:created', { code: createRoom(player) });
+  });
+
+  socket.on('room:join', (payload: { guestId?: string; displayName?: string; code?: string }) => {
+    if (!payload?.guestId || !payload?.code) return;
+    guestIdBySocket.set(socket.id, payload.guestId);
+
+    const player: QueuedPlayer = {
+      socketId: socket.id,
+      guestId: payload.guestId,
+      userId: (socket.data.userId as string | undefined) ?? null,
+      displayName: payload.displayName || 'PLAYER',
+    };
+    const result = joinRoom(payload.code, player);
+    if (result.status !== 'ok') {
+      socket.emit('room:error', { reason: result.status });
+      return;
+    }
+
+    notifyMatched(createMatch(result.opponent, player));
+  });
+
+  socket.on('room:cancel', () => {
+    cancelRoomBySocketId(socket.id);
   });
 
   socket.on('move:make', (payload: { matchId?: string; from?: string; to?: string; promotion?: 'q' | 'r' | 'b' | 'n' }) => {
@@ -182,6 +236,7 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('disconnect', () => {
     leaveQueue(socket.id);
+    cancelRoomBySocketId(socket.id);
     clearChatRateLimit(socket.id);
     const guestId = guestIdBySocket.get(socket.id);
     guestIdBySocket.delete(socket.id);
