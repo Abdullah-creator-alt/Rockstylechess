@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 
 import type { MatchState, PieceColor } from '../match.js';
+import { MATCH_CHIP_REWARDS } from '../matchRewards.js';
 import { db } from './client.js';
 import { expectedScore, updatedRating } from './elo.js';
 import { matchParticipants, matches, playerProfiles } from './schema/index.js';
@@ -85,6 +86,7 @@ function outcomeFor(score: number): 'win' | 'loss' | 'draw' {
 }
 
 async function updateProfileStats(userId: string, ratingAfter: number, score: number): Promise<void> {
+  const chipsGranted = MATCH_CHIP_REWARDS[outcomeFor(score)];
   await db
     .update(playerProfiles)
     .set({
@@ -93,6 +95,7 @@ async function updateProfileStats(userId: string, ratingAfter: number, score: nu
       losses: sql`${playerProfiles.losses} + ${score === 0 ? 1 : 0}`,
       draws: sql`${playerProfiles.draws} + ${score === 0.5 ? 1 : 0}`,
       winStreak: score === 1 ? sql`${playerProfiles.winStreak} + 1` : sql`0`,
+      chips: sql`${playerProfiles.chips} + ${chipsGranted}`,
       updatedAt: new Date(),
     })
     .where(eq(playerProfiles.userId, userId));

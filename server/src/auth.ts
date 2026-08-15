@@ -1,11 +1,13 @@
-import bcrypt from 'bcryptjs';
-import { asc, count, desc, eq, gt, inArray } from 'drizzle-orm';
+import { asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { Router } from 'express';
 
 import { asyncHandler } from './asyncHandler.js';
-import { issueToken, requireAuth } from './authMiddleware.js';
+import { requireAuth } from './authMiddleware.js';
+import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
 import { matchParticipants, matches, playerProfiles, users } from './db/schema/index.js';
+import { getSpinStatus, performSpin } from './db/spin.js';
+import { MATCH_CHIP_REWARDS, type MatchOutcome } from './matchRewards.js';
 
 // Query-param limit shared by /me/matches and /leaderboard -- clamps to a
 // sane range so a client can't ask for an unbounded result set.
@@ -16,51 +18,9 @@ function clampLimit(raw: unknown, fallback: number, max: number): number {
 
 export const authRouter = Router();
 
-authRouter.post(
-  '/auth/signup',
-  asyncHandler(async (req, res) => {
-    const { email, password } = req.body ?? {};
-    if (typeof email !== 'string' || typeof password !== 'string' || password.length < 8) {
-      res.status(400).json({ error: 'invalid-input' });
-      return;
-    }
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, normalizedEmail)).limit(1);
-    if (existing) {
-      res.status(409).json({ error: 'email-taken' });
-      return;
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-    const [user] = await db.insert(users).values({ email: normalizedEmail, passwordHash }).returning();
-    // Defaults (1200 rating, 10M chips "Welcome Bonus") come from the column
-    // defaults in db/schema/users.ts -- nothing to pass here.
-    await db.insert(playerProfiles).values({ userId: user.id });
-
-    res.status(201).json({ token: issueToken(user.id) });
-  }),
-);
-
-authRouter.post(
-  '/auth/login',
-  asyncHandler(async (req, res) => {
-    const { email, password } = req.body ?? {};
-    if (typeof email !== 'string' || typeof password !== 'string') {
-      res.status(400).json({ error: 'invalid-input' });
-      return;
-    }
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const [user] = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-      res.status(401).json({ error: 'invalid-credentials' });
-      return;
-    }
-
-    res.json({ token: issueToken(user.id) });
-  }),
-);
+// Signup/login are now served by better-auth at POST /api/auth/sign-up/email
+// and POST /api/auth/sign-in/email (see betterAuth.ts + index.ts's mount of
+// toNodeHandler(auth)) -- everything below is unchanged.
 
 // Used by pick-rockstar.tsx's "Let's Rock" step -- the stage name + chosen
 // avatar are collected one screen after the account itself is created.
@@ -95,6 +55,96 @@ authRouter.get(
       return;
     }
     res.json({ profile });
+  }),
+);
+
+// Bot/local matches never reach the server otherwise (pure client-side
+// chess.js, called from match.tsx's handleGameOver) -- this is the only
+// point a reward gets persisted for those modes. Only the outcome claim is
+// trusted, never a client-supplied amount, but there's no server-side match
+// record for bot/local play to validate the claim itself against, unlike
+// online matches (credited authoritatively in persistMatchResult.ts, which
+// never calls this route). Acceptable for now since chips aren't redeemable
+// for anything real anywhere in the app.
+authRouter.post(
+  '/me/match-reward',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { outcome } = req.body ?? {};
+    if (outcome !== 'win' && outcome !== 'loss' && outcome !== 'draw') {
+      res.status(400).json({ error: 'invalid-outcome' });
+      return;
+    }
+
+    const chipsGranted = MATCH_CHIP_REWARDS[outcome as MatchOutcome];
+    const [updated] = await db
+      .update(playerProfiles)
+      .set({ chips: sql`${playerProfiles.chips} + ${chipsGranted}`, updatedAt: new Date() })
+      .where(eq(playerProfiles.userId, req.userId as string))
+      .returning({ chips: playerProfiles.chips });
+    if (!updated) {
+      res.status(404).json({ error: 'profile-not-found' });
+      return;
+    }
+    res.json({ ok: true, chipsGranted, chips: updated.chips });
+  }),
+);
+
+authRouter.get(
+  '/me/daily-bonus/status',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json(await getDailyBonusStatus(req.userId as string));
+  }),
+);
+
+authRouter.post(
+  '/me/daily-bonus/claim',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await claimDailyBonus(req.userId as string);
+    if (result.alreadyClaimed) {
+      res.status(409).json({ error: 'already-claimed-today', day: result.day, streak: result.streak });
+      return;
+    }
+    res.json({
+      ok: true,
+      day: result.day,
+      streak: result.streak,
+      chipsGranted: result.chipsGranted,
+      gemsGranted: result.gemsGranted,
+      chips: result.chips,
+      gems: result.gems,
+    });
+  }),
+);
+
+authRouter.get(
+  '/me/spin/status',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json(await getSpinStatus(req.userId as string));
+  }),
+);
+
+authRouter.post(
+  '/me/spin',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await performSpin(req.userId as string);
+    if (result.alreadySpun) {
+      res.status(409).json({ error: 'already-spun-today' });
+      return;
+    }
+    res.json({
+      ok: true,
+      prizeId: result.prize.id,
+      label: result.prize.label,
+      rewardType: result.prize.rewardType,
+      rewardAmount: result.prize.rewardAmount,
+      chips: result.chips,
+      gems: result.gems,
+    });
   }),
 );
 

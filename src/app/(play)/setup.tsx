@@ -6,13 +6,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
 type Duration = '3m' | '5m' | '10m';
 const DURATIONS: Duration[] = ['3m', '5m', '10m'];
-
-// Mirrors the placeholder balance Home displays as "12.5M" in its
-// CurrencyPill -- used here only to decide which venues are locked.
-const PLACEHOLDER_CHIP_BALANCE = 12_500_000;
 
 interface Venue {
   id: string;
@@ -41,13 +38,14 @@ function formatChips(value: number): string {
 export default function PlaySetupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { chips } = usePlayerProfile();
   const [selectedVenueId, setSelectedVenueId] = useState('arena');
   const [duration, setDuration] = useState<Duration>('5m');
 
   const selectedVenue = VENUES.find((v) => v.id === selectedVenueId) ?? VENUES[2];
 
   function handleVenuePress(venue: Venue) {
-    if (venue.buyIn > PLACEHOLDER_CHIP_BALANCE) {
+    if (venue.buyIn > chips) {
       console.log('Venue locked - insufficient chips', venue.name);
       return;
     }
@@ -62,7 +60,7 @@ export default function PlaySetupScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Select Venue</Text>
-        <CurrencyPill type="chips" value="12.5M" />
+        <CurrencyPill type="chips" value={chips} />
       </View>
 
       <ScrollView
@@ -75,7 +73,7 @@ export default function PlaySetupScreen() {
           contentContainerStyle={styles.ladderRow}
         >
           {VENUES.map((venue) => {
-            const locked = venue.buyIn > PLACEHOLDER_CHIP_BALANCE;
+            const locked = venue.buyIn > chips;
             const isActive = !locked && selectedVenueId === venue.id;
             return (
               <Pressable

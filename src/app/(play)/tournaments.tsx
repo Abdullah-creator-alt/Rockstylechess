@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, ProgressBar, RockButton, RockCard, SectionLabel } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -52,6 +53,7 @@ const UPCOMING_EVENTS: UpcomingEvent[] = [
 export default function TournamentsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { chips } = usePlayerProfile();
 
   return (
     <View style={styles.root}>
@@ -83,7 +85,7 @@ export default function TournamentsScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Championship Circuit</Text>
-        <CurrencyPill type="chips" value="12.5M" />
+        <CurrencyPill type="chips" value={chips} />
       </View>
 
       <ScrollView

@@ -16,6 +16,12 @@ export interface ChatMessageWithId extends ChatMessagePayload {
 const RATE_LIMIT_WINDOW_MS = 10_000;
 const RATE_LIMIT_MAX_MESSAGES = 8;
 const MAX_MESSAGE_LENGTH = 200;
+// Chat isn't persisted server-side and the rate limit above only bounds
+// send *rate*, not total history -- an abandoned-but-open match could
+// otherwise accumulate an unbounded `messages` array for as long as the
+// screen stays mounted. Trimming the oldest entries keeps render/memory
+// cost bounded without touching ChatPanel.tsx's rendering at all.
+const MAX_MESSAGE_HISTORY = 200;
 
 interface UseMatchChatOptions {
   mode: GameMode;
@@ -56,7 +62,10 @@ export function useMatchChat({ mode, online, isOpen }: UseMatchChatOptions) {
     function handleChatMessage(payload: ChatMessagePayload) {
       nextIdRef.current += 1;
       const messageWithId = { ...payload, id: `${payload.sentAt}-${nextIdRef.current}` };
-      setMessages((prev) => [...prev, messageWithId]);
+      setMessages((prev) => {
+        const next = [...prev, messageWithId];
+        return next.length > MAX_MESSAGE_HISTORY ? next.slice(-MAX_MESSAGE_HISTORY) : next;
+      });
       if (!isOpenRef.current) {
         setUnreadCount((prev) => prev + 1);
         // Opponent-only -- a player who sends a message right as they close

@@ -138,7 +138,7 @@ export default function IronIdScreen() {
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Text style={styles.headerTitle}>Iron ID</Text>
         <View style={styles.headerRight}>
-          <CurrencyPill type="gems" value={1_400} />
+          <CurrencyPill type="gems" value={profile?.gems ?? 0} />
           <Pressable
             style={styles.settingsButton}
             onPress={() => {

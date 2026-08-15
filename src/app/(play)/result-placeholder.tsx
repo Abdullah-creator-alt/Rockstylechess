@@ -6,16 +6,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
+import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 
 type Outcome = 'win' | 'loss' | 'draw';
 
-// Sample chip/ELO numbers per outcome -- real currency/rating wiring is a
-// separate, later (backend) step. Route/filename kept as result-placeholder
+// ELO numbers are still sample/decorative -- rating changes aren't part of
+// this pass (chips/gems only). Route/filename kept as result-placeholder
 // per the original brief ("replaces result-placeholder.tsx, same route").
-const OUTCOME_NUMBERS: Record<Outcome, { chips: number; eloBefore: number; eloAfter: number }> = {
-  win: { chips: 475_000, eloBefore: 710, eloAfter: 726 },
-  loss: { chips: 0, eloBefore: 710, eloAfter: 694 },
-  draw: { chips: 50_000, eloBefore: 710, eloAfter: 710 },
+const OUTCOME_ELO: Record<Outcome, { eloBefore: number; eloAfter: number }> = {
+  win: { eloBefore: 710, eloAfter: 726 },
+  loss: { eloBefore: 710, eloAfter: 694 },
+  draw: { eloBefore: 710, eloAfter: 710 },
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -52,12 +53,21 @@ function useCountUp(target: number, durationMs = 1200) {
 export default function ResultScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { outcome: outcomeParam, reason } = useLocalSearchParams<{ outcome?: string; reason?: string }>();
+  const {
+    outcome: outcomeParam,
+    reason,
+    chipsGranted: chipsGrantedParam,
+  } = useLocalSearchParams<{ outcome?: string; reason?: string; chipsGranted?: string }>();
   const outcome: Outcome = outcomeParam === 'loss' || outcomeParam === 'draw' ? outcomeParam : 'win';
   const isVictory = outcome === 'win';
   const isDraw = outcome === 'draw';
 
-  const { chips, eloBefore, eloAfter } = OUTCOME_NUMBERS[outcome];
+  const { eloBefore, eloAfter } = OUTCOME_ELO[outcome];
+  // match.tsx always passes this (the real, just-granted amount) -- the
+  // reward table fallback only covers reaching this screen some other way
+  // (e.g. direct navigation during development).
+  const parsedChipsGranted = Number(chipsGrantedParam);
+  const chips = Number.isFinite(parsedChipsGranted) ? parsedChipsGranted : MATCH_CHIP_REWARDS[outcome];
   const chipsWon = useCountUp(chips);
   const eloDelta = eloAfter - eloBefore;
   const reasonLabel = reason ? REASON_LABEL[reason] : undefined;

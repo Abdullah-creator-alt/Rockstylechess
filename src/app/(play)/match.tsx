@@ -18,7 +18,11 @@ import { StockfishEngine, type StockfishEngineHandle } from '@/components/Stockf
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
 import { useMatchChat } from '@/hooks/useMatchChat';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { claimMatchReward } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
+import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -70,13 +74,14 @@ export default function MatchScreen() {
   const navigatedRef = useRef(false);
   const stockfishRef = useRef<StockfishEngineHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const { refresh: refreshPlayerProfile } = usePlayerProfile();
 
   const requestEngineMove = useCallback((fen: string, config: StockfishConfig): Promise<EngineMove | null> => {
     if (!stockfishRef.current) return Promise.resolve(null);
     return stockfishRef.current.requestBestMove(fen, config);
   }, []);
 
-  function handleGameOver(result: ChessGameResult) {
+  async function handleGameOver(result: ChessGameResult) {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
     // Close the chat panel before the transition below so it doesn't just
@@ -103,10 +108,34 @@ export default function MatchScreen() {
     }
     console.log('Game over', outcome, reason);
 
+    const chipsGranted = MATCH_CHIP_REWARDS[outcome];
+    if (mode !== 'online') {
+      // Bot/local matches never reach the server otherwise (pure
+      // client-side chess.js) -- this is the only point a reward gets
+      // persisted for those modes. Online matches are already credited
+      // authoritatively server-side, inside persistMatchResult.ts, at the
+      // same moment this fires -- calling the claim endpoint here too
+      // would double-credit.
+      const token = await getAuthToken();
+      if (token) {
+        try {
+          await claimMatchReward(token, outcome);
+        } catch (error) {
+          console.log('Failed to claim match reward', error);
+        }
+      }
+    }
+    // Picks up the new balance -- server-credited for online, just-claimed
+    // for bot/local, or a no-op for guests (still 'guest' status).
+    refreshPlayerProfile();
+
     // Brief pause so the final position (e.g. the checkmating move) is
     // visible for a beat before the Result screen takes over.
     setTimeout(() => {
-      router.replace({ pathname: '/result-placeholder', params: { outcome, reason } });
+      router.replace({
+        pathname: '/result-placeholder',
+        params: { outcome, reason, chipsGranted: String(chipsGranted) },
+      });
     }, 900);
   }
 

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, PlayerAvatar } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -82,6 +83,7 @@ const ACCENT_COLOR: Record<Accent, string> = {
 export default function BackstageAlertsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { gems } = usePlayerProfile();
   const [readIds, setReadIds] = useState<Set<string>>(
     new Set(NOTIFICATIONS.filter((n) => n.read).map((n) => n.id)),
   );
@@ -112,7 +114,7 @@ export default function BackstageAlertsScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Notifications</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
       <ScrollView

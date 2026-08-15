@@ -1,8 +1,8 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -13,28 +13,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
-import { CurrencyPill, EmberParticles, RockCard } from '@/components/ui';
+import { CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { getSpinStatus, spinWheel, type SpinResult } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
+import { ANGLE_PER_SEGMENT, SPIN_SEGMENTS, type SpinSegment } from '@/lib/spinPrizes';
 
-interface Prize {
-  label: string;
-  color: string;
-}
-
-// Mirrors the source's 8-prize wheel. Jackpot gets our ember accent instead
-// of an off-palette orange so it still reads as the "big win" segment.
-const PRIZES: Prize[] = [
-  { label: '500 CHIPS', color: Colors.bgBase },
-  { label: '10 GEMS', color: Colors.bgPanel },
-  { label: '1 VIP DAY', color: Colors.bgBase },
-  { label: '1000 CHIPS', color: Colors.bgPanel },
-  { label: '5 GEMS', color: Colors.bgBase },
-  { label: '2 VIP DAYS', color: Colors.bgPanel },
-  { label: 'JACKPOT', color: Colors.ember },
-  { label: '250 CHIPS', color: Colors.bgPanel },
-];
-
-const ANGLE_PER_SEGMENT = 360 / PRIZES.length;
 const WHEEL_SIZE = 300;
 
 function buildSegmentPath(startAngle: number, endAngle: number): string {
@@ -48,28 +33,69 @@ function buildSegmentPath(startAngle: number, endAngle: number): string {
 export default function SpinScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { status: profileStatus, gems, refresh } = usePlayerProfile();
   const rotation = useSharedValue(0);
   const totalRotationRef = useRef(0);
+  const [canSpin, setCanSpin] = useState<boolean | null>(null); // null = not loaded yet
   const [isSpinning, setIsSpinning] = useState(false);
-  const [result, setResult] = useState<Prize | null>(null);
+  const [result, setResult] = useState<SpinSegment | null>(null);
 
-  function handleSpinComplete(finalRotation: number) {
+  useEffect(() => {
+    if (profileStatus !== 'ready') return;
+    let cancelled = false;
+    (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      try {
+        const status = await getSpinStatus(token);
+        if (!cancelled) setCanSpin(status.canSpin);
+      } catch (error) {
+        console.log('Failed to load spin status', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileStatus]);
+
+  function handleSpinComplete(spinResult: SpinResult, segmentIndex: number) {
     setIsSpinning(false);
-    const normalizedAngle = (360 - (finalRotation % 360)) % 360;
-    const prizeIndex = Math.floor(normalizedAngle / ANGLE_PER_SEGMENT);
-    const winningPrize = PRIZES[prizeIndex];
-    console.log('Won:', winningPrize.label);
-    setResult(winningPrize);
+    setCanSpin(false);
+    setResult(SPIN_SEGMENTS[segmentIndex] ?? null);
+    refresh();
   }
 
-  function handleSpin() {
-    if (isSpinning) return;
+  async function handleSpin() {
+    if (isSpinning || !canSpin) return;
+    const token = await getAuthToken();
+    if (!token) return;
+
     setIsSpinning(true);
     setResult(null);
 
+    let spinResult: SpinResult;
+    try {
+      spinResult = await spinWheel(token);
+    } catch (error) {
+      console.log('Spin failed', error);
+      setIsSpinning(false);
+      setCanSpin(false);
+      return;
+    }
+
+    const segmentIndex = Math.max(
+      0,
+      SPIN_SEGMENTS.findIndex((s) => s.id === spinResult.prizeId),
+    );
     const extraRounds = 5 + Math.floor(Math.random() * 5);
-    const randomAngle = Math.floor(Math.random() * 360);
-    totalRotationRef.current += extraRounds * 360 + randomAngle;
+    // Land the fixed top pointer on the middle of the winning segment --
+    // reverse of the old "derive the prize from wherever the wheel lands"
+    // logic: the server already decided the prize, we just animate to it.
+    const segmentMidAngle = segmentIndex * ANGLE_PER_SEGMENT + ANGLE_PER_SEGMENT / 2;
+    const targetNormalized = (360 - segmentMidAngle) % 360;
+    const currentNormalized = totalRotationRef.current % 360;
+    const delta = (targetNormalized - currentNormalized + 360) % 360;
+    totalRotationRef.current += extraRounds * 360 + delta;
     const target = totalRotationRef.current;
 
     rotation.value = withTiming(
@@ -77,7 +103,7 @@ export default function SpinScreen() {
       { duration: 4000, easing: Easing.bezier(0.15, 0, 0.15, 1) },
       (finished) => {
         if (finished) {
-          runOnJS(handleSpinComplete)(target);
+          runOnJS(handleSpinComplete)(spinResult, segmentIndex);
         }
       },
     );
@@ -96,86 +122,89 @@ export default function SpinScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Daily Spin</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
-      <View style={[styles.content, { paddingBottom: Spacing.lg + insets.bottom }]}>
-        <Text style={styles.subheading}>Test your luck on the 45</Text>
+      {profileStatus === 'guest' ? (
+        <View style={styles.guestWrap}>
+          <Text style={styles.guestText}>Sign in to spin the wheel.</Text>
+          <RockButton label="Sign In" variant="primary" onPress={() => router.push('/sign-in')} />
+        </View>
+      ) : canSpin === null ? (
+        <ActivityIndicator color={Colors.cyan} style={styles.loadingSpinner} />
+      ) : (
+        <View style={[styles.content, { paddingBottom: Spacing.lg + insets.bottom }]}>
+          <Text style={styles.subheading}>Test your luck on the 45</Text>
 
-        <View style={styles.wheelWrap}>
-          <View style={styles.pointer}>
-            <Svg width={32} height={40} viewBox="0 0 40 50">
-              <Path d="M20 50L0 10C0 4.47715 4.47715 0 10 0H30C35.5228 0 40 4.47715 40 10L20 50Z" fill={Colors.crimson} />
-            </Svg>
-          </View>
-
-          <Animated.View style={[styles.wheel, wheelStyle]}>
-            <Svg width={WHEEL_SIZE} height={WHEEL_SIZE} viewBox="0 0 100 100">
-              {PRIZES.map((prize, i) => (
-                <Path
-                  key={prize.label}
-                  d={buildSegmentPath(i * ANGLE_PER_SEGMENT, (i + 1) * ANGLE_PER_SEGMENT)}
-                  fill={prize.color}
-                  stroke={withOpacity(Colors.chrome, 0.08)}
-                  strokeWidth={0.5}
-                />
-              ))}
-            </Svg>
-
-            <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-              {PRIZES.map((prize, i) => {
-                const midAngle = i * ANGLE_PER_SEGMENT + ANGLE_PER_SEGMENT / 2;
-                return (
-                  <View
-                    key={prize.label}
-                    style={[StyleSheet.absoluteFillObject, { transform: [{ rotate: `${midAngle}deg` }] }]}
-                  >
-                    <Text style={styles.segmentLabel}>{prize.label}</Text>
-                  </View>
-                );
-              })}
+          <View style={styles.wheelWrap}>
+            <View style={styles.pointer}>
+              <Svg width={32} height={40} viewBox="0 0 40 50">
+                <Path d="M20 50L0 10C0 4.47715 4.47715 0 10 0H30C35.5228 0 40 4.47715 40 10L20 50Z" fill={Colors.crimson} />
+              </Svg>
             </View>
-          </Animated.View>
 
-          <View style={styles.centerLabel}>
-            <Text style={styles.centerLabelNumber}>45</Text>
-            <Text style={styles.centerLabelSub}>RPM High Fidelity</Text>
+            <Animated.View style={[styles.wheel, wheelStyle]}>
+              <Svg width={WHEEL_SIZE} height={WHEEL_SIZE} viewBox="0 0 100 100">
+                {SPIN_SEGMENTS.map((segment, i) => (
+                  <Path
+                    key={segment.id}
+                    d={buildSegmentPath(i * ANGLE_PER_SEGMENT, (i + 1) * ANGLE_PER_SEGMENT)}
+                    fill={segment.color}
+                    stroke={withOpacity(Colors.chrome, 0.08)}
+                    strokeWidth={0.5}
+                  />
+                ))}
+              </Svg>
+
+              <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+                {SPIN_SEGMENTS.map((segment, i) => {
+                  const midAngle = i * ANGLE_PER_SEGMENT + ANGLE_PER_SEGMENT / 2;
+                  return (
+                    <View
+                      key={segment.id}
+                      style={[StyleSheet.absoluteFillObject, { transform: [{ rotate: `${midAngle}deg` }] }]}
+                    >
+                      <Text style={styles.segmentLabel}>{segment.label}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </Animated.View>
+
+            <View style={styles.centerLabel}>
+              <Text style={styles.centerLabelNumber}>45</Text>
+              <Text style={styles.centerLabelSub}>RPM High Fidelity</Text>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.actions}>
-          <Pressable
-            style={({ pressed }) => [styles.spinButton, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}
-            disabled={isSpinning}
-            onPress={handleSpin}
-          >
-            <LinearGradient
-              pointerEvents="none"
-              colors={[withOpacity(Colors.chrome, 0.4), withOpacity(Colors.chrome, 0)]}
-              style={styles.spinButtonGloss}
-            />
-            <Text style={styles.spinButtonText}>{isSpinning ? 'Spinning…' : 'Spin'}</Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [styles.extraSpinButton, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}
-            onPress={() => console.log('Extra Spin pressed')}
-          >
-            <MaterialCommunityIcons name="cursor-default-click-outline" size={18} color={Colors.cyan} />
-            <Text style={styles.extraSpinText}>Extra Spin</Text>
-          </Pressable>
-        </View>
-
-        {result ? (
-          <RockCard glowColor={Colors.gold} style={styles.resultCard}>
-            <Text style={styles.resultLabel}>You Won!</Text>
-            <Text style={styles.resultValue}>{result.label}</Text>
-            <Pressable onPress={() => setResult(null)}>
-              <Text style={styles.resultDismiss}>Nice — collect later</Text>
+          <View style={styles.actions}>
+            <Pressable
+              style={({ pressed }) => [styles.spinButton, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}
+              disabled={isSpinning || !canSpin}
+              onPress={handleSpin}
+            >
+              <LinearGradient
+                pointerEvents="none"
+                colors={[withOpacity(Colors.chrome, 0.4), withOpacity(Colors.chrome, 0)]}
+                style={styles.spinButtonGloss}
+              />
+              <Text style={styles.spinButtonText}>
+                {isSpinning ? 'Spinning…' : canSpin ? 'Spin' : 'Come Back Tomorrow'}
+              </Text>
             </Pressable>
-          </RockCard>
-        ) : null}
-      </View>
+          </View>
+
+          {result ? (
+            <RockCard glowColor={Colors.gold} style={styles.resultCard}>
+              <Text style={styles.resultLabel}>You Won!</Text>
+              <Text style={styles.resultValue}>{result.label}</Text>
+              <Pressable onPress={() => setResult(null)}>
+                <Text style={styles.resultDismiss}>Nice — collect later</Text>
+              </Pressable>
+            </RockCard>
+          ) : null}
+        </View>
+      )}
     </View>
   );
 }
@@ -211,6 +240,22 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     flex: 1,
     textAlign: 'center',
+  },
+  guestWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+  },
+  guestText: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  loadingSpinner: {
+    marginTop: Spacing.xl * 2,
   },
   content: {
     flex: 1,
@@ -308,24 +353,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.display,
     fontSize: 20,
     color: Colors.bgBase,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  extraSpinButton: {
-    height: 52,
-    borderRadius: Radius.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    backgroundColor: withOpacity(Colors.bgPanel, 0.9),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.chromeDark, 0.4),
-  },
-  extraSpinText: {
-    fontFamily: Fonts.heading,
-    fontSize: 14,
-    color: Colors.textPrimary,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },

@@ -1,10 +1,20 @@
-import { bigint, char, integer, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, char, integer, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
+// Doubles as better-auth's `user` model (see betterAuth.ts's drizzleAdapter
+// schema mapping) -- name/emailVerified/image/updatedAt are columns it
+// requires. Credential (password) storage lives on the `account` table
+// (see auth.ts's schema), not here, per better-auth's convention.
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: varchar('email', { length: 255 }).notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
+  emailVerified: boolean('email_verified').notNull().default(false),
+  // Populated with the email's local-part at signup; pick-rockstar.tsx
+  // collects the real display name (playerProfiles.displayName) one screen
+  // later, unchanged.
+  name: text('name').notNull(),
+  image: text('image'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // 1:1 with users -- kept as a separate table (rather than columns on users)

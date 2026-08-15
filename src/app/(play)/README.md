@@ -31,3 +31,14 @@ files without adding `/play` to the URL/deep-link path.
   (heuristic minimax), The Reaper=stockfish-lite (~1600 Elo), King Axl=
   stockfish-strong (~2200 Elo) — forwarded to `/match` as a route param.
 - `tournaments.tsx` — built from `tournaments_pro_stage_animated`.
+- `puzzles.tsx` — puzzle gallery, grouped by rating band into the same buckets
+  `scripts/curate-puzzles.mjs` curated (`src/lib/puzzleCatalog.ts`, ~250 puzzles
+  sourced from the Lichess CC0 puzzle database). Each entry forwards its `id` to
+  `/puzzle-match` as `puzzleId`.
+- `puzzle-match.tsx` — single-player puzzle solving, a dedicated screen rather
+  than a `match.tsx` mode (no opponent identity/Resign/Draw/Chat concepts apply,
+  and puzzle completion never reaches `match.tsx`'s `handleGameOver`/
+  `result-placeholder.tsx` routing). Uses `useChessGame`'s `mode: 'puzzle'`,
+  which auto-plays the puzzle's setup move, validates each solver move against
+  the expected solution, and auto-plays any scripted opponent replies in
+  between. Client-only — no server persistence of puzzle attempts yet.

@@ -100,7 +100,7 @@ export default function WorldRankingsScreen() {
           <PlayerAvatar emoji="🤘" size="small" />
           <Text style={styles.headerTitle}>World Rankings</Text>
         </View>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={myProfile?.gems ?? 0} />
       </View>
 
       <View style={styles.filterBar}>

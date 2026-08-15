@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/theme';
+import { PlayerProfileProvider } from '@/hooks/usePlayerProfile';
 
 // Keep the native splash screen visible until fonts are ready, so there's
 // no flash of unstyled text on first launch.
@@ -35,13 +36,15 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: Colors.bgBase },
-          }}
-        />
+        <PlayerProfileProvider>
+          <StatusBar style="light" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: Colors.bgBase },
+            }}
+          />
+        </PlayerProfileProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

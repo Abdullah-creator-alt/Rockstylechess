@@ -17,7 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
-import { signup } from '@/lib/api';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { signUpWithEmail } from '@/lib/authClient';
 import { setAuthToken } from '@/lib/authStorage';
 import { reauthenticateSocket } from '@/lib/socket';
 
@@ -32,6 +33,7 @@ const CHIPS_DECOR_URI =
 export default function SignUpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { refresh: refreshPlayerProfile } = usePlayerProfile();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -46,9 +48,14 @@ export default function SignUpScreen() {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const { token } = await signup(email.trim().toLowerCase(), password);
+      const { token } = await signUpWithEmail(email.trim().toLowerCase(), password);
       await setAuthToken(token);
       reauthenticateSocket(token);
+      // The shared player-profile context (mounted at the app root) fetched
+      // once at launch, before this account existed -- refresh it now so
+      // every CurrencyPill reflects the real balance instead of staying in
+      // its initial 'guest' state.
+      refreshPlayerProfile();
       router.replace('/pick-rockstar');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Something went wrong');

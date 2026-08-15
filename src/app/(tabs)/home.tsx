@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
 type Duration = '3m' | '5m' | '10m';
 const DURATIONS: Duration[] = ['3m', '5m', '10m'];
@@ -37,25 +38,26 @@ interface BentoTile {
   accent: string;
   size: 'lg' | 'sm';
   /** Omit for tiles with no destination screen yet (still console.log-only). */
-  route?: '/setup' | '/tournaments' | '/bots' | '/game-room';
+  route?: '/setup' | '/tournaments' | '/bots' | '/game-room' | '/puzzles';
 }
 
 const BENTO_TILES: BentoTile[] = [
   { id: 'iron-duel', title: 'Iron Duel', subtitle: '1v1 High Stakes', icon: 'sword-cross', accent: Colors.cyan, size: 'lg', route: '/setup' },
   { id: 'tournaments', title: 'Tournaments', subtitle: '8 Live Now', icon: 'trophy', accent: Colors.emberLight, size: 'lg', route: '/tournaments' },
   { id: 'bots', title: 'Vs Bots', icon: 'robot', accent: Colors.cyan, size: 'sm', route: '/bots' },
-  { id: 'puzzles', title: 'Puzzles', icon: 'puzzle', accent: Colors.cyan, size: 'sm' },
+  { id: 'puzzles', title: 'Puzzles', icon: 'puzzle', accent: Colors.cyan, size: 'sm', route: '/puzzles' },
   { id: 'learn', title: 'Learn', icon: 'school', accent: Colors.cyan, size: 'sm' },
   // Replaces the old decorative, unwired "Watch" tile -- distinct warm
-  // accent (rather than the cyan every other small tile uses) so the one
-  // real, newly-functional tile doesn't blend into the still-decorative
-  // ones next to it (Puzzles/Learn).
+  // accent (rather than the cyan every other small tile uses) so the two
+  // real, functional tiles (Puzzles/Game Room) don't blend into the still-
+  // decorative one next to them (Learn).
   { id: 'game-room', title: 'Game Room', subtitle: 'Play a Friend', icon: 'door-open', accent: Colors.emberLight, size: 'sm', route: '/game-room' },
 ];
 
 export default function HomeLobbyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { chips, gems } = usePlayerProfile();
   const [selectedVenue, setSelectedVenue] = useState('arena');
   const [duration, setDuration] = useState<Duration>('5m');
 
@@ -97,7 +99,7 @@ export default function HomeLobbyScreen() {
         <View style={styles.topBarRight}>
           <CurrencyPill
             type="chips"
-            value="12.5M"
+            value={chips}
             onPressAdd={() => {
               console.log('Buy chips');
               router.push('/shop');
@@ -105,7 +107,7 @@ export default function HomeLobbyScreen() {
           />
           <CurrencyPill
             type="gems"
-            value={1_400}
+            value={gems}
             onPressAdd={() => {
               console.log('Buy gems');
               router.push('/shop');

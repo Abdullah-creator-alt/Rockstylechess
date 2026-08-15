@@ -98,13 +98,31 @@ export function ChessBoard({
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
 
+  // Exact 8x8. Squares are laid out at an integer pixel size rather than with
+  // flex:1, because eight flex children of a fractional width get rounded
+  // independently -- squares end up a pixel wider or narrower than their
+  // neighbours and the file boundaries stop lining up down the board. Flooring
+  // to a whole number and sizing the grid to 8x that keeps every square
+  // identical and perfectly square; the few leftover pixels go to the frame.
+  // Declared up here (rather than down with boardSize below) so the slide
+  // effect below can freeze the value current at animation-start time.
+  const squareSize = Math.floor(gridSize / 8);
+
   // Slide-in ghost for moves that appeared without the player dragging/tapping
   // them into place (the bot's moves) -- see `animateLastMove`. Tracks the
   // previous lastMove so it only fires once per new move, not on every
-  // unrelated re-render.
-  const [slidingMove, setSlidingMove] = useState<{ from: string; to: string; piece: string } | null>(
-    null,
-  );
+  // unrelated re-render. `squareSize` is captured here at the moment the
+  // slide starts (not read live by MoveGhost) -- ChessBoard isn't memoized,
+  // so it re-renders on every unrelated parent update (turn changes, a
+  // captured piece appearing in a PlayerRow, etc.) for the whole ~420ms the
+  // animation runs; if gridSize/squareSize ever changes mid-flight (layout
+  // passes settling, especially prone to happening more than once on
+  // Android), a live squareSize would shift MoveGhost's fromX/fromY/toX/toY
+  // out from under the in-flight tween, visible as a small backward snap
+  // near the end rather than a full reset.
+  const [slidingMove, setSlidingMove] = useState<
+    { from: string; to: string; piece: string; squareSize: number } | null
+  >(null);
   const slideProgress = useSharedValue(0);
   const prevLastMoveRef = useRef<{ from: string; to: string } | null>(null);
   // Bumped every time a new slide starts. A stale withTiming completion
@@ -113,6 +131,13 @@ export function ChessBoard({
   // this before clearing state, so it can't wipe out a newer, still-running
   // slide out from under it.
   const slideTokenRef = useRef(0);
+  // Read inside the effect via ref rather than as a dependency -- the effect
+  // only needs `board` to look up which piece landed on `to`, not to decide
+  // whether a new move happened (`isNewMove` below already does that from
+  // `lastMove` alone). Depending on `board` directly would re-run the effect
+  // on any board reference change, resetting slideProgress mid-tween.
+  const boardRef = useRef(board);
+  boardRef.current = board;
 
   function clearSlideIfCurrent(token: number) {
     if (slideTokenRef.current === token) setSlidingMove(null);
@@ -126,25 +151,18 @@ export function ChessBoard({
     if (!isNewMove || !animateLastMove) return;
 
     const [toRow, toCol] = squareToRowCol(lastMove.to);
-    const piece = board[toRow]?.[toCol];
+    const piece = boardRef.current[toRow]?.[toCol];
     if (!piece) return;
 
     const token = (slideTokenRef.current += 1);
-    setSlidingMove({ from: lastMove.from, to: lastMove.to, piece });
+    setSlidingMove({ from: lastMove.from, to: lastMove.to, piece, squareSize });
     slideProgress.value = 0;
     slideProgress.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }, (finished) => {
       if (finished) runOnJS(clearSlideIfCurrent)(token);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastMove, animateLastMove, board]);
+  }, [lastMove, animateLastMove]);
 
-  // Exact 8x8. Squares are laid out at an integer pixel size rather than with
-  // flex:1, because eight flex children of a fractional width get rounded
-  // independently -- squares end up a pixel wider or narrower than their
-  // neighbours and the file boundaries stop lining up down the board. Flooring
-  // to a whole number and sizing the grid to 8x that keeps every square
-  // identical and perfectly square; the few leftover pixels go to the frame.
-  const squareSize = Math.floor(gridSize / 8);
   const boardSize = squareSize * 8;
   const interactive = Boolean(onSquarePress);
 
@@ -266,12 +284,12 @@ export function ChessBoard({
                 a second gradient on top double-counted it -- darkening the lower
                 board past the render and washing out the upper. */}
 
-            {slidingMove && squareSize > 0 ? (
+            {slidingMove && slidingMove.squareSize > 0 ? (
               <MoveGhost
                 piece={slidingMove.piece}
                 from={slidingMove.from}
                 to={slidingMove.to}
-                squareSize={squareSize}
+                squareSize={slidingMove.squareSize}
                 progress={slideProgress}
               />
             ) : null}
@@ -428,7 +446,15 @@ const Square = memo(function Square({
 // same "I can see where that went" legibility a human's own gesture already
 // provides. Piggybacks on the same absolute-positioned-over-the-grid trick as
 // DragGhost, just driven by a timed progress value instead of a finger.
-function MoveGhost({
+// Wrapped in memo (same pattern as Square below) so it doesn't re-render --
+// and force Reanimated to re-register its useAnimatedStyle mapping -- every
+// time ChessBoard re-renders for an unrelated reason (turn changes, a
+// captured piece appearing in a PlayerRow, etc.) while a slide is mid-flight.
+// All of its props are stable for a slide's whole duration: piece/from/to/
+// squareSize are frozen into `slidingMove` once at slide-start (see the
+// effect above), and `progress` is a useSharedValue, whose identity is
+// stable across renders like a ref.
+const MoveGhost = memo(function MoveGhost({
   piece,
   from,
   to,
@@ -463,7 +489,7 @@ function MoveGhost({
       <PieceGlyph piece={piece} squareSize={squareSize} />
     </Animated.View>
   );
-}
+});
 
 function DragGhost({
   piece,

@@ -17,7 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
-import { login } from '@/lib/api';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { signInWithEmail } from '@/lib/authClient';
 import { setAuthToken } from '@/lib/authStorage';
 import { reauthenticateSocket } from '@/lib/socket';
 
@@ -29,6 +30,7 @@ const ARENA_BACKGROUND_URI =
 export default function SignInScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { refresh: refreshPlayerProfile } = usePlayerProfile();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -38,9 +40,12 @@ export default function SignInScreen() {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const { token } = await login(email.trim().toLowerCase(), password);
+      const { token } = await signInWithEmail(email.trim().toLowerCase(), password);
       await setAuthToken(token);
       reauthenticateSocket(token);
+      // See sign-up.tsx's identical call -- picks up the now-signed-in
+      // account's real balance instead of the initial 'guest' state.
+      refreshPlayerProfile();
       router.replace('/home');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Something went wrong');

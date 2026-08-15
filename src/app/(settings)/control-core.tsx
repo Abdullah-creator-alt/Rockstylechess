@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { clearAuthToken } from '@/lib/authStorage';
 import { clearSocketAuth } from '@/lib/socket';
 
@@ -22,10 +23,15 @@ export default function ControlCoreScreen() {
   const insets = useSafeAreaInsets();
   const [musicOn, setMusicOn] = useState(false);
   const [soundFxOn, setSoundFxOn] = useState(true);
+  const { refresh: refreshPlayerProfile, gems } = usePlayerProfile();
 
   async function handleLogout() {
     await clearAuthToken();
     clearSocketAuth();
+    // Resets the shared profile context back to its guest state (no token
+    // -> refresh() resolves to status: 'guest'), so a next sign-in/sign-up
+    // doesn't briefly show the previous account's stale balance.
+    refreshPlayerProfile();
     router.replace('/sign-up');
   }
 
@@ -66,7 +72,7 @@ export default function ControlCoreScreen() {
           <PlayerAvatar emoji="🤘" size="small" />
           <Text style={styles.headerTitle}>Control Core</Text>
         </View>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
       <ScrollView

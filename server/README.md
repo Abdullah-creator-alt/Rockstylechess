@@ -57,6 +57,17 @@ npx drizzle-kit migrate    # applies pending migrations to $DATABASE_URL
 invoke it as `node node_modules/drizzle-kit/bin.cjs <command>` if `npx`
 doesn't resolve it.)
 
+Seeding: the `spin_prizes` catalog table has no rows until seeded --
+`POST /me/spin` throws a clean 500 (`spin-prizes-not-seeded`) until this has
+been run once against `$DATABASE_URL`:
+
+```bash
+npm run seed:spin
+```
+
+Idempotent (upsert by `id`, not insert-only) -- safe to re-run any time the
+prize amounts/weights in `src/spinPrizes.ts` are tuned.
+
 Local dev has no Postgres/Docker installed by default on this machine; the
 simplest path is provisioning one Postgres instance on Railway and pointing
 both local dev and production at the same `DATABASE_URL` for now (see
@@ -152,6 +163,8 @@ Railway supports deploying from a subdirectory of a monorepo:
 7. Run `npx drizzle-kit migrate` once against the Railway `DATABASE_URL`
    (from a local shell with that URL exported, or a Railway one-off run) to
    create the tables before the first real request hits `/auth/signup`.
+   Also run `npm run seed:spin` once, same target, before the daily spin
+   wheel is used for the first time.
 8. Copy the generated public URL (`https://<app>.up.railway.app`) into the
    client's `EXPO_PUBLIC_SERVER_URL`, using `wss://` for the Socket.IO
    client (Railway terminates TLS at the edge).

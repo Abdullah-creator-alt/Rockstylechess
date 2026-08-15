@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, PlayerAvatar } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
 interface Conversation {
   id: string;
@@ -56,6 +57,7 @@ const SAMPLE_THREAD: Record<string, ChatMessage[]> = {
 export default function MessagesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { gems } = usePlayerProfile();
   const [openConversationId, setOpenConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [extraMessages, setExtraMessages] = useState<Record<string, ChatMessage[]>>({});
@@ -89,7 +91,7 @@ export default function MessagesScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>{openConversation ? openConversation.name : 'Messages'}</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
       {openConversation ? (

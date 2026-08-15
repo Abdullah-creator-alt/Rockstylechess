@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, PlayerAvatar, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { deleteAccount } from '@/lib/api';
 import { clearAuthToken, getAuthToken } from '@/lib/authStorage';
 import { clearSocketAuth } from '@/lib/socket';
@@ -29,6 +30,7 @@ const LINKED_ACCOUNTS: LinkedAccount[] = [
 export default function AccountSecurityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { refresh: refreshPlayerProfile, gems } = usePlayerProfile();
   const [isDeleting, setIsDeleting] = useState(false);
 
   function handleDeletePress() {
@@ -55,6 +57,9 @@ export default function AccountSecurityScreen() {
       await deleteAccount(token);
       await clearAuthToken();
       clearSocketAuth();
+      // Same as control-core.tsx's logout -- resets the shared profile
+      // context back to its guest state.
+      refreshPlayerProfile();
       router.replace('/sign-up');
     } catch (error) {
       console.log('Delete account failed', error);
@@ -73,7 +78,7 @@ export default function AccountSecurityScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Linked Accounts</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
       <ScrollView

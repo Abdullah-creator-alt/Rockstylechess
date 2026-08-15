@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomNav, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
 import type { BotDifficulty } from '@/hooks/useChessGame';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
 interface Bot {
   id: string;
@@ -34,6 +35,7 @@ const BOTS: Bot[] = [
 export default function BotsGalleryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { gems } = usePlayerProfile();
 
   function handleBotPress(bot: Bot) {
     if (bot.locked) {
@@ -51,7 +53,7 @@ export default function BotsGalleryScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Challenge the Legends</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
       <ScrollView

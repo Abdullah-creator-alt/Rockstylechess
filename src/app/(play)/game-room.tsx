@@ -14,6 +14,7 @@ import Animated, {
 
 import { CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { getPlayerId } from '@/lib/playerId';
 import { ensureAuthenticated, getSocket } from '@/lib/socket';
 import type { QueueMatchedPayload, RoomCreatedPayload, RoomErrorPayload } from '@/lib/onlineMatch';
@@ -29,6 +30,7 @@ type CreateState = 'idle' | 'creating' | 'waiting';
 export default function GameRoomScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { gems } = usePlayerProfile();
   const [tab, setTab] = useState<Tab>('create');
 
   const [createState, setCreateState] = useState<CreateState>('idle');
@@ -129,7 +131,7 @@ export default function GameRoomScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Game Room</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
       <View style={styles.tabBar}>

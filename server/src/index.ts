@@ -1,12 +1,15 @@
 import './env.js';
 
+import { toNodeHandler } from 'better-auth/node';
 import cors from 'cors';
 import express from 'express';
 import { createServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 
+import { allowedWebOrigins } from './allowedOrigins.js';
 import { authRouter } from './auth.js';
 import { socketAuth } from './authMiddleware.js';
+import { auth } from './betterAuth.js';
 import { allowChatMessage, clearChatRateLimit, sanitizeChatText } from './chat.js';
 import { persistMatchResult } from './db/persistMatchResult.js';
 import { cancelRoomBySocketId, createRoom, joinRoom } from './gameRoom.js';
@@ -36,7 +39,10 @@ function isVenueTier(value: unknown): value is VenueTier {
 }
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: allowedWebOrigins, credentials: true }));
+// Mounted before express.json() -- better-auth's Express handler hangs if
+// body parsing runs first (it reads the raw request body itself).
+app.all('/api/auth/*', toNodeHandler(auth));
 app.use(express.json());
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use(authRouter);
@@ -51,7 +57,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 });
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
+const io = new Server(httpServer, { cors: { origin: allowedWebOrigins } });
 io.use(socketAuth);
 
 // socket.id -> guestId, so a disconnect/rejoin (which gets a fresh socket.id)

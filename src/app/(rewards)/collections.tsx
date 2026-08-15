@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, ProgressBar, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
 // Real, currently-live Stitch preview assets (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -111,6 +112,7 @@ const CARD_SETS: CardSet[] = [
 export default function CollectionsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { gems } = usePlayerProfile();
 
   return (
     <View style={styles.root}>
@@ -131,7 +133,7 @@ export default function CollectionsScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Collections</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
       <ScrollView

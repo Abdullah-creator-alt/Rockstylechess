@@ -23,17 +23,10 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
   return data;
 }
 
-export interface AuthResponse {
-  token: string;
-}
-
-export function signup(email: string, password: string): Promise<AuthResponse> {
-  return request('/auth/signup', { method: 'POST', body: { email, password } });
-}
-
-export function login(email: string, password: string): Promise<AuthResponse> {
-  return request('/auth/login', { method: 'POST', body: { email, password } });
-}
+// Signup/login now go through authClient.ts (better-auth) instead of this
+// plain fetch wrapper -- everything below is still a regular REST call
+// guarded by the bearer token that produces, validated server-side via
+// auth.api.getSession instead of jwt.verify.
 
 export function updateProfile(
   token: string,
@@ -68,6 +61,70 @@ export interface PlayerProfile {
 
 export function getMyProfile(token: string): Promise<{ profile: PlayerProfile }> {
   return request('/me/profile', { method: 'GET', token });
+}
+
+// Bot/local matches never reach the server otherwise (pure client-side
+// chess.js) -- this is the one point a reward gets persisted for those
+// modes. Online matches are credited authoritatively server-side instead
+// (see persistMatchResult.ts), so this is never called for mode: 'online'.
+export function claimMatchReward(
+  token: string,
+  outcome: 'win' | 'loss' | 'draw',
+): Promise<{ ok: true; chipsGranted: number; chips: number }> {
+  return request('/me/match-reward', { method: 'POST', body: { outcome }, token });
+}
+
+export interface DailyBonusStatus {
+  currentStreak: number;
+  canClaimToday: boolean;
+  nextClaimDay: number; // 1-7
+}
+
+export function getDailyBonusStatus(token: string): Promise<DailyBonusStatus> {
+  return request('/me/daily-bonus/status', { method: 'GET', token });
+}
+
+export interface DailyBonusClaimResult {
+  ok: true;
+  day: number;
+  streak: number;
+  chipsGranted: number;
+  gemsGranted: number;
+  chips: number;
+  gems: number;
+}
+
+// Rejects with Error('already-claimed-today') on a same-UTC-day repeat call
+// (the request() helper throws data.error on non-2xx) -- callers catch that
+// specifically to show a "come back tomorrow" state instead of a generic error.
+export function claimDailyBonus(token: string): Promise<DailyBonusClaimResult> {
+  return request('/me/daily-bonus/claim', { method: 'POST', token });
+}
+
+export interface SpinStatus {
+  canSpin: boolean;
+}
+
+export function getSpinStatus(token: string): Promise<SpinStatus> {
+  return request('/me/spin/status', { method: 'GET', token });
+}
+
+export interface SpinResult {
+  ok: true;
+  prizeId: string;
+  label: string;
+  rewardType: 'chips' | 'gems' | 'xp';
+  rewardAmount: number;
+  chips: number;
+  gems: number;
+}
+
+// The server picks the prize before responding (see server/src/db/spin.ts) --
+// the client only animates the wheel to whichever prizeId comes back, it
+// never decides the outcome itself. Rejects with Error('already-spun-today')
+// on a same-UTC-day repeat call.
+export function spinWheel(token: string): Promise<SpinResult> {
+  return request('/me/spin', { method: 'POST', token });
 }
 
 export interface MatchHistoryEntry {

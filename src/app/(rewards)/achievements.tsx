@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, ProgressBar, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -37,6 +38,7 @@ const BADGES: Badge[] = [
 export default function AchievementsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { gems } = usePlayerProfile();
 
   return (
     <View style={styles.root}>
@@ -57,7 +59,7 @@ export default function AchievementsScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Hall of Fame</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
       <ScrollView

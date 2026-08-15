@@ -1,12 +1,16 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CurrencyPill, ProgressBar, RockCard } from '@/components/ui';
+import { CurrencyPill, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { claimDailyBonus, getDailyBonusStatus, type DailyBonusStatus } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
+import { DAILY_BONUS_REWARDS, type DailyBonusReward } from '@/lib/dailyBonusRewards';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -15,28 +19,66 @@ const JACKPOT_CHEST_URI =
 
 type DayState = 'claimed' | 'current' | 'upcoming';
 
-interface DayReward {
-  day: number;
-  state: DayState;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  label: string;
+function dayState(day: number, cycleDay: number): DayState {
+  if (day < cycleDay) return 'claimed';
+  if (day === cycleDay) return 'current';
+  return 'upcoming';
 }
 
-// Hardcoded "Day 4, streak active" sample state -- no real streak-tracking
-// logic yet, per the brief.
-const DAYS: DayReward[] = [
-  { day: 1, state: 'claimed', icon: 'check-circle', label: '50 Coins' },
-  { day: 2, state: 'claimed', icon: 'check-circle', label: '100 Coins' },
-  { day: 3, state: 'claimed', icon: 'check-circle', label: '1 Gem' },
-  { day: 4, state: 'current', icon: 'diamond-stone', label: '5 Gems' },
-  { day: 5, state: 'upcoming', icon: 'poker-chip', label: '200 Coins' },
-  { day: 6, state: 'upcoming', icon: 'gift', label: 'Gift Box' },
-];
+// Icon reflects what the day actually pays out -- a mixed chips+gems day
+// (Gift Box) gets a gift icon, a pure-gems day gets the gem icon, everything
+// else (including the old mock's always-diamond-stone "current day" icon,
+// which was wrong whenever the current day's reward was chips) gets chips.
+function rewardIcon(reward: DailyBonusReward): keyof typeof MaterialCommunityIcons.glyphMap {
+  if (reward.chips > 0 && reward.gems > 0) return 'gift';
+  if (reward.gems > 0) return 'diamond-stone';
+  return 'poker-chip';
+}
 
 export default function DailyBonusScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [claimed, setClaimed] = useState(false);
+  const { status: profileStatus, gems, refresh } = usePlayerProfile();
+  const [bonusStatus, setBonusStatus] = useState<DailyBonusStatus | null>(null);
+  const [claiming, setClaiming] = useState(false);
+
+  useEffect(() => {
+    if (profileStatus !== 'ready') return;
+    let cancelled = false;
+    (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      try {
+        const status = await getDailyBonusStatus(token);
+        if (!cancelled) setBonusStatus(status);
+      } catch (error) {
+        console.log('Failed to load daily bonus status', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileStatus]);
+
+  async function handleClaim() {
+    if (!bonusStatus?.canClaimToday || claiming) return;
+    setClaiming(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) return;
+      const result = await claimDailyBonus(token);
+      setBonusStatus({ currentStreak: result.streak, canClaimToday: false, nextClaimDay: result.day });
+      refresh();
+    } catch (error) {
+      console.log('Failed to claim daily bonus', error);
+    } finally {
+      setClaiming(false);
+    }
+  }
+
+  const cycleDay = bonusStatus?.nextClaimDay ?? 1;
+  const canClaimToday = bonusStatus?.canClaimToday ?? false;
+  const streak = bonusStatus?.currentStreak ?? 0;
 
   return (
     <View style={styles.root}>
@@ -45,72 +87,106 @@ export default function DailyBonusScreen() {
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Daily Rewards</Text>
-        <CurrencyPill type="gems" value={1_400} />
+        <CurrencyPill type="gems" value={gems} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.streakHeading}>
-          <Text style={styles.streakLabel}>Login Streak:</Text>
-          <Text style={styles.streakValue}>4 Days</Text>
+      {profileStatus === 'guest' ? (
+        <View style={styles.guestWrap}>
+          <Text style={styles.guestText}>Sign in to claim daily rewards.</Text>
+          <RockButton label="Sign In" variant="primary" onPress={() => router.push('/sign-in')} />
         </View>
-
-        <View style={styles.grid}>
-          {DAYS.map((reward) => (
-            <DayCard key={reward.day} reward={reward} claimed={claimed} onClaim={() => setClaimed(true)} />
-          ))}
-        </View>
-
-        <RockCard glowColor={Colors.emberLight} style={styles.jackpotCard}>
-          <Text style={styles.jackpotLabel}>Day 7 — Grand Jackpot</Text>
-          <Image
-            source={{ uri: JACKPOT_CHEST_URI }}
-            contentFit="contain"
-            cachePolicy="memory-disk"
-            transition={300}
-            style={styles.jackpotImage}
-          />
-          <Text style={styles.jackpotTitle}>Mystery Loot Drop</Text>
-          <Text style={styles.jackpotBody}>
-            Unlock exclusive avatars, rare board themes, and huge gem bundles.
-          </Text>
-          <ProgressBar progress={4 / 7} />
-          <View style={styles.jackpotFooterRow}>
-            <Text style={styles.jackpotFooterLabel}>Day 4 Progress</Text>
-            <Text style={styles.jackpotFooterDays}>3 Days Left</Text>
+      ) : !bonusStatus ? (
+        <ActivityIndicator color={Colors.cyan} style={styles.loadingSpinner} />
+      ) : (
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.streakHeading}>
+            <Text style={styles.streakLabel}>Login Streak:</Text>
+            <Text style={styles.streakValue}>{streak} Days</Text>
           </View>
-        </RockCard>
 
-        <Text style={styles.disclaimer}>
-          Maintain your streak to increase your luck for the Day 7 jackpot. Miss a day, and the cycle
-          resets to Day 1!
-        </Text>
-      </ScrollView>
+          <View style={styles.grid}>
+            {DAILY_BONUS_REWARDS.slice(0, 6).map((reward) => (
+              <DayCard
+                key={reward.day}
+                day={reward.day}
+                label={reward.label}
+                icon={rewardIcon(reward)}
+                state={dayState(reward.day, cycleDay)}
+                claimedToday={reward.day === cycleDay && !canClaimToday}
+                onClaim={handleClaim}
+              />
+            ))}
+          </View>
+
+          <RockCard glowColor={Colors.emberLight} style={styles.jackpotCard}>
+            <Text style={styles.jackpotLabel}>Day 7 — Grand Jackpot</Text>
+            <Image
+              source={{ uri: JACKPOT_CHEST_URI }}
+              contentFit="contain"
+              cachePolicy="memory-disk"
+              transition={300}
+              style={styles.jackpotImage}
+            />
+            <Text style={styles.jackpotTitle}>Mystery Loot Drop</Text>
+            <Text style={styles.jackpotBody}>
+              Unlock exclusive avatars, rare board themes, and huge gem bundles.
+            </Text>
+            <ProgressBar progress={Math.min(cycleDay, 7) / 7} />
+            <View style={styles.jackpotFooterRow}>
+              <Text style={styles.jackpotFooterLabel}>Day {Math.min(cycleDay, 7)} Progress</Text>
+              <Text style={styles.jackpotFooterDays}>
+                {cycleDay >= 7 ? 'Today!' : `${7 - cycleDay} Days Left`}
+              </Text>
+            </View>
+            {cycleDay === 7 ? (
+              <Pressable
+                style={[styles.claimButton, styles.jackpotClaimButton]}
+                disabled={!canClaimToday}
+                hitSlop={{ top: 6, bottom: 10, left: 6, right: 6 }}
+                onPress={handleClaim}
+              >
+                <Text style={styles.claimButtonText}>{canClaimToday ? 'Claim Jackpot' : 'Claimed'}</Text>
+              </Pressable>
+            ) : null}
+          </RockCard>
+
+          <Text style={styles.disclaimer}>
+            Maintain your streak to increase your luck for the Day 7 jackpot. Miss a day, and the cycle
+            resets to Day 1!
+          </Text>
+        </ScrollView>
+      )}
     </View>
   );
 }
 
 function DayCard({
-  reward,
-  claimed,
+  day,
+  label,
+  icon,
+  state,
+  claimedToday,
   onClaim,
 }: {
-  reward: DayReward;
-  claimed: boolean;
+  day: number;
+  label: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  state: DayState;
+  claimedToday: boolean;
   onClaim: () => void;
 }) {
-  const isCurrent = reward.state === 'current';
-  const isClaimedToday = isCurrent && claimed;
+  const isCurrent = state === 'current';
 
   return (
     <View
       style={[
         styles.dayCard,
-        reward.state === 'claimed' && styles.dayCardClaimed,
+        state === 'claimed' && styles.dayCardClaimed,
         isCurrent && styles.dayCardCurrent,
-        reward.state === 'upcoming' && styles.dayCardUpcoming,
+        state === 'upcoming' && styles.dayCardUpcoming,
       ]}
     >
       {isCurrent ? (
@@ -118,34 +194,21 @@ function DayCard({
           <Text style={styles.todayBadgeText}>Today</Text>
         </View>
       ) : null}
-      <Text style={[styles.dayLabel, reward.state === 'upcoming' && styles.dayLabelUpcoming]}>
-        Day {reward.day}
-      </Text>
+      <Text style={[styles.dayLabel, state === 'upcoming' && styles.dayLabelUpcoming]}>Day {day}</Text>
       <MaterialCommunityIcons
-        name={isClaimedToday ? 'check-circle' : reward.icon}
+        name={state === 'claimed' || claimedToday ? 'check-circle' : icon}
         size={isCurrent ? 30 : 24}
-        color={
-          reward.state === 'claimed'
-            ? Colors.cyan
-            : isCurrent
-              ? Colors.cyan
-              : Colors.chromeMid
-        }
+        color={state === 'claimed' ? Colors.cyan : isCurrent ? Colors.cyan : Colors.chromeMid}
       />
-      <Text style={[styles.dayReward, reward.state === 'upcoming' && styles.dayRewardUpcoming]}>
-        {reward.label}
-      </Text>
+      <Text style={[styles.dayReward, state === 'upcoming' && styles.dayRewardUpcoming]}>{label}</Text>
       {isCurrent ? (
         <Pressable
           style={styles.claimButton}
-          disabled={isClaimedToday}
+          disabled={claimedToday}
           hitSlop={{ top: 6, bottom: 10, left: 6, right: 6 }}
-          onPress={() => {
-            console.log('Claim Day 4 reward pressed');
-            onClaim();
-          }}
+          onPress={onClaim}
         >
-          <Text style={styles.claimButtonText}>{isClaimedToday ? 'Claimed' : 'Claim'}</Text>
+          <Text style={styles.claimButtonText}>{claimedToday ? 'Claimed' : 'Claim'}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -183,6 +246,22 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     flex: 1,
     textAlign: 'center',
+  },
+  guestWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+  },
+  guestText: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  loadingSpinner: {
+    marginTop: Spacing.xl * 2,
   },
   scrollContent: {
     padding: Spacing.lg,
@@ -339,6 +418,11 @@ const styles = StyleSheet.create({
     color: Colors.emberLight,
     textTransform: 'uppercase',
     fontStyle: 'italic',
+  },
+  jackpotClaimButton: {
+    width: '100%',
+    maxWidth: 220,
+    marginTop: Spacing.lg,
   },
   disclaimer: {
     fontFamily: Fonts.body,
