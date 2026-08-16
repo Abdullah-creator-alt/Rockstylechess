@@ -109,3 +109,22 @@ export function withOpacity(hex: string, alpha: number): string {
   const b = parseInt(normalized.substring(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+/**
+ * Linear-RGB blend between two theme hex colors -- ratio 0 returns hexA,
+ * ratio 1 returns hexB. Used to derive board theme variants (see
+ * constants/boardThemes.ts) from the measured default squares without
+ * hand-picking new hex values per theme.
+ */
+export function mixHex(hexA: string, hexB: string, ratio: number): string {
+  const a = hexA.replace('#', '');
+  const b = hexB.replace('#', '');
+  function mixChannel(offset: number): string {
+    const av = parseInt(a.substring(offset, offset + 2), 16);
+    const bv = parseInt(b.substring(offset, offset + 2), 16);
+    return Math.round(av + (bv - av) * ratio)
+      .toString(16)
+      .padStart(2, '0');
+  }
+  return `#${mixChannel(0)}${mixChannel(2)}${mixChannel(4)}`;
+}

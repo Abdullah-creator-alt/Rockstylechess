@@ -1,11 +1,15 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { PlayerAvatar, RockButton, RockCard } from '@/components/ui';
+import { ChessBoard, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
+import { BOARD_THEMES, getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { updateProfile } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
 
 type ForgeCategory = 'boards' | 'pieces' | 'avatars';
 
@@ -15,14 +19,6 @@ interface ForgeOption {
   locked: boolean;
   gemPrice?: number;
 }
-
-const BOARD_OPTIONS: (ForgeOption & { light: string; dark: string })[] = [
-  { id: 'classic-chrome', name: 'Classic Chrome', locked: false, light: Colors.chrome, dark: Colors.chromeDark },
-  { id: 'crimson-stage', name: 'Crimson Stage', locked: false, light: Colors.chrome, dark: Colors.crimson },
-  { id: 'cyan-storm', name: 'Cyan Storm', locked: false, light: Colors.chrome, dark: Colors.cyan },
-  { id: 'gold-rush', name: 'Gold Rush', locked: true, gemPrice: 200, light: Colors.chrome, dark: Colors.gold },
-  { id: 'obsidian-void', name: 'Obsidian Void', locked: true, gemPrice: 350, light: Colors.chromeMid, dark: Colors.bgBase },
-];
 
 const PIECE_OPTIONS: (ForgeOption & { color: string })[] = [
   { id: 'classic-chrome', name: 'Classic Chrome', locked: false, color: Colors.chrome },
@@ -50,12 +46,22 @@ const TABS: { key: ForgeCategory; label: string }[] = [
 export default function ForgeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { profile, refresh: refreshProfile } = usePlayerProfile();
   const [activeTab, setActiveTab] = useState<ForgeCategory>('boards');
   const [selected, setSelected] = useState<Record<ForgeCategory, string>>({
     boards: 'classic-chrome',
     pieces: 'classic-chrome',
     avatars: 'axl',
   });
+  const [isEquipping, setIsEquipping] = useState(false);
+
+  // Reflect whatever's actually equipped server-side once the profile loads,
+  // rather than always defaulting the picker to Classic Chrome.
+  useEffect(() => {
+    if (profile?.equippedBoardId) {
+      setSelected((prev) => ({ ...prev, boards: profile.equippedBoardId as string }));
+    }
+  }, [profile?.equippedBoardId]);
 
   function handleSelect(category: ForgeCategory, option: ForgeOption) {
     if (option.locked) {
@@ -66,9 +72,27 @@ export default function ForgeScreen() {
     console.log('Forge option selected', category, option.name);
   }
 
+  async function handleEquip() {
+    if (activeTab !== 'boards') {
+      console.log('Equip pressed', activeTab, selectedName);
+      return;
+    }
+    const token = await getAuthToken();
+    if (!token) return;
+    setIsEquipping(true);
+    try {
+      await updateProfile(token, { equippedBoardId: selected.boards });
+      await refreshProfile();
+    } catch (error) {
+      console.log('Failed to equip board theme', error);
+    } finally {
+      setIsEquipping(false);
+    }
+  }
+
   const selectedName =
     activeTab === 'boards'
-      ? BOARD_OPTIONS.find((o) => o.id === selected.boards)?.name
+      ? BOARD_THEMES.find((o) => o.id === selected.boards)?.name
       : activeTab === 'pieces'
         ? PIECE_OPTIONS.find((o) => o.id === selected.pieces)?.name
         : AVATAR_OPTIONS.find((o) => o.id === selected.avatars)?.name;
@@ -96,16 +120,20 @@ export default function ForgeScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {activeTab === 'boards' ? (
+          <ChessBoard theme={getBoardTheme(selected.boards)} style={styles.boardPreview} />
+        ) : null}
+
         <View style={styles.grid}>
           {activeTab === 'boards'
-            ? BOARD_OPTIONS.map((option) => (
+            ? BOARD_THEMES.map((option) => (
                 <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('boards', option)}>
                   <RockCard
                     glowColor={selected.boards === option.id ? Colors.cyan : undefined}
                     style={selected.boards === option.id ? styles.optionCardActive : styles.optionCard}
                   >
                     <View style={[styles.optionInner, option.locked && styles.optionInnerLocked]}>
-                      <BoardSwatch light={option.light} dark={option.dark} />
+                      <BoardSwatch light={option.squares.light[3]} dark={option.squares.dark[3]} />
                       <Text style={[styles.optionName, option.locked && styles.optionNameLocked]}>{option.name}</Text>
                       {option.locked ? <LockBadge gemPrice={option.gemPrice} /> : null}
                     </View>
@@ -160,10 +188,11 @@ export default function ForgeScreen() {
 
       <View style={[styles.equipBar, { paddingBottom: Spacing.lg + insets.bottom }]}>
         <RockButton
-          label={`Equip ${selectedName ?? ''}`}
+          label={isEquipping ? 'Equipping...' : `Equip ${selectedName ?? ''}`}
           variant="primary"
           icon={<MaterialCommunityIcons name="hammer" size={20} color={Colors.bgBase} />}
-          onPress={() => console.log('Equip pressed', activeTab, selectedName)}
+          onPress={handleEquip}
+          disabled={isEquipping}
         />
       </View>
     </View>
@@ -260,6 +289,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Spacing.lg,
     paddingBottom: 30,
+  },
+  boardPreview: {
+    alignSelf: 'center',
+    width: 260,
+    marginBottom: Spacing.lg,
   },
   grid: {
     flexDirection: 'row',

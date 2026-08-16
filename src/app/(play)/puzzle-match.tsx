@@ -4,8 +4,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChessBoard, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame } from '@/hooks/useChessGame';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { PUZZLES } from '@/lib/puzzleCatalog';
 
 export default function PuzzleMatchScreen() {
@@ -13,6 +15,8 @@ export default function PuzzleMatchScreen() {
   const insets = useSafeAreaInsets();
   const { puzzleId } = useLocalSearchParams<{ puzzleId?: string }>();
   const entry = PUZZLES.find((p) => p.id === puzzleId);
+  const { profile } = usePlayerProfile();
+  const boardTheme = getBoardTheme(profile?.equippedBoardId);
 
   // Hooks must run unconditionally -- passed a placeholder puzzle when the
   // param doesn't resolve so useChessGame stays happy; the render below
@@ -84,6 +88,7 @@ export default function PuzzleMatchScreen() {
           turn={game.turn}
           animateLastMove={game.lastMoveSource !== 'human'}
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
+          theme={boardTheme}
         />
 
         <View style={styles.actionRow}>

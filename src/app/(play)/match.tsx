@@ -15,6 +15,7 @@ import Animated, {
 
 import { BottomNav, ChatPanel, ChatToast, ChessBoard, EmberParticles, RockCard } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
+import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
 import { useMatchChat } from '@/hooks/useMatchChat';
@@ -74,7 +75,8 @@ export default function MatchScreen() {
   const navigatedRef = useRef(false);
   const stockfishRef = useRef<StockfishEngineHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
-  const { refresh: refreshPlayerProfile } = usePlayerProfile();
+  const { profile, refresh: refreshPlayerProfile } = usePlayerProfile();
+  const boardTheme = getBoardTheme(profile?.equippedBoardId);
 
   const requestEngineMove = useCallback((fen: string, config: StockfishConfig): Promise<EngineMove | null> => {
     if (!stockfishRef.current) return Promise.resolve(null);
@@ -182,6 +184,7 @@ export default function MatchScreen() {
           turn={game.turn}
           animateLastMove={animateOpponentMove}
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
+          theme={boardTheme}
         />
 
         <ActionBar

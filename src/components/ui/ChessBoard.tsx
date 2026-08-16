@@ -41,6 +41,17 @@ const STARTING_BOARD: string[][] = [
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
+/** Minimal shape ChessBoard needs from a theme -- BoardTheme (constants/boardThemes.ts) satisfies this directly. */
+export interface ChessBoardTheme {
+  squares: { light: readonly string[]; dark: readonly string[] };
+  glowColor: string;
+}
+
+const DEFAULT_BOARD_THEME: ChessBoardTheme = {
+  squares: BoardSquares,
+  glowColor: Colors.cyan,
+};
+
 function squareAt(rowIndex: number, colIndex: number): string {
   return `${FILES[colIndex]}${8 - rowIndex}`;
 }
@@ -80,6 +91,8 @@ interface ChessBoardProps {
   animateLastMove?: boolean;
   /** Omit to keep the board read-only/static, e.g. Front Row's spectate view. */
   onSquarePress?: (square: string) => void;
+  /** Square colors + glow accent. Defaults to the original fixed look. */
+  theme?: ChessBoardTheme;
 }
 
 export function ChessBoard({
@@ -92,6 +105,7 @@ export function ChessBoard({
   turn,
   animateLastMove = false,
   onSquarePress,
+  theme = DEFAULT_BOARD_THEME,
 }: ChessBoardProps) {
   const [gridSize, setGridSize] = useState(0);
   const [dragging, setDragging] = useState<DraggingPiece | null>(null);
@@ -195,7 +209,7 @@ export function ChessBoard({
   return (
     <View style={[styles.boardWrap, style]}>
       <View style={styles.frameSlot}>
-        <GlowRing />
+        <GlowRing color={theme.glowColor} />
 
         <LinearGradient
           // Brushed-metal frame: the extra mid stops give it a bright top-left
@@ -248,7 +262,7 @@ export function ChessBoard({
                         square={square}
                         piece={piece}
                         squareColor={
-                          (isLight ? BoardSquares.light : BoardSquares.dark)[rowIndex]
+                          (isLight ? theme.squares.light : theme.squares.dark)[rowIndex]
                         }
                         isLight={isLight}
                         isSelected={square === selectedSquare}
@@ -316,12 +330,30 @@ export function ChessBoard({
 // on Android, so the cyan halo in the reference is built as three concentric
 // rounded layers behind the frame with falling opacity -- a real layered glow
 // that renders identically on both platforms.
-function GlowRing() {
+function GlowRing({ color }: { color: string }) {
   return (
     <>
-      <View style={[styles.glowLayer, styles.glowOuter]} />
-      <View style={[styles.glowLayer, styles.glowMid]} />
-      <View style={[styles.glowLayer, styles.glowInner]} />
+      <View
+        style={[
+          styles.glowLayer,
+          styles.glowOuterShape,
+          { borderColor: withOpacity(color, 0.08), backgroundColor: withOpacity(color, 0.05) },
+        ]}
+      />
+      <View
+        style={[
+          styles.glowLayer,
+          styles.glowMidShape,
+          { borderColor: withOpacity(color, 0.18), backgroundColor: withOpacity(color, 0.09) },
+        ]}
+      />
+      <View
+        style={[
+          styles.glowLayer,
+          styles.glowInnerShape,
+          { borderColor: withOpacity(color, 0.4), backgroundColor: withOpacity(color, 0.16) },
+        ]}
+      />
     </>
   );
 }
@@ -635,32 +667,26 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderWidth: 1.5,
   },
-  glowOuter: {
+  glowOuterShape: {
     top: -12,
     left: -12,
     right: -12,
     bottom: -12,
     borderRadius: 28,
-    borderColor: withOpacity(Colors.cyan, 0.08),
-    backgroundColor: withOpacity(Colors.cyan, 0.05),
   },
-  glowMid: {
+  glowMidShape: {
     top: -7,
     left: -7,
     right: -7,
     bottom: -7,
     borderRadius: 23,
-    borderColor: withOpacity(Colors.cyan, 0.18),
-    backgroundColor: withOpacity(Colors.cyan, 0.09),
   },
-  glowInner: {
+  glowInnerShape: {
     top: -3,
     left: -3,
     right: -3,
     bottom: -3,
     borderRadius: 19,
-    borderColor: withOpacity(Colors.cyan, 0.4),
-    backgroundColor: withOpacity(Colors.cyan, 0.16),
   },
   rivet: {
     position: 'absolute',

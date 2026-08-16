@@ -30,7 +30,7 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
 
 export function updateProfile(
   token: string,
-  updates: { displayName?: string; avatarId?: string },
+  updates: { displayName?: string; avatarId?: string; equippedBoardId?: string },
 ): Promise<{ ok: true }> {
   return request('/me/profile', { method: 'PATCH', body: updates, token });
 }

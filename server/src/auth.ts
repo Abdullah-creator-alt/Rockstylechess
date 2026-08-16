@@ -3,6 +3,7 @@ import { Router } from 'express';
 
 import { asyncHandler } from './asyncHandler.js';
 import { requireAuth } from './authMiddleware.js';
+import { BOARD_THEMES } from './boardThemes.js';
 import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
 import { matchParticipants, matches, playerProfiles, users } from './db/schema/index.js';
@@ -28,10 +29,20 @@ authRouter.patch(
   '/me/profile',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { displayName, avatarId } = req.body ?? {};
-    const updates: { displayName?: string; avatarId?: string; updatedAt: Date } = { updatedAt: new Date() };
+    const { displayName, avatarId, equippedBoardId } = req.body ?? {};
+    const updates: { displayName?: string; avatarId?: string; equippedBoardId?: string; updatedAt: Date } = {
+      updatedAt: new Date(),
+    };
     if (typeof displayName === 'string') updates.displayName = displayName.slice(0, 40);
     if (typeof avatarId === 'string') updates.avatarId = avatarId.slice(0, 40);
+    if (typeof equippedBoardId === 'string') {
+      const theme = BOARD_THEMES.find((t) => t.id === equippedBoardId);
+      if (!theme || theme.locked) {
+        res.status(400).json({ error: 'invalid-board-theme' });
+        return;
+      }
+      updates.equippedBoardId = equippedBoardId;
+    }
 
     await db.update(playerProfiles).set(updates).where(eq(playerProfiles.userId, req.userId as string));
     res.json({ ok: true });
