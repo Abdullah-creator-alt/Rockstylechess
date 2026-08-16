@@ -15,6 +15,15 @@
  */
 import { BoardSquares, Colors, mixHex } from './theme';
 
+// Muted, weathered accents for the board variants below -- deliberately
+// duller than the app's neon UI accents (Colors.crimson/cyan/gold), which
+// read as too vibrant/arcade-bright once spread across an entire board.
+// These aim for old stone/metal that's seen wear: dusty brick, slate,
+// tarnished brass -- not the bright rock-concert palette used elsewhere.
+const RUST_STONE = '#7A3B35'; // weathered brick/oxblood, for Crimson Stage
+const SLATE_STONE = '#4A6670'; // dusty granite-slate, for Cyan Storm
+const BRONZE_STONE = '#8C6B3F'; // tarnished brass/bronze, for Gold Rush
+
 export interface BoardTheme {
   id: string;
   name: string;
@@ -39,6 +48,9 @@ function deriveSquares(
   };
 }
 
+// Only classic-chrome is free/unlocked by default. The rest are ordered and
+// priced as an ascending ladder (gems:chips held at a constant 1:20,000
+// ratio throughout) -- keep in sync with server/src/boardThemes.ts.
 export const BOARD_THEMES: BoardTheme[] = [
   {
     id: 'classic-chrome',
@@ -50,18 +62,13 @@ export const BOARD_THEMES: BoardTheme[] = [
     glowColor: Colors.cyan,
   },
   {
-    id: 'crimson-stage',
-    name: 'Crimson Stage',
-    locked: false,
-    squares: deriveSquares(Colors.crimson, 0.15, Colors.crimson, 0.35),
-    glowColor: Colors.crimson,
-  },
-  {
     id: 'cyan-storm',
     name: 'Cyan Storm',
-    locked: false,
-    squares: deriveSquares(Colors.cyan, 0.15, Colors.cyan, 0.35),
-    glowColor: Colors.cyan,
+    locked: true,
+    gemPrice: 100,
+    chipPrice: 2_000_000,
+    squares: deriveSquares(SLATE_STONE, 0.15, SLATE_STONE, 0.35),
+    glowColor: SLATE_STONE,
   },
   {
     id: 'gold-rush',
@@ -69,8 +76,17 @@ export const BOARD_THEMES: BoardTheme[] = [
     locked: true,
     gemPrice: 200,
     chipPrice: 4_000_000,
-    squares: deriveSquares(Colors.gold, 0.15, Colors.gold, 0.35),
-    glowColor: Colors.gold,
+    squares: deriveSquares(BRONZE_STONE, 0.15, BRONZE_STONE, 0.35),
+    glowColor: BRONZE_STONE,
+  },
+  {
+    id: 'crimson-stage',
+    name: 'Crimson Stage',
+    locked: true,
+    gemPrice: 300,
+    chipPrice: 6_000_000,
+    squares: deriveSquares(RUST_STONE, 0.15, RUST_STONE, 0.35),
+    glowColor: RUST_STONE,
   },
   {
     id: 'obsidian-void',

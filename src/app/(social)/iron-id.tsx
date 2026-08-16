@@ -323,6 +323,7 @@ export default function IronIdScreen() {
           onTabPress={(tab) => {
             if (tab === 'home') router.push('/home');
             else if (tab === 'ranks') router.push('/world-rankings');
+            else if (tab === 'shop') router.push('/shop');
             else console.log('tab pressed', tab);
           }}
         />

@@ -135,6 +135,24 @@ export default function RockShopScreen() {
         <ShopTabButton label="VIP" active={activeTab === 'vip'} onPress={() => setActiveTab('vip')} />
       </View>
 
+      {/* Always visible regardless of which sub-tab is active -- cosmetics
+          (boards/pieces/avatars) live in a separate screen (Forge), not a
+          currency purchase, so this is a way in rather than a 4th tab here. */}
+      <Pressable onPress={() => router.push('/forge')} style={styles.forgeEntryWrap}>
+        <RockCard glowColor={Colors.cyan}>
+          <View style={styles.forgeEntryRow}>
+            <View style={styles.forgeEntryIconWrap}>
+              <MaterialCommunityIcons name="hammer" size={20} color={Colors.cyan} />
+            </View>
+            <View style={styles.forgeEntryText}>
+              <Text style={styles.forgeEntryTitle}>The Forge</Text>
+              <Text style={styles.forgeEntrySubtitle}>Boards, pieces & avatars</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textMuted} />
+          </View>
+        </RockCard>
+      </Pressable>
+
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
@@ -364,6 +382,38 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     color: Colors.bgBase,
+  },
+  forgeEntryWrap: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+  },
+  forgeEntryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  forgeEntryIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: withOpacity(Colors.cyan, 0.12),
+  },
+  forgeEntryText: {
+    flex: 1,
+  },
+  forgeEntryTitle: {
+    fontFamily: Fonts.heading,
+    fontSize: 14,
+    color: Colors.textPrimary,
+    textTransform: 'uppercase',
+  },
+  forgeEntrySubtitle: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
   },
   scrollContent: {
     padding: Spacing.lg,

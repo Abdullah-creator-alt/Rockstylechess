@@ -227,6 +227,7 @@ export default function WorldRankingsScreen() {
           onTabPress={(tab) => {
             if (tab === 'home') router.push('/home');
             else if (tab === 'profile') router.push('/iron-id');
+            else if (tab === 'shop') router.push('/shop');
             else console.log('tab pressed', tab);
           }}
         />

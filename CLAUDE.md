@@ -36,3 +36,6 @@ Before marking any new shared component as "done," compare it directly against
 its Stitch source file's CSS and confirm gradients/glow/highlight are present,
 not simplified away. If a true visual match isn't achievable in React Native,
 flag it explicitly rather than silently flattening it.
+
+
+
