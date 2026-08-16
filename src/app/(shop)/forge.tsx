@@ -1,14 +1,14 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChessBoard, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
-import { BOARD_THEMES, getBoardTheme } from '@/constants/boardThemes';
+import { BOARD_THEMES, getBoardTheme, type BoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
-import { updateProfile } from '@/lib/api';
+import { unlockCosmetic, updateProfile } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 
 type ForgeCategory = 'boards' | 'pieces' | 'avatars';
@@ -53,7 +53,10 @@ export default function ForgeScreen() {
     pieces: 'classic-chrome',
     avatars: 'axl',
   });
-  const [isEquipping, setIsEquipping] = useState(false);
+  // Shared by equip and purchase: both are single in-flight profile
+  // mutations from this screen, and a purchase's confirm dialog closes
+  // before its async call resolves -- this guards that window too.
+  const [isMutating, setIsMutating] = useState(false);
 
   // Reflect whatever's actually equipped server-side once the profile loads,
   // rather than always defaulting the picker to Classic Chrome.
@@ -63,13 +66,61 @@ export default function ForgeScreen() {
     }
   }, [profile?.equippedBoardId]);
 
+  function isBoardOwned(id: string): boolean {
+    const theme = BOARD_THEMES.find((t) => t.id === id);
+    return !theme?.locked || (profile?.ownedCosmeticIds?.includes(id) ?? false);
+  }
+
   function handleSelect(category: ForgeCategory, option: ForgeOption) {
+    if (category === 'boards' && option.locked) {
+      if (isBoardOwned(option.id)) {
+        setSelected((prev) => ({ ...prev, boards: option.id }));
+        return;
+      }
+      handleLockedBoardTap(option as BoardTheme);
+      return;
+    }
     if (option.locked) {
       console.log('Forge option locked', option.name, `${option.gemPrice} gems required`);
       return;
     }
     setSelected((prev) => ({ ...prev, [category]: option.id }));
     console.log('Forge option selected', category, option.name);
+  }
+
+  function handleLockedBoardTap(theme: BoardTheme) {
+    if (isMutating) return;
+    Alert.alert(`Unlock ${theme.name}`, 'Choose how to pay:', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: `${(theme.gemPrice ?? 0).toLocaleString()} Gems`, onPress: () => confirmPurchase(theme, 'gems') },
+      { text: `${(theme.chipPrice ?? 0).toLocaleString()} Chips`, onPress: () => confirmPurchase(theme, 'chips') },
+    ]);
+  }
+
+  async function confirmPurchase(theme: BoardTheme, currency: 'gems' | 'chips') {
+    const token = await getAuthToken();
+    if (!token) return;
+    setIsMutating(true);
+    try {
+      await unlockCosmetic(token, theme.id, currency);
+      await refreshProfile();
+      // Auto-select (not auto-equip) the newly-owned theme -- equip stays a
+      // separate, deliberate action via the Equip button below.
+      setSelected((prev) => ({ ...prev, boards: theme.id }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message === 'insufficient-funds') {
+        const price = currency === 'gems' ? theme.gemPrice : theme.chipPrice;
+        Alert.alert('Not Enough Funds', `You need ${(price ?? 0).toLocaleString()} ${currency} to unlock ${theme.name}.`);
+      } else if (message === 'already-owned') {
+        setSelected((prev) => ({ ...prev, boards: theme.id }));
+      } else {
+        console.log('Failed to unlock board theme', error);
+        Alert.alert('Something Went Wrong', 'Could not unlock this theme. Please try again.');
+      }
+    } finally {
+      setIsMutating(false);
+    }
   }
 
   async function handleEquip() {
@@ -79,14 +130,14 @@ export default function ForgeScreen() {
     }
     const token = await getAuthToken();
     if (!token) return;
-    setIsEquipping(true);
+    setIsMutating(true);
     try {
       await updateProfile(token, { equippedBoardId: selected.boards });
       await refreshProfile();
     } catch (error) {
       console.log('Failed to equip board theme', error);
     } finally {
-      setIsEquipping(false);
+      setIsMutating(false);
     }
   }
 
@@ -126,20 +177,23 @@ export default function ForgeScreen() {
 
         <View style={styles.grid}>
           {activeTab === 'boards'
-            ? BOARD_THEMES.map((option) => (
-                <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('boards', option)}>
-                  <RockCard
-                    glowColor={selected.boards === option.id ? Colors.cyan : undefined}
-                    style={selected.boards === option.id ? styles.optionCardActive : styles.optionCard}
-                  >
-                    <View style={[styles.optionInner, option.locked && styles.optionInnerLocked]}>
-                      <BoardSwatch light={option.squares.light[3]} dark={option.squares.dark[3]} />
-                      <Text style={[styles.optionName, option.locked && styles.optionNameLocked]}>{option.name}</Text>
-                      {option.locked ? <LockBadge gemPrice={option.gemPrice} /> : null}
-                    </View>
-                  </RockCard>
-                </Pressable>
-              ))
+            ? BOARD_THEMES.map((option) => {
+                const showLocked = option.locked && !isBoardOwned(option.id);
+                return (
+                  <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('boards', option)}>
+                    <RockCard
+                      glowColor={selected.boards === option.id ? Colors.cyan : undefined}
+                      style={selected.boards === option.id ? styles.optionCardActive : styles.optionCard}
+                    >
+                      <View style={[styles.optionInner, showLocked && styles.optionInnerLocked]}>
+                        <BoardSwatch light={option.squares.light[3]} dark={option.squares.dark[3]} />
+                        <Text style={[styles.optionName, showLocked && styles.optionNameLocked]}>{option.name}</Text>
+                        {showLocked ? <LockBadge gemPrice={option.gemPrice} chipPrice={option.chipPrice} /> : null}
+                      </View>
+                    </RockCard>
+                  </Pressable>
+                );
+              })
             : null}
 
           {activeTab === 'pieces'
@@ -188,11 +242,11 @@ export default function ForgeScreen() {
 
       <View style={[styles.equipBar, { paddingBottom: Spacing.lg + insets.bottom }]}>
         <RockButton
-          label={isEquipping ? 'Equipping...' : `Equip ${selectedName ?? ''}`}
+          label={isMutating ? 'Equipping...' : `Equip ${selectedName ?? ''}`}
           variant="primary"
           icon={<MaterialCommunityIcons name="hammer" size={20} color={Colors.bgBase} />}
           onPress={handleEquip}
-          disabled={isEquipping}
+          disabled={isMutating}
         />
       </View>
     </View>
@@ -215,11 +269,21 @@ function BoardSwatch({ light, dark }: { light: string; dark: string }) {
   );
 }
 
-function LockBadge({ gemPrice }: { gemPrice?: number }) {
+function LockBadge({ gemPrice, chipPrice }: { gemPrice?: number; chipPrice?: number }) {
   return (
-    <View style={styles.lockBadge}>
-      <MaterialCommunityIcons name="diamond-stone" size={11} color={Colors.emberLight} />
-      <Text style={styles.lockBadgeText}>{gemPrice} Gems</Text>
+    <View style={styles.lockBadgeStack}>
+      {gemPrice ? (
+        <View style={styles.lockBadge}>
+          <MaterialCommunityIcons name="diamond-stone" size={11} color={Colors.emberLight} />
+          <Text style={styles.lockBadgeText}>{gemPrice.toLocaleString()}</Text>
+        </View>
+      ) : null}
+      {chipPrice ? (
+        <View style={styles.lockBadge}>
+          <MaterialCommunityIcons name="poker-chip" size={11} color={Colors.emberLight} />
+          <Text style={styles.lockBadgeText}>{chipPrice.toLocaleString()}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -349,6 +413,10 @@ const styles = StyleSheet.create({
   },
   pieceGlyph: {
     fontSize: 32,
+  },
+  lockBadgeStack: {
+    flexDirection: 'row',
+    gap: 4,
   },
   lockBadge: {
     flexDirection: 'row',

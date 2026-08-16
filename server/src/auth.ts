@@ -1,12 +1,13 @@
-import { asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { Router } from 'express';
 
 import { asyncHandler } from './asyncHandler.js';
 import { requireAuth } from './authMiddleware.js';
 import { BOARD_THEMES } from './boardThemes.js';
+import { purchaseCosmetic } from './db/cosmetics.js';
 import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
-import { matchParticipants, matches, playerProfiles, users } from './db/schema/index.js';
+import { matchParticipants, matches, playerProfiles, userCosmetics, users } from './db/schema/index.js';
 import { getSpinStatus, performSpin } from './db/spin.js';
 import { MATCH_CHIP_REWARDS, type MatchOutcome } from './matchRewards.js';
 
@@ -37,9 +38,20 @@ authRouter.patch(
     if (typeof avatarId === 'string') updates.avatarId = avatarId.slice(0, 40);
     if (typeof equippedBoardId === 'string') {
       const theme = BOARD_THEMES.find((t) => t.id === equippedBoardId);
-      if (!theme || theme.locked) {
+      if (!theme) {
         res.status(400).json({ error: 'invalid-board-theme' });
         return;
+      }
+      if (theme.locked) {
+        const [owned] = await db
+          .select({ itemId: userCosmetics.itemId })
+          .from(userCosmetics)
+          .where(and(eq(userCosmetics.userId, req.userId as string), eq(userCosmetics.itemId, theme.id)))
+          .limit(1);
+        if (!owned) {
+          res.status(400).json({ error: 'board-theme-not-owned' });
+          return;
+        }
       }
       updates.equippedBoardId = equippedBoardId;
     }
@@ -65,7 +77,52 @@ authRouter.get(
       res.status(404).json({ error: 'profile-not-found' });
       return;
     }
-    res.json({ profile });
+    const owned = await db
+      .select({ itemId: userCosmetics.itemId })
+      .from(userCosmetics)
+      .where(eq(userCosmetics.userId, req.userId as string));
+    res.json({ profile: { ...profile, ownedCosmeticIds: owned.map((o) => o.itemId) } });
+  }),
+);
+
+// Spend gems or chips (the client's choice) to own a locked cosmetic --
+// currently only board themes are seeded/purchasable this way. See
+// purchaseCosmetic for the atomic decrement + ownership-insert transaction.
+authRouter.post(
+  '/me/cosmetics/:itemId/unlock',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const currency = req.body?.currency;
+    if (currency !== 'gems' && currency !== 'chips') {
+      res.status(400).json({ error: 'invalid-currency' });
+      return;
+    }
+    const result = await purchaseCosmetic(req.userId as string, req.params.itemId, currency);
+    if (result.status === 'not-found') {
+      res.status(400).json({ error: 'invalid-cosmetic-item' });
+      return;
+    }
+    if (result.status === 'already-owned') {
+      res.status(409).json({ error: 'already-owned' });
+      return;
+    }
+    if (result.status === 'insufficient-funds') {
+      res.status(400).json({
+        error: 'insufficient-funds',
+        currency: result.currency,
+        price: result.price,
+        balance: result.balance,
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      itemId: req.params.itemId,
+      currency: result.currency,
+      price: result.price,
+      gems: result.gems,
+      chips: result.chips,
+    });
   }),
 );
 

@@ -7,7 +7,8 @@
     "dev": "node node_modules/tsx/dist/cli.mjs watch src/index.ts",
     "build": "node node_modules/typescript/bin/tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "seed:spin": "node node_modules/tsx/dist/cli.mjs src/db/seedSpinPrizes.ts"
+    "seed:spin": "node node_modules/tsx/dist/cli.mjs src/db/seedSpinPrizes.ts",
+    "seed:cosmetics": "node node_modules/tsx/dist/cli.mjs src/db/seedCosmetics.ts"
   },
   "dependencies": {
     "@better-auth/expo": "^1.6.29",

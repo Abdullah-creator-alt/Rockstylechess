@@ -40,6 +40,21 @@ export function deleteAccount(token: string): Promise<{ ok: true }> {
   return request('/me', { method: 'DELETE', token });
 }
 
+// Spend gems or chips (caller's choice) to own a locked cosmetic (currently
+// only board themes). Rejects with Error('insufficient-funds') or
+// Error('already-owned') -- callers catch those specifically.
+export function unlockCosmetic(
+  token: string,
+  itemId: string,
+  currency: 'gems' | 'chips',
+): Promise<{ ok: true; itemId: string; currency: 'gems' | 'chips'; price: number; gems: number; chips: number }> {
+  return request(`/me/cosmetics/${encodeURIComponent(itemId)}/unlock`, {
+    method: 'POST',
+    body: { currency },
+    token,
+  });
+}
+
 export interface PlayerProfile {
   userId: string;
   displayName: string | null;
@@ -57,6 +72,7 @@ export interface PlayerProfile {
   equippedBoardId: string | null;
   equippedPieceId: string | null;
   equippedAvatarCosmeticId: string | null;
+  ownedCosmeticIds: string[];
 }
 
 export function getMyProfile(token: string): Promise<{ profile: PlayerProfile }> {

@@ -1,16 +1,20 @@
 export interface BoardThemeCatalogEntry {
   id: string;
+  name: string;
   locked: boolean;
+  gemPrice: number; // 0 for free entries
+  chipPrice: number; // 0 for free entries
 }
 
-// Mirrors src/constants/boardThemes.ts on the client. Only id/locked are
-// needed here -- the server validates equippedBoardId against a known,
-// unlocked id and never renders colors. Keep in sync if themes are
-// added/removed/re-priced.
+// Mirrors src/constants/boardThemes.ts on the client. Authoritative catalog
+// for equip validation (PATCH /me/profile), the cosmetics seed script
+// (seedCosmetics.ts), and the purchase route's pricing -- never renders
+// colors, so it doesn't need the squares/glowColor fields the client has.
+// Keep in sync if themes are added/removed/re-priced.
 export const BOARD_THEMES: BoardThemeCatalogEntry[] = [
-  { id: 'classic-chrome', locked: false },
-  { id: 'crimson-stage', locked: false },
-  { id: 'cyan-storm', locked: false },
-  { id: 'gold-rush', locked: true },
-  { id: 'obsidian-void', locked: true },
+  { id: 'classic-chrome', name: 'Classic Chrome', locked: false, gemPrice: 0, chipPrice: 0 },
+  { id: 'crimson-stage', name: 'Crimson Stage', locked: false, gemPrice: 0, chipPrice: 0 },
+  { id: 'cyan-storm', name: 'Cyan Storm', locked: false, gemPrice: 0, chipPrice: 0 },
+  { id: 'gold-rush', name: 'Gold Rush', locked: true, gemPrice: 200, chipPrice: 4_000_000 },
+  { id: 'obsidian-void', name: 'Obsidian Void', locked: true, gemPrice: 350, chipPrice: 7_000_000 },
 ];

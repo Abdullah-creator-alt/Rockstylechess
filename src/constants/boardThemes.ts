@@ -20,6 +20,7 @@ export interface BoardTheme {
   name: string;
   locked: boolean;
   gemPrice?: number;
+  chipPrice?: number;
   /** 8-element per-rank arrays, rank 8 (top) -> rank 1 (bottom). */
   squares: { light: readonly string[]; dark: readonly string[] };
   /** Accent for ChessBoard's GlowRing halo around the frame. */
@@ -67,6 +68,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     name: 'Gold Rush',
     locked: true,
     gemPrice: 200,
+    chipPrice: 4_000_000,
     squares: deriveSquares(Colors.gold, 0.15, Colors.gold, 0.35),
     glowColor: Colors.gold,
   },
@@ -75,6 +77,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     name: 'Obsidian Void',
     locked: true,
     gemPrice: 350,
+    chipPrice: 7_000_000,
     squares: deriveSquares(Colors.chromeMid, 0.25, Colors.bgBase, 0.5),
     glowColor: Colors.chromeMid,
   },
