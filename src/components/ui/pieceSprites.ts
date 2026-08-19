@@ -5,16 +5,16 @@
 import type { ImageSourcePropType } from 'react-native';
 
 export const PIECE_SPRITES: Partial<Record<string, ImageSourcePropType>> = {
-  bk: require('../../../assets/pieces/bk.png'),
-  bq: require('../../../assets/pieces/bq.png'),
-  br: require('../../../assets/pieces/br.png'),
-  bb: require('../../../assets/pieces/bb.png'),
-  bn: require('../../../assets/pieces/bn.png'),
-  bp: require('../../../assets/pieces/bp.png'),
-  wk: require('../../../assets/pieces/wk.png'),
-  wq: require('../../../assets/pieces/wq.png'),
-  wr: require('../../../assets/pieces/wr.png'),
-  wb: require('../../../assets/pieces/wb.png'),
-  wn: require('../../../assets/pieces/wn.png'),
-  wp: require('../../../assets/pieces/wp.png'),
+  bk: require('../../../assets/pieces/bk.svg'),
+  bq: require('../../../assets/pieces/bq.svg'),
+  br: require('../../../assets/pieces/br.svg'),
+  bb: require('../../../assets/pieces/bb.svg'),
+  bn: require('../../../assets/pieces/bn.svg'),
+  bp: require('../../../assets/pieces/bp.svg'),
+  wk: require('../../../assets/pieces/wk.svg'),
+  wq: require('../../../assets/pieces/wq.svg'),
+  wr: require('../../../assets/pieces/wr.svg'),
+  wb: require('../../../assets/pieces/wb.svg'),
+  wn: require('../../../assets/pieces/wn.svg'),
+  wp: require('../../../assets/pieces/wp.svg'),
 };

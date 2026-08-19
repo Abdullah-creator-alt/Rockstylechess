@@ -147,24 +147,41 @@ which doesn't support the symlinks `npm` normally creates for package
 `bin/` entries -- hence `server/.npmrc`'s `bin-links=false`, same fix as the
 repo root.
 
-## Deploying to Railway
+## Deploying the database to Neon
+
+The database lives on [Neon](https://neon.com), not a Railway Postgres
+plugin -- Neon's free tier is permanent (not a trial) and covers this app's
+usage at its current scale, keeping the whole deploy near Railway's $5/mo
+Hobby floor instead of $5-12/mo for compute + DB bundled on Railway.
+
+1. Create a Neon project (or use one already provisioned for this app).
+2. Generate a **project-scoped API key** (Project Settings -> API Keys) --
+   scoped to just this project, can't create/delete projects or see anything
+   else in the account, safe to hand to a collaborator or an agent.
+3. `neonctl connection-string` (with `NEON_API_KEY` set to that key) returns
+   the Postgres connection string -- this is `DATABASE_URL` below. Neon
+   projects come with a default branch + database already provisioned, so
+   no separate "create database" step is needed.
+
+## Deploying the server to Railway
 
 Railway supports deploying from a subdirectory of a monorepo:
 
 1. New Railway project, pointed at this git repo.
-2. Add a Railway Postgres plugin to the project; it provisions `DATABASE_URL`
-   as a service variable automatically. Add `JWT_SECRET` yourself (a long
-   random string).
-3. Set the service's **root directory** to `server/`.
-4. Build command: `npm run build` (compiles `src/` -> `dist/` via `tsc`).
-5. Start command: `npm start` (runs `dist/index.js`).
-6. Railway injects `PORT` automatically -- the server already reads
+2. Set the service's **root directory** to `server/`.
+3. Build command: `npm run build` (compiles `src/` -> `dist/` via `tsc`).
+4. Start command: `npm start` (runs `dist/index.js`).
+5. Railway injects `PORT` automatically -- the server already reads
    `process.env.PORT`.
-7. Run `npx drizzle-kit migrate` once against the Railway `DATABASE_URL`
-   (from a local shell with that URL exported, or a Railway one-off run) to
-   create the tables before the first real request hits `/auth/signup`.
-   Also run `npm run seed:spin` once, same target, before the daily spin
-   wheel is used for the first time.
+6. Set service variables: `DATABASE_URL` (the Neon connection string above),
+   `BETTER_AUTH_SECRET` (a long random string), `BETTER_AUTH_URL` (the
+   Railway public URL from step 8, once generated), `WEB_CLIENT_ORIGINS`,
+   and `MOBILE_APP_SCHEME` (must match `app.json`'s `"scheme"`).
+7. Run `npx drizzle-kit migrate` once against the Neon `DATABASE_URL`
+   (from a local shell with that URL exported, or `railway run` once the
+   service has the variable) to create the tables before the first real
+   request hits `/auth/signup`. Also run `npm run seed:spin` once, same
+   target, before the daily spin wheel is used for the first time.
 8. Copy the generated public URL (`https://<app>.up.railway.app`) into the
    client's `EXPO_PUBLIC_SERVER_URL`, using `wss://` for the Socket.IO
    client (Railway terminates TLS at the edge).

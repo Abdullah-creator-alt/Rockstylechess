@@ -1,8 +1,17 @@
 # Reference art — chess board & pieces
 
+> **Piece sprites in `assets/pieces/` are no longer generated from this
+> pipeline.** They're now hand-picked render PNGs autotraced to SVG (see
+> `src/components/README.md`). Running the regeneration command below will
+> overwrite `assets/pieces/*.png` and rewrite `pieceSprites.ts` back to the
+> old raster set — don't, unless that's actually what you're trying to undo.
+> This file is kept for the **square colour** measurement, which is still
+> current, and as a record of how the old sprite extractor worked.
+
 `Board.jpeg` is the design render the in-app board is matched against. It is the
-source of truth for two things: the **piece sprites** in `assets/pieces/`, and
-the **square colours** in `BoardSquares` (`src/constants/theme.ts`).
+source of truth for two things: the **square colours** in `BoardSquares`
+(`src/constants/theme.ts`), and, historically, the **piece sprites** in
+`assets/pieces/` (see the warning above).
 
 ## Regenerating the pieces
 

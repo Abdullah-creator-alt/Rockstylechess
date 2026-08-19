@@ -1,0 +1,14 @@
+{
+	"servers": {
+		"my-mcp-server-0ae59018": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"-y",
+				"@_davideast/stitch-mcp",
+				"proxy"
+			]
+		}
+	},
+	"inputs": []
+}

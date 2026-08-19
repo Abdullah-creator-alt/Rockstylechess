@@ -27,10 +27,16 @@ Three things about it are easy to break:
   floored to a whole number and sized to 8× that; leftover pixels go to the
   frame. The playfield sits in its own exactly-sized box so the drag ghost shares
   its coordinate space.
-- **Piece art is generated, not hand-drawn.** `pieceSprites.ts` is written by
-  `scripts/extract-pieces.js` — don't edit it. See `assets/reference/README.md`
-  for how to regenerate and how to pick a replacement reference image. A vector
-  set was tried and rejected: with a good source, the render's own pixels win.
+- **Piece art is vector, not raster.** `pieceSprites.ts` requires
+  `assets/pieces/*.svg` (12 files, one per piece/color). An earlier raster
+  pipeline (`scripts/extract-pieces.js`, cutting sprites from a photographed
+  reference board) is what `assets/reference/README.md` documents and is no
+  longer what's live — a first vector attempt off that same reference was
+  rejected as too soft, but a second pass off cleaner source renders,
+  autotraced with `vtracer` and corrected against `DESIGN.md`'s
+  `pieceWhite*`/`pieceBlack*` tones, is what's actually in `assets/pieces/`
+  now. `pieceSprites.ts` is hand-edited, not generated — safe to touch
+  directly.
 - **Square colours come from `BoardSquares` per rank**, not one flat pair. Both
   are measured off the reference; see the theme.
 

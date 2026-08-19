@@ -132,6 +132,36 @@ Requires a reachable PostgreSQL instance (`DATABASE_URL`). See
 why auth is self-hosted rather than a third-party provider, and Railway
 deployment steps.
 
+### Android (local release build)
+
+`android/` is gitignored (standard Expo managed workflow, regenerated on
+demand) — generate it, then build with Gradle directly, no EAS account
+needed:
+
+```bash
+npx expo prebuild -p android   # generates android/, safe to re-run
+cd android
+./gradlew assembleRelease
+```
+
+Two things that aren't obvious the first time:
+
+- **`android/local.properties` isn't committed** (machine-specific SDK path)
+  — create it with `sdk.dir=/path/to/Android/Sdk` if it's missing, or export
+  `ANDROID_HOME`.
+- **Needs a full JDK 17, not just a `java` binary on `PATH`.** Gradle's
+  toolchain resolution can pick a JRE-only Java install (some distros ship a
+  headless `java-21` package with no `javac`) and fail deep into the build
+  with a confusing "does not provide the required capabilities: JAVA_COMPILER"
+  error. Point `JAVA_HOME` at a JDK that actually has `javac` if that happens.
+- The pinned NDK version (currently `27.1.12297006`, see the Gradle error if
+  it drifts) has to be installed once: `sdkmanager "ndk;<version>"`.
+
+Output lands at `android/app/build/outputs/apk/release/app-release.apk`. The
+release build type currently signs with the Expo-generated debug keystore
+(`android/app/debug.keystore`) — fine for sideloading/testing, but swap in a
+real release keystore before shipping to the Play Store.
+
 ## Architecture
 
 - **Client chess state** — `useChessGame` (`src/hooks/useChessGame.ts`)
