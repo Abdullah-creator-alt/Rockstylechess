@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -22,7 +22,7 @@ import Animated, {
 
 import { BoardSquares, Colors, withOpacity } from '@/constants/theme';
 
-import { PIECE_SPRITES } from './pieceSprites';
+import { getPieceSprites, type PieceSpriteMap } from './pieceSprites';
 
 // Standard starting position. Uppercase = white, lowercase = black, '' = empty.
 // Default board when no `board` prop is given -- this is what keeps Front
@@ -52,6 +52,8 @@ const DEFAULT_BOARD_THEME: ChessBoardTheme = {
   glowColor: Colors.cyan,
 };
 
+const DEFAULT_PIECE_SPRITES: PieceSpriteMap = getPieceSprites('classic-pieces');
+
 function squareAt(rowIndex: number, colIndex: number): string {
   return `${FILES[colIndex]}${8 - rowIndex}`;
 }
@@ -67,6 +69,19 @@ interface DraggingPiece {
   piece: string;
   row: number;
   col: number;
+}
+
+/**
+ * One in-flight slide-in ghost (see `animateLastMove`). Each entry gets its
+ * own `MoveGhost` instance, keyed by `id` -- React's mount/key lifecycle is
+ * what keeps overlapping slides from corrupting each other, not a shared
+ * mutable slot or a staleness token.
+ */
+interface SlideEntry {
+  id: number;
+  from: string;
+  to: string;
+  piece: string;
 }
 
 interface ChessBoardProps {
@@ -93,6 +108,8 @@ interface ChessBoardProps {
   onSquarePress?: (square: string) => void;
   /** Square colors + glow accent. Defaults to the original fixed look. */
   theme?: ChessBoardTheme;
+  /** Piece sprite set (12 images keyed 'wk'..'bp'). Defaults to the classic set. */
+  pieceSprites?: PieceSpriteMap;
 }
 
 export function ChessBoard({
@@ -106,6 +123,7 @@ export function ChessBoard({
   animateLastMove = false,
   onSquarePress,
   theme = DEFAULT_BOARD_THEME,
+  pieceSprites = DEFAULT_PIECE_SPRITES,
 }: ChessBoardProps) {
   const [gridSize, setGridSize] = useState(0);
   const [dragging, setDragging] = useState<DraggingPiece | null>(null);
@@ -118,46 +136,46 @@ export function ChessBoard({
   // neighbours and the file boundaries stop lining up down the board. Flooring
   // to a whole number and sizing the grid to 8x that keeps every square
   // identical and perfectly square; the few leftover pixels go to the frame.
-  // Declared up here (rather than down with boardSize below) so the slide
-  // effect below can freeze the value current at animation-start time.
   const squareSize = Math.floor(gridSize / 8);
 
   // Slide-in ghost for moves that appeared without the player dragging/tapping
-  // them into place (the bot's moves) -- see `animateLastMove`. Tracks the
-  // previous lastMove so it only fires once per new move, not on every
-  // unrelated re-render. `squareSize` is captured here at the moment the
-  // slide starts (not read live by MoveGhost) -- ChessBoard isn't memoized,
-  // so it re-renders on every unrelated parent update (turn changes, a
-  // captured piece appearing in a PlayerRow, etc.) for the whole ~420ms the
-  // animation runs; if gridSize/squareSize ever changes mid-flight (layout
-  // passes settling, especially prone to happening more than once on
-  // Android), a live squareSize would shift MoveGhost's fromX/fromY/toX/toY
-  // out from under the in-flight tween, visible as a small backward snap
-  // near the end rather than a full reset.
-  const [slidingMove, setSlidingMove] = useState<
-    { from: string; to: string; piece: string; squareSize: number } | null
-  >(null);
-  const slideProgress = useSharedValue(0);
+  // them into place (the bot's moves) -- see `animateLastMove`. A queue
+  // rather than one mutable slot: each entry gets its own MoveGhost instance
+  // (keyed by id), so two moves landing close together (e.g. an online
+  // opponent's moves, which useChessGame.ts applies with no debounce) can
+  // never share or stomp each other's animation state, however the timing
+  // lands. squareSize is NOT frozen into the entry -- MoveGhost reads it
+  // live from squareSizeShared below, so a board resize mid-flight (extra
+  // layout passes settling, especially prone to happening more than once on
+  // Android) can't leave a ghost animating to a stale position.
+  const [slides, setSlides] = useState<SlideEntry[]>([]);
+  const slideIdRef = useRef(0);
+  const handleSlideDone = useCallback((id: number) => {
+    setSlides((prev) => prev.filter((s) => s.id !== id));
+  }, []);
   const prevLastMoveRef = useRef<{ from: string; to: string } | null>(null);
-  // Bumped every time a new slide starts. A stale withTiming completion
-  // callback from a superseded animation (e.g. two bot moves landing close
-  // together after a JS-thread stall queues up render/input backlog) checks
-  // this before clearing state, so it can't wipe out a newer, still-running
-  // slide out from under it.
-  const slideTokenRef = useRef(0);
   // Read inside the effect via ref rather than as a dependency -- the effect
   // only needs `board` to look up which piece landed on `to`, not to decide
   // whether a new move happened (`isNewMove` below already does that from
   // `lastMove` alone). Depending on `board` directly would re-run the effect
-  // on any board reference change, resetting slideProgress mid-tween.
+  // on any board reference change.
   const boardRef = useRef(board);
   boardRef.current = board;
 
-  function clearSlideIfCurrent(token: number) {
-    if (slideTokenRef.current === token) setSlidingMove(null);
-  }
-
+  // Kept in sync with squareSize so MoveGhost can read a live value instead
+  // of a number frozen at animation-start -- see the queue comment above.
+  const squareSizeShared = useSharedValue(squareSize);
   useEffect(() => {
+    squareSizeShared.value = squareSize;
+  }, [squareSize, squareSizeShared]);
+
+  // useLayoutEffect (not useEffect): commits the new slide entry -- and so
+  // the isSliding suppression on the destination square -- synchronously
+  // with the same render that changed board/lastMove, instead of one tick
+  // later. That closes the gap where the real piece at the destination was
+  // ready to render before anything suppressed it, which is what produced
+  // the reported "ghosting" (real piece + ghost both visible at once).
+  useLayoutEffect(() => {
     const prev = prevLastMoveRef.current;
     prevLastMoveRef.current = lastMove;
 
@@ -168,13 +186,8 @@ export function ChessBoard({
     const piece = boardRef.current[toRow]?.[toCol];
     if (!piece) return;
 
-    const token = (slideTokenRef.current += 1);
-    setSlidingMove({ from: lastMove.from, to: lastMove.to, piece, squareSize });
-    slideProgress.value = 0;
-    slideProgress.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }, (finished) => {
-      if (finished) runOnJS(clearSlideIfCurrent)(token);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const id = (slideIdRef.current += 1);
+    setSlides((prev) => [...prev, { id, from: lastMove.from, to: lastMove.to, piece }]);
   }, [lastMove, animateLastMove]);
 
   const boardSize = squareSize * 8;
@@ -191,6 +204,11 @@ export function ChessBoard({
   function handleGrab(square: string, piece: string, row: number, col: number) {
     dragX.value = 0;
     dragY.value = 0;
+    // If a slide-in ghost is still finishing its travel into the square the
+    // player just grabbed, the player taking control makes its remaining
+    // travel meaningless -- evict it so DragGhost doesn't briefly overlap
+    // MoveGhost's tail end on the same square.
+    setSlides((prev) => prev.filter((s) => s.to !== square));
     setDragging({ square, piece, row, col });
     onSquarePress?.(square);
   }
@@ -271,7 +289,7 @@ export function ChessBoard({
                         isCheck={square === checkSquare}
                         isLastMove={lastMove !== null && (square === lastMove.from || square === lastMove.to)}
                         isBeingDragged={dragging?.square === square}
-                        isSliding={slidingMove?.to === square}
+                        isSliding={slides.some((s) => s.to === square && s.piece === piece)}
                         showRankLabel={colIndex === 0}
                         rankLabel={8 - rowIndex}
                         showFileLabel={rowIndex === 7}
@@ -286,6 +304,7 @@ export function ChessBoard({
                         onTapSquare={handleTapSquare}
                         onGrab={handleGrab}
                         onDrop={handleDrop}
+                        pieceSprites={pieceSprites}
                       />
                     );
                   })}
@@ -298,15 +317,21 @@ export function ChessBoard({
                 a second gradient on top double-counted it -- darkening the lower
                 board past the render and washing out the upper. */}
 
-            {slidingMove && slidingMove.squareSize > 0 ? (
-              <MoveGhost
-                piece={slidingMove.piece}
-                from={slidingMove.from}
-                to={slidingMove.to}
-                squareSize={slidingMove.squareSize}
-                progress={slideProgress}
-              />
-            ) : null}
+            {squareSize > 0
+              ? slides.map((slide) => (
+                  <MoveGhost
+                    key={slide.id}
+                    id={slide.id}
+                    piece={slide.piece}
+                    from={slide.from}
+                    to={slide.to}
+                    squareSize={squareSize}
+                    squareSizeShared={squareSizeShared}
+                    pieceSprites={pieceSprites}
+                    onDone={handleSlideDone}
+                  />
+                ))
+              : null}
 
             {dragging && squareSize > 0 ? (
               <DragGhost
@@ -316,6 +341,7 @@ export function ChessBoard({
                 squareSize={squareSize}
                 dragX={dragX}
                 dragY={dragY}
+                pieceSprites={pieceSprites}
               />
             ) : null}
             </View>
@@ -386,6 +412,7 @@ interface SquareProps {
   onTapSquare: (square: string) => void;
   onGrab: (square: string, piece: string, row: number, col: number) => void;
   onDrop: (square: string, deltaRow: number, deltaCol: number) => void;
+  pieceSprites: PieceSpriteMap;
 }
 
 const Square = memo(function Square({
@@ -414,6 +441,7 @@ const Square = memo(function Square({
   onTapSquare,
   onGrab,
   onDrop,
+  pieceSprites,
 }: SquareProps) {
   const labelColor = isLight ? withOpacity(Colors.boardEdge, 0.75) : withOpacity(Colors.chrome, 0.65);
 
@@ -463,7 +491,7 @@ const Square = memo(function Square({
         ) : null}
 
         {piece && !isBeingDragged && !isSliding ? (
-          <PieceGlyph piece={piece} squareSize={squareSize} />
+          <PieceGlyph piece={piece} squareSize={squareSize} pieceSprites={pieceSprites} />
         ) : null}
 
         {isCapture ? <View style={styles.captureRing} /> : null}
@@ -478,47 +506,76 @@ const Square = memo(function Square({
 // same "I can see where that went" legibility a human's own gesture already
 // provides. Piggybacks on the same absolute-positioned-over-the-grid trick as
 // DragGhost, just driven by a timed progress value instead of a finger.
-// Wrapped in memo (same pattern as Square below) so it doesn't re-render --
-// and force Reanimated to re-register its useAnimatedStyle mapping -- every
-// time ChessBoard re-renders for an unrelated reason (turn changes, a
-// captured piece appearing in a PlayerRow, etc.) while a slide is mid-flight.
-// All of its props are stable for a slide's whole duration: piece/from/to/
-// squareSize are frozen into `slidingMove` once at slide-start (see the
-// effect above), and `progress` is a useSharedValue, whose identity is
-// stable across renders like a ref.
+//
+// One instance per in-flight slide (see the `slides` queue above, and each
+// instance's `key={slide.id}` at the call site) -- this, not a shared
+// mutable slot, is what makes two overlapping slides independent: each
+// mounts its own `progress` shared value and drives its own `withTiming`, so
+// there's nothing for a second slide to stomp regardless of timing. Reads
+// live position from `squareSizeShared` (kept in sync with the board's
+// actual layout by the parent) inside the worklet, rather than a squareSize
+// frozen at slide-start, so a resize mid-flight (extra Android layout
+// passes) is absorbed immediately instead of producing a snap.
 const MoveGhost = memo(function MoveGhost({
+  id,
   piece,
   from,
   to,
   squareSize,
-  progress,
+  squareSizeShared,
+  pieceSprites,
+  onDone,
 }: {
+  id: number;
   piece: string;
   from: string;
   to: string;
+  /** Plain, current-render value -- only used for PieceGlyph's own (non-animated) cosmetic sizing. */
   squareSize: number;
-  progress: SharedValue<number>;
+  /** Live value read inside the worklet below for position/size -- see the comment above. */
+  squareSizeShared: SharedValue<number>;
+  pieceSprites: PieceSpriteMap;
+  // Takes `id` rather than the caller closing over it -- an inline arrow at
+  // the call site would be a new function every parent render, which would
+  // make `memo` below see a "changed" prop on every unrelated re-render and
+  // defeat the whole point of memoizing this component (see the comment
+  // above it). `handleSlideDone` in the parent is itself a stable
+  // useCallback, so passing it directly here keeps this prop reference
+  // stable across renders.
+  onDone: (id: number) => void;
 }) {
+  const progress = useSharedValue(0);
   const [fromRow, fromCol] = squareToRowCol(from);
   const [toRow, toCol] = squareToRowCol(to);
-  const fromX = fromCol * squareSize;
-  const fromY = fromRow * squareSize;
-  const toX = toCol * squareSize;
-  const toY = toRow * squareSize;
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: fromX + (toX - fromX) * progress.value },
-      { translateY: fromY + (toY - fromY) * progress.value },
-    ],
-  }));
+  useEffect(() => {
+    progress.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(onDone)(id);
+    });
+    // Mount-only: this instance exists for exactly one slide's lifetime (see
+    // the queue comment above), so there is nothing to re-trigger on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const s = squareSizeShared.value;
+    const fromX = fromCol * s;
+    const fromY = fromRow * s;
+    const toX = toCol * s;
+    const toY = toRow * s;
+    return {
+      width: s,
+      height: s,
+      transform: [
+        { translateX: fromX + (toX - fromX) * progress.value },
+        { translateY: fromY + (toY - fromY) * progress.value },
+      ],
+    };
+  });
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[styles.dragGhost, { width: squareSize, height: squareSize, left: 0, top: 0 }, animatedStyle]}
-    >
-      <PieceGlyph piece={piece} squareSize={squareSize} />
+    <Animated.View pointerEvents="none" style={[styles.dragGhost, { left: 0, top: 0 }, animatedStyle]}>
+      <PieceGlyph piece={piece} squareSize={squareSize} pieceSprites={pieceSprites} />
     </Animated.View>
   );
 });
@@ -530,6 +587,7 @@ function DragGhost({
   squareSize,
   dragX,
   dragY,
+  pieceSprites,
 }: {
   piece: string;
   row: number;
@@ -537,6 +595,7 @@ function DragGhost({
   squareSize: number;
   dragX: SharedValue<number>;
   dragY: SharedValue<number>;
+  pieceSprites: PieceSpriteMap;
 }) {
   // Lifts the piece well above the fingertip while dragging (like chess.com)
   // so the hand holding it doesn't cover the piece or the destination square.
@@ -559,7 +618,7 @@ function DragGhost({
         animatedStyle,
       ]}
     >
-      <PieceGlyph piece={piece} squareSize={squareSize} />
+      <PieceGlyph piece={piece} squareSize={squareSize} pieceSprites={pieceSprites} />
     </Animated.View>
   );
 }
@@ -573,8 +632,16 @@ function spriteKey(piece: string): string {
   return (piece === piece.toUpperCase() ? 'w' : 'b') + piece.toLowerCase();
 }
 
-function PieceGlyph({ piece, squareSize }: { piece: string; squareSize: number }) {
-  const sprite = PIECE_SPRITES[spriteKey(piece)];
+function PieceGlyph({
+  piece,
+  squareSize,
+  pieceSprites,
+}: {
+  piece: string;
+  squareSize: number;
+  pieceSprites: PieceSpriteMap;
+}) {
+  const sprite = pieceSprites[spriteKey(piece)];
   if (!sprite) return null;
 
   return (
@@ -610,6 +677,18 @@ function PieceGlyph({ piece, squareSize }: { piece: string; squareSize: number }
       <Image
         source={sprite}
         contentFit="contain"
+        // expo-image's default cachePolicy ('disk') only caches the source
+        // bytes, not the decoded bitmap -- a piece's Image mounts FRESH every
+        // time it lands on a new square (the square goes from rendering
+        // nothing to rendering a PieceGlyph, not a prop update on an
+        // existing one), so without this it re-decodes/re-rasterizes these
+        // unusually complex vtraced SVGs (hundreds of paths, up to ~1.5MB)
+        // from scratch on every single move -- visible as the moved piece
+        // blanking for a moment, especially on Android. 'memory-disk' caches
+        // the decoded bitmap keyed by source, so once every piece type has
+        // been decoded once (already true by the starting position, which
+        // shows all 12), every later move hits the cache instantly.
+        cachePolicy="memory-disk"
         // Cut per whole square, so the sprite fills it edge to edge and keeps
         // the render's own framing and scale. Lifted a few percent off its own
         // baseline so it clears the shadow beneath it and reads as raised.
