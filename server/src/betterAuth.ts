@@ -12,6 +12,31 @@ if (!BETTER_AUTH_SECRET) {
   throw new Error('BETTER_AUTH_SECRET is not set');
 }
 
+// True only when DATABASE_URL points at the local Postgres dev database
+// (see server/README.md's "Local development vs. production") -- gates
+// TEST_ACCOUNT_DOMAIN below so it can never fire against the real Neon
+// database, whether that's because someone runs the server locally with
+// ENV_FILE=.env.production or because this ever ends up deployed somewhere
+// that reads .env.production directly. Checked by hostname, not NODE_ENV
+// (nothing in this server sets NODE_ENV), since the DB target is the one
+// thing that actually distinguishes "local" from "production" here.
+function isLocalDatabase(): boolean {
+  try {
+    const { hostname } = new URL(process.env.DATABASE_URL ?? '');
+    return hostname === '127.0.0.1' || hostname === 'localhost';
+  } catch {
+    return false;
+  }
+}
+
+// Dev convenience only: any account signed up with this email domain gets a
+// large chips/gems balance instead of the normal defaults, so Forge
+// purchases can be smoke-tested without grinding or manually editing the
+// local DB. Never applies unless isLocalDatabase() is also true.
+const TEST_ACCOUNT_DOMAIN = /@rockstyle\.test$/i;
+const TEST_ACCOUNT_CHIPS = 100_000_000;
+const TEST_ACCOUNT_GEMS = 100_000;
+
 export const auth = betterAuth({
   secret: BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {
@@ -51,9 +76,15 @@ export const auth = betterAuth({
       create: {
         // Replaces the old POST /auth/signup handler's
         // `db.insert(playerProfiles)` call -- same defaults (1200 rating,
-        // 10M chips) come from playerProfiles's own column defaults.
+        // 10M chips) come from playerProfiles's own column defaults, except
+        // for local-dev @rockstyle.test test accounts (see
+        // TEST_ACCOUNT_DOMAIN above).
         after: async (user) => {
-          await db.insert(playerProfiles).values({ userId: user.id });
+          const isTestAccount = isLocalDatabase() && TEST_ACCOUNT_DOMAIN.test(user.email);
+          await db.insert(playerProfiles).values({
+            userId: user.id,
+            ...(isTestAccount ? { chips: TEST_ACCOUNT_CHIPS, gems: TEST_ACCOUNT_GEMS } : {}),
+          });
         },
       },
     },
