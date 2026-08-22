@@ -13,11 +13,12 @@ exists for it.
 **Real / working**
 - **Chess engine** — `chess.js` drives all legality, check/checkmate/
   stalemate/draw detection; the app only renders and dispatches moves.
-- **Five-tier bot ladder** (`src/lib/botEngine.ts`) — a random-move easy bot,
-  a from-scratch negamax/alpha-beta heuristic bot for medium (time-budgeted
-  to stay responsive on React Native's single JS thread), and two Stockfish
-  18 WASM tiers (lite ~1600 Elo / strong ~2200 Elo) run inside a hidden
-  `react-native-webview` (`src/components/StockfishEngine.tsx`).
+- **Five-tier bot ladder** (`src/lib/botEngine.ts`) — a from-scratch
+  negamax/alpha-beta heuristic bot, iteratively deepened against a shared
+  time budget (time-budgeted to stay responsive on React Native's single JS
+  thread) for easy (1-ply) and medium (up to 3-ply), and three Stockfish 18
+  WASM tiers (basic ~1600 Elo / lite ~2000 Elo / strong ~2800 Elo) run
+  inside a hidden `react-native-webview` (`src/components/StockfishEngine.tsx`).
 - **Local pass-and-play** and **bot matches**, fully client-side, no server
   required.
 - **Real online multiplayer** — matchmaking by venue tier, live move sync,
@@ -113,24 +114,37 @@ Open in Expo Go, or a dev build. `chess.js`, the bot ladder, and local
 pass-and-play all work with no server running at all. Online multiplayer
 and accounts need the server below; `EXPO_PUBLIC_SERVER_URL` should point
 at it — your machine's LAN IP + port when developing against a physical
-device (Expo Go can't resolve `localhost` to your dev machine), or the
-deployed server's `wss://` URL otherwise.
+device (Expo Go can't resolve `localhost` to your dev machine). Day-to-day
+this should be your **local** server from the section below, not the
+deployed Railway one — that keeps every edit-and-reload cycle off the real
+production database. Temporarily swap in the deployed `wss://` URL only
+when you deliberately want to smoke-test against production; Expo
+specifically recommends against relying on multiple auto-loaded `.env.*`
+files for this kind of switch (`expo export`/EAS always force
+`NODE_ENV=production`, making file selection unpredictable), so this one
+`.env` value is a manual edit, same as the server's local-vs-remote split
+below.
 
 ### Server (multiplayer + database)
 
 ```bash
 cd server
 npm install
-cp .env.example .env      # set DATABASE_URL + JWT_SECRET
-npx drizzle-kit generate  # only needed after changing schema
-npx drizzle-kit migrate   # apply pending migrations
+cp .env.example .env       # set DATABASE_URL to your local Postgres, + JWT_SECRET
+npm run db:migrate         # apply pending migrations (local DB)
 npm run dev                # tsx watch src/index.ts, listens on :4000
 ```
 
-Requires a reachable PostgreSQL instance (`DATABASE_URL`). See
-`server/README.md` for the full protocol reference, why Drizzle over Prisma,
-why auth is self-hosted rather than a third-party provider, and Railway
-deployment steps.
+Requires a reachable PostgreSQL instance (`DATABASE_URL`) — a local
+Postgres install (or `createdb`'d database) for day-to-day development,
+kept entirely separate from the Neon database that backs production. See
+**"Local development vs. production"** in `server/README.md` for the full
+local-DB setup and the `:remote` npm scripts that deliberately push a
+tested migration/seed change to the real Neon database once it's approved
+— that split, plus a normal `git push` for the Railway deploy itself, is
+the whole "promote local changes to production" workflow. Also see
+`server/README.md` for the full protocol reference, why Drizzle over
+Prisma, and why auth is self-hosted rather than a third-party provider.
 
 ### Android (local release build)
 

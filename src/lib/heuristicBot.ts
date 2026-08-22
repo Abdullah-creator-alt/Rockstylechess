@@ -2,26 +2,39 @@ import type { Chess, PieceSymbol } from 'chess.js';
 
 import type { EngineMove } from './botEngine';
 
-// Medium tier (Valkyrie Riff, Old School Roy, Metal Head): negamax with
-// alpha-beta pruning over chess.js's own move()/undo(), no external engine.
+// Easy tier (Roadie Rick) and medium tier (Valkyrie Riff, Old School Roy):
+// negamax with alpha-beta pruning over chess.js's own move()/undo(), no
+// external engine -- just different max search depths (see EASY_HEURISTIC_DEPTH
+// / HEURISTIC_MAX_SEARCH_DEPTH below).
 //
 // chess.js's move generation is not cheap (~ms per call, not microseconds --
 // it's a naive JS implementation, not bitboards), and this runs synchronously
 // on React Native's single JS thread, which also owns touch/gesture handling.
-// Depth 3 was measured to genuinely freeze the app for many seconds -- tens
-// of thousands of chess.js calls blocking everything, including input, which
-// then queues up and fires all at once the moment it unblocks. Depth 2 plus
-// a hard wall-clock deadline (below) keeps this to a bounded, brief pause
-// instead.
-export const HEURISTIC_SEARCH_DEPTH = 2;
+// A flat, unconditional depth 3 was once measured to genuinely freeze the
+// app for many seconds -- tens of thousands of chess.js calls blocking
+// everything, including input, which then queues up and fires all at once
+// the moment it unblocks.
+//
+// pickHeuristicMove now iteratively deepens (1, 2, 3, ...) against a single
+// shared wall-clock deadline instead of searching one fixed depth: depth 2
+// always completes (it already finishes well inside the deadline today),
+// and a bonus depth-3 pass is only kept if it *also* finishes before the
+// deadline -- otherwise it's discarded and the depth-2 result is used, which
+// is exactly today's behavior. Every node (including root-level ones) routes
+// through the same state.aborted fast path below, so the worst case is
+// bounded by the deadline itself no matter how deep a round gets -- this is
+// the standard "iterative deepening with a time cutoff" pattern, not a
+// repeat of the old flat depth-3 attempt.
+export const HEURISTIC_MAX_SEARCH_DEPTH = 3; // medium tier (Valkyrie Riff, Old School Roy)
+export const EASY_HEURISTIC_DEPTH = 1; // easy tier (Roadie Rick) -- immediate eval only, no recursion
 // Hard safety net regardless of position complexity or depth -- once hit,
 // remaining nodes fall back to an instant static eval instead of recursing
 // further, so worst case is bounded no matter how many legal moves a given
 // position has.
-const SEARCH_TIME_BUDGET_MS = 300;
+const SEARCH_TIME_BUDGET_MS = 450;
 
 const MATE_SCORE = 100000;
-const TIE_TOLERANCE_CP = 20;
+const TIE_TOLERANCE_CP = 10;
 
 const PIECE_VALUES: Record<PieceSymbol, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 
@@ -160,8 +173,10 @@ function negamax(chess: Chess, depth: number, alpha: number, beta: number, state
   return best;
 }
 
-export function pickHeuristicMove(chess: Chess, depth = HEURISTIC_SEARCH_DEPTH): EngineMove | null {
-  const moves = orderedMoves(chess);
+type ScoredMove = { move: ReturnType<typeof orderedMoves>[number]; score: number };
+
+export function pickHeuristicMove(chess: Chess, maxDepth = HEURISTIC_MAX_SEARCH_DEPTH): EngineMove | null {
+  let moves = orderedMoves(chess);
   if (moves.length === 0) return null;
   // Forced move -- searching it would just burn the time budget for nothing.
   if (moves.length === 1) {
@@ -170,21 +185,44 @@ export function pickHeuristicMove(chess: Chess, depth = HEURISTIC_SEARCH_DEPTH):
   }
 
   const state: SearchState = { deadline: Date.now() + SEARCH_TIME_BUDGET_MS, nodeCount: 0, aborted: false };
-  let alpha = -Infinity;
-  const beta = Infinity;
+  let scored: ScoredMove[] = [];
   let bestScore = -Infinity;
-  const scored: { move: (typeof moves)[number]; score: number }[] = [];
 
-  for (const move of moves) {
-    chess.move({ from: move.from, to: move.to, promotion: move.promotion ?? 'q' });
-    const score = -negamax(chess, depth - 1, -beta, -alpha, state);
-    chess.undo();
-    scored.push({ move, score });
-    if (score > bestScore) bestScore = score;
-    if (score > alpha) alpha = score;
+  // Iterative deepening: always keep the last round that finished in full.
+  // A deeper round that gets cut off partway through is discarded outright
+  // (its later moves would only have a cheap, inconsistent 1-ply-equivalent
+  // score once state.aborted trips), so bestScore/scored only ever reflect a
+  // fully-completed round -- never a mix of two depths.
+  for (let depth = 1; depth <= maxDepth; depth += 1) {
+    let alpha = -Infinity;
+    const beta = Infinity;
+    let roundBest = -Infinity;
+    const roundScored: ScoredMove[] = [];
+
+    for (const move of moves) {
+      chess.move({ from: move.from, to: move.to, promotion: move.promotion ?? 'q' });
+      const score = -negamax(chess, depth - 1, -beta, -alpha, state);
+      chess.undo();
+      roundScored.push({ move, score });
+      if (score > roundBest) roundBest = score;
+      if (score > alpha) alpha = score;
+    }
+
+    // The very first round is always kept even if it got cut off partway
+    // through (guarantees scored/bestScore are never empty) -- only a
+    // deeper *bonus* round, with an already-valid shallower result to fall
+    // back to, gets discarded on abort.
+    if (state.aborted && scored.length > 0) break;
+    scored = roundScored;
+    bestScore = roundBest;
+    if (state.aborted) break;
+    // Best-first ordering for the next, deeper round -- improves alpha-beta
+    // pruning and raises the odds that round also finishes before the
+    // deadline.
+    moves = [...roundScored].sort((a, b) => b.score - a.score).map((s) => s.move);
   }
 
-  // Randomize among near-tied top moves so medium doesn't always play the
+  // Randomize among near-tied top moves so this bot doesn't always play the
   // exact same reply in a given position.
   const tied = scored.filter((s) => bestScore - s.score <= TIE_TOLERANCE_CP);
   const chosen = tied[Math.floor(Math.random() * tied.length)];

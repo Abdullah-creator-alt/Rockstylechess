@@ -27,16 +27,31 @@ Three things about it are easy to break:
   floored to a whole number and sized to 8× that; leftover pixels go to the
   frame. The playfield sits in its own exactly-sized box so the drag ghost shares
   its coordinate space.
-- **Piece art is vector, not raster.** `pieceSprites.ts` requires
-  `assets/pieces/*.svg` (12 files, one per piece/color). An earlier raster
+- **Piece art is vector, not raster.** `assets/pieces/*.svg` (12 files, one
+  per piece/color) is the free "Classic Chrome" piece set. An earlier raster
   pipeline (`scripts/extract-pieces.js`, cutting sprites from a photographed
   reference board) is what `assets/reference/README.md` documents and is no
   longer what's live — a first vector attempt off that same reference was
   rejected as too soft, but a second pass off cleaner source renders,
   autotraced with `vtracer` and corrected against `DESIGN.md`'s
   `pieceWhite*`/`pieceBlack*` tones, is what's actually in `assets/pieces/`
-  now. `pieceSprites.ts` is hand-edited, not generated — safe to touch
-  directly.
+  now.
+- **Piece sets (piece skins).** `pieceSprites.ts` exports `getPieceSprites(id)`,
+  resolving one of several variant sprite maps rather than a single flat
+  export. Locked variants (Graphite Tour, Molten Gold, Crimson Reaper — see
+  `constants/pieceSets.ts`) live under their own
+  `assets/pieces/<variant-id>/` subdirectory, produced by one of two
+  one-time authoring scripts (see each catalog entry's comment in
+  `pieceSets.ts` for which): `scripts/vectorize-pieces.mjs` traces bespoke
+  hand-sourced renders into genuinely new piece geometry (Molten Gold and
+  Crimson Reaper are both this — real chess sets of their own, not a
+  recolor); `scripts/recolor-pieces.mjs` mixHex-blends the *classic* SVGs'
+  existing fills toward an accent (Graphite Tour — transitional, only used
+  because bespoke source art doesn't exist for it yet). Nothing recolors or
+  regenerates at runtime either way. `pieceSprites.ts` is hand-edited, not
+  generated — safe to touch directly.
+  `ChessBoard`'s `pieceSprites` prop (parallel to its `theme` prop) is what
+  selects which set actually renders.
 - **Square colours come from `BoardSquares` per rank**, not one flat pair. Both
   are measured off the reference; see the theme.
 

@@ -26,7 +26,7 @@ interface Bot {
 const BOTS: Bot[] = [
   { id: 'roadie-rick', name: 'Roadie Rick', emoji: '🧢', stars: 1, locked: false, difficulty: 'easy' },
   { id: 'valkyrie-riff', name: 'Valkyrie Riff', emoji: '⚡', stars: 3, locked: false, difficulty: 'medium' },
-  { id: 'metal-head', name: 'Metal Head', emoji: '🤘', stars: 4, locked: false, difficulty: 'medium' },
+  { id: 'metal-head', name: 'Metal Head', emoji: '🤘', stars: 4, locked: false, difficulty: 'stockfish-basic' },
   { id: 'the-reaper', name: 'The Reaper', emoji: '💀', stars: 5, locked: false, difficulty: 'stockfish-lite' },
   { id: 'old-school-roy', name: 'Old School Roy', emoji: '🕶️', stars: 3, locked: false, difficulty: 'medium' },
   { id: 'king-axl', name: 'King Axl', emoji: '👑', stars: 5, locked: false, difficulty: 'stockfish-strong' },

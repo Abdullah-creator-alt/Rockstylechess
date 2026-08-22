@@ -49,30 +49,76 @@ persisted -- gameplay is identical, there's just nothing to save.
 Migrations: schema changes go into `src/db/schema/*.ts`, then:
 
 ```bash
-npx drizzle-kit generate   # writes a reviewable .sql file into drizzle/ (commit it)
-npx drizzle-kit migrate    # applies pending migrations to $DATABASE_URL
+npm run db:generate   # writes a reviewable .sql file into drizzle/ (commit it)
+npm run db:migrate    # applies pending migrations to the LOCAL dev DB ($DATABASE_URL from .env)
 ```
 
-(This drive's `bin-links=false` means `drizzle-kit` has no `.bin/` shim --
-invoke it as `node node_modules/drizzle-kit/bin.cjs <command>` if `npx`
-doesn't resolve it.)
+(These wrap `node node_modules/drizzle-kit/bin.cjs <command>` directly --
+this drive's `bin-links=false` means `drizzle-kit` has no `.bin/` shim, so
+`npx drizzle-kit ...` won't resolve it.)
 
-Seeding: the `spin_prizes` catalog table has no rows until seeded --
-`POST /me/spin` throws a clean 500 (`spin-prizes-not-seeded`) until this has
-been run once against `$DATABASE_URL`:
+Seeding: the `spin_prizes` and `cosmetic_items` catalog tables have no rows
+until seeded -- `POST /me/spin` throws a clean 500
+(`spin-prizes-not-seeded`) and the Forge's shop tabs have nothing
+purchasable until these have been run once against `$DATABASE_URL`:
 
 ```bash
 npm run seed:spin
+npm run seed:cosmetics
 ```
 
-Idempotent (upsert by `id`, not insert-only) -- safe to re-run any time the
-prize amounts/weights in `src/spinPrizes.ts` are tuned.
+Both are idempotent (upsert by `id`, not insert-only) -- safe to re-run any
+time the seed data in `src/spinPrizes.ts`/`src/boardThemes.ts`/
+`src/pieceSets.ts` is tuned.
 
-Local dev has no Postgres/Docker installed by default on this machine; the
-simplest path is provisioning one Postgres instance on Railway and pointing
-both local dev and production at the same `DATABASE_URL` for now (see
-`.env.example`) -- split a dedicated dev database later by provisioning a
-second Railway Postgres and swapping the env var.
+**Level/XP progression** (the first written documentation of any
+economy-adjacent system in this repo -- the chips economy above was never
+documented here either, only in code comments): `playerProfiles.level`/
+`.xp` are driven by a single polynomial curve, `src/leveling.ts`'s
+`xpForLevel(level) = 300 * level^2` (level 1 is pinned to 0 XP as a special
+case, since the raw formula would otherwise require 300 XP just to *start*
+at level 1). `levelForXp`/`getLevelProgress` invert it and derive a
+progress-bar-ready breakdown; `applyXpGain` is the only place XP is ever
+granted, used by both match-reward paths (`db/persistMatchResult.ts` for
+online matches, `POST /me/match-reward` for bot/local) so `level` can never
+drift from what the current `xp` implies. Reward amounts live next to the
+chips ones in `matchRewards.ts` (`MATCH_XP_REWARDS`). The curve itself is
+mirrored read-only in `src/lib/leveling.ts` on the client (display math
+only, no mutation helper) -- keep both files in sync if it changes.
+
+## Local development vs. production
+
+Postgres 16 runs locally on this machine as a system service (not Docker --
+none installed) on the default port; a dedicated `rockstyle_dev` role +
+`rockstyle_chess_dev` database were created once for this project
+(`CREATE ROLE rockstyle_dev LOGIN PASSWORD '...' CREATEDB;` /
+`CREATE DATABASE rockstyle_chess_dev OWNER rockstyle_dev;`, run once via
+`psql`). Plain `.env` points `DATABASE_URL` at that local database -- this
+is what `npm run dev`, `npm run db:migrate`, and `npm run seed:*` all use
+by default, so ordinary day-to-day development (including running
+migrations while iterating on a schema change) never touches the real data.
+
+`.env.production` (gitignored, never committed -- see root `.gitignore`)
+holds the actual Neon `DATABASE_URL` and exists *only* so the `:remote`
+npm scripts can point at it deliberately:
+
+```bash
+npm run db:migrate:remote      # applies the same migration to the real Neon DB
+npm run seed:spin:remote       # re-seeds spin prizes on production
+npm run seed:cosmetics:remote  # re-seeds board/piece cosmetics on production
+```
+
+These set `ENV_FILE=.env.production` (read by both `drizzle.config.ts` and
+`src/env.ts`) instead of touching `.env` itself -- there's no file-swapping
+step, and `npm run dev` always still targets the local database no matter
+which `:remote` script you last ran. The workflow this enables end to end:
+develop and test against the local DB, run `db:generate` + `db:migrate`
+locally until a schema change is right, then once it's approved run the
+matching `:remote` command(s) against Neon, and `git push` (Railway
+auto-deploys from the repo, see below) to ship the code that depends on it.
+Railway's own running service never reads `.env.production` or any local
+file -- its `DATABASE_URL` is a service variable set directly in Railway's
+dashboard, same as today.
 
 ## Protocol
 
@@ -177,11 +223,14 @@ Railway supports deploying from a subdirectory of a monorepo:
    `BETTER_AUTH_SECRET` (a long random string), `BETTER_AUTH_URL` (the
    Railway public URL from step 8, once generated), `WEB_CLIENT_ORIGINS`,
    and `MOBILE_APP_SCHEME` (must match `app.json`'s `"scheme"`).
-7. Run `npx drizzle-kit migrate` once against the Neon `DATABASE_URL`
-   (from a local shell with that URL exported, or `railway run` once the
-   service has the variable) to create the tables before the first real
-   request hits `/auth/signup`. Also run `npm run seed:spin` once, same
-   target, before the daily spin wheel is used for the first time.
+7. Run `npm run db:migrate:remote` once (with `server/.env.production` set
+   to this same Neon `DATABASE_URL` -- see "Local development vs.
+   production" above) to create the tables before the first real request
+   hits `/auth/signup`. Also run `npm run seed:spin:remote` and
+   `npm run seed:cosmetics:remote` once, same target, before the daily spin
+   wheel or the Forge shop are used for the first time. Every later schema/
+   catalog change follows the same `:remote` pattern once it's been tested
+   locally, instead of re-running this step manually.
 8. Copy the generated public URL (`https://<app>.up.railway.app`) into the
    client's `EXPO_PUBLIC_SERVER_URL`, using `wss://` for the Socket.IO
    client (Railway terminates TLS at the edge).

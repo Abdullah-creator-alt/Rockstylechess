@@ -30,7 +30,7 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
 
 export function updateProfile(
   token: string,
-  updates: { displayName?: string; avatarId?: string; equippedBoardId?: string },
+  updates: { displayName?: string; avatarId?: string; equippedBoardId?: string; equippedPieceId?: string },
 ): Promise<{ ok: true }> {
   return request('/me/profile', { method: 'PATCH', body: updates, token });
 }
@@ -86,7 +86,7 @@ export function getMyProfile(token: string): Promise<{ profile: PlayerProfile }>
 export function claimMatchReward(
   token: string,
   outcome: 'win' | 'loss' | 'draw',
-): Promise<{ ok: true; chipsGranted: number; chips: number }> {
+): Promise<{ ok: true; chipsGranted: number; chips: number; xpGranted: number; xp: number; level: number }> {
   return request('/me/match-reward', { method: 'POST', body: { outcome }, token });
 }
 
@@ -159,6 +159,17 @@ export interface MatchHistoryEntry {
 export function getMyMatches(token: string, limit?: number): Promise<{ matches: MatchHistoryEntry[] }> {
   const query = limit ? `?limit=${limit}` : '';
   return request(`/me/matches${query}`, { method: 'GET', token });
+}
+
+// Backs the replay screen. pgn/moveElapsedMs are both null when the match
+// predates this feature or was never persisted with move data (e.g. a
+// bot/local mode row, if one ever exists) -- callers show an empty state
+// rather than assuming every match history row is replayable.
+export function getMatchReplay(
+  token: string,
+  matchId: string,
+): Promise<{ pgn: string | null; moveElapsedMs: number[] | null }> {
+  return request(`/me/matches/${encodeURIComponent(matchId)}/replay`, { method: 'GET', token });
 }
 
 export interface LeaderboardEntry {

@@ -1,7 +1,8 @@
 import { eq, sql } from 'drizzle-orm';
 
+import { applyXpGain } from '../leveling.js';
 import type { MatchState, PieceColor } from '../match.js';
-import { MATCH_CHIP_REWARDS } from '../matchRewards.js';
+import { MATCH_CHIP_REWARDS, MATCH_XP_REWARDS } from '../matchRewards.js';
 import { db } from './client.js';
 import { expectedScore, updatedRating } from './elo.js';
 import { matchParticipants, matches, playerProfiles } from './schema/index.js';
@@ -48,6 +49,7 @@ export async function persistMatchResult(
       resultType,
       winnerColor,
       pgn: match.chess.pgn(),
+      moveElapsedMs: match.moveElapsedMs,
       startedAt: match.createdAt,
     })
     .returning();
@@ -74,8 +76,8 @@ export async function persistMatchResult(
   ]);
 
   await Promise.all([
-    updateProfileStats(white.userId, whiteRatingAfter, whiteScore),
-    updateProfileStats(black.userId, blackRatingAfter, blackScore),
+    updateProfileStats(white.userId, whiteRatingAfter, whiteScore, whiteProfile.xp),
+    updateProfileStats(black.userId, blackRatingAfter, blackScore, blackProfile.xp),
   ]);
 }
 
@@ -85,8 +87,15 @@ function outcomeFor(score: number): 'win' | 'loss' | 'draw' {
   return 'draw';
 }
 
-async function updateProfileStats(userId: string, ratingAfter: number, score: number): Promise<void> {
-  const chipsGranted = MATCH_CHIP_REWARDS[outcomeFor(score)];
+async function updateProfileStats(
+  userId: string,
+  ratingAfter: number,
+  score: number,
+  currentXp: number,
+): Promise<void> {
+  const outcome = outcomeFor(score);
+  const chipsGranted = MATCH_CHIP_REWARDS[outcome];
+  const { xp, level } = applyXpGain(currentXp, MATCH_XP_REWARDS[outcome]);
   await db
     .update(playerProfiles)
     .set({
@@ -96,6 +105,8 @@ async function updateProfileStats(userId: string, ratingAfter: number, score: nu
       draws: sql`${playerProfiles.draws} + ${score === 0.5 ? 1 : 0}`,
       winStreak: score === 1 ? sql`${playerProfiles.winStreak} + 1` : sql`0`,
       chips: sql`${playerProfiles.chips} + ${chipsGranted}`,
+      xp,
+      level,
       updatedAt: new Date(),
     })
     .where(eq(playerProfiles.userId, userId));

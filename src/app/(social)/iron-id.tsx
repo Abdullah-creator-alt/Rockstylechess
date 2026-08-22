@@ -11,7 +11,9 @@ import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { getAvatarEmoji } from '@/constants/avatars';
 import { getMyMatches, getMyProfile, type MatchHistoryEntry, type PlayerProfile } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
+import { getLevelProgress } from '@/lib/leveling';
 import { formatRelativeTime } from '@/lib/time';
+import { tierLabel } from '@/lib/tierLabel';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
@@ -55,16 +57,6 @@ const RESULT_LABEL: Record<MatchHistoryEntry['resultType'], string> = {
   resignation: 'Resignation',
   forfeit: 'Forfeit',
 };
-
-// Purely cosmetic -- no "tier"/"season" concept exists anywhere in the
-// schema/backend. Maps rating to a flavor label so the profile header
-// keeps its stage-name feel without inventing a fake season number.
-function tierLabel(rating: number): string {
-  if (rating >= 2200) return 'GRANDMASTER STAGE';
-  if (rating >= 1800) return 'MASTER STAGE';
-  if (rating >= 1400) return 'CHALLENGER STAGE';
-  return 'ROOKIE STAGE';
-}
 
 function formatDelta(delta: number): string {
   return delta > 0 ? `+${delta}` : `${delta}`;
@@ -120,6 +112,7 @@ export default function IronIdScreen() {
   const games = profile ? profile.wins + profile.losses + profile.draws : 0;
   const winRate = games > 0 ? `${((profile!.wins / games) * 100).toFixed(1)}%` : '—';
   const latestDelta = matches.length > 0 ? matches[0].ratingDelta : null;
+  const levelProgress = getLevelProgress(profile?.xp ?? 0);
 
   return (
     <View style={styles.root}>
@@ -179,6 +172,13 @@ export default function IronIdScreen() {
             <View style={styles.profileSubRow}>
               <MaterialCommunityIcons name="medal" size={16} color={Colors.cyan} />
               <Text style={styles.profileSubtitle}>{tierLabel(profile.rating)}</Text>
+            </View>
+            <View style={styles.xpBarWrap}>
+              <ProgressBar
+                progress={levelProgress.progress}
+                height={6}
+                label={`${levelProgress.xpIntoLevel.toLocaleString()} / ${levelProgress.xpForNextLevel.toLocaleString()} XP`}
+              />
             </View>
           </View>
 
@@ -260,49 +260,66 @@ export default function IronIdScreen() {
           ) : (
             <View style={styles.matchList}>
               {matches.map((match) => (
-                <RockCard key={match.matchId} style={styles.matchCard}>
-                  <View style={styles.matchRow}>
-                    <View
-                      style={[
-                        styles.matchOutcomeBox,
-                        match.outcome === 'win'
-                          ? styles.matchOutcomeWin
-                          : match.outcome === 'loss'
-                            ? styles.matchOutcomeLoss
-                            : styles.matchOutcomeDraw,
-                      ]}
-                    >
-                      <Text
+                <Pressable
+                  key={match.matchId}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/replay',
+                      params: {
+                        matchId: match.matchId,
+                        opponentDisplayName: match.opponentDisplayName,
+                        resultType: match.resultType,
+                        color: match.color,
+                        playedAt: match.playedAt,
+                      },
+                    })
+                  }
+                >
+                  <RockCard style={styles.matchCard}>
+                    <View style={styles.matchRow}>
+                      <View
                         style={[
-                          styles.matchOutcomeText,
-                          {
-                            color:
-                              match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold,
-                          },
+                          styles.matchOutcomeBox,
+                          match.outcome === 'win'
+                            ? styles.matchOutcomeWin
+                            : match.outcome === 'loss'
+                              ? styles.matchOutcomeLoss
+                              : styles.matchOutcomeDraw,
                         ]}
                       >
-                        {match.outcome === 'win' ? 'W' : match.outcome === 'loss' ? 'L' : 'D'}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.matchOutcomeText,
+                            {
+                              color:
+                                match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold,
+                            },
+                          ]}
+                        >
+                          {match.outcome === 'win' ? 'W' : match.outcome === 'loss' ? 'L' : 'D'}
+                        </Text>
+                      </View>
+                      <View style={styles.matchInfo}>
+                        <Text style={styles.matchOpponent}>VS. {match.opponentDisplayName.toUpperCase()}</Text>
+                        <Text style={styles.matchMeta}>
+                          {formatRelativeTime(match.playedAt)} • {RESULT_LABEL[match.resultType]}
+                        </Text>
+                      </View>
+                      <View style={styles.matchDeltaCol}>
+                        <Text
+                          style={[
+                            styles.matchDelta,
+                            { color: match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold },
+                          ]}
+                        >
+                          {formatDelta(match.ratingDelta)}
+                        </Text>
+                        <Text style={styles.matchRatingAfter}>{match.ratingAfter}</Text>
+                      </View>
+                      <MaterialCommunityIcons name="replay" size={20} color={Colors.textMuted} />
                     </View>
-                    <View style={styles.matchInfo}>
-                      <Text style={styles.matchOpponent}>VS. {match.opponentDisplayName.toUpperCase()}</Text>
-                      <Text style={styles.matchMeta}>
-                        {formatRelativeTime(match.playedAt)} • {RESULT_LABEL[match.resultType]}
-                      </Text>
-                    </View>
-                    <View style={styles.matchDeltaCol}>
-                      <Text
-                        style={[
-                          styles.matchDelta,
-                          { color: match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold },
-                        ]}
-                      >
-                        {formatDelta(match.ratingDelta)}
-                      </Text>
-                      <Text style={styles.matchRatingAfter}>{match.ratingAfter}</Text>
-                    </View>
-                  </View>
-                </RockCard>
+                  </RockCard>
+                </Pressable>
               ))}
             </View>
           )}
@@ -435,6 +452,10 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  xpBarWrap: {
+    width: '70%',
+    marginTop: Spacing.sm,
   },
   socialRow: {
     flexDirection: 'row',

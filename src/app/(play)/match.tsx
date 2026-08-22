@@ -15,6 +15,7 @@ import Animated, {
 
 import { BottomNav, ChatPanel, ChatToast, ChessBoard, EmberParticles, RockCard } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
+import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
@@ -23,6 +24,7 @@ import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { claimMatchReward } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
+import { setPendingLocalReplay, type LocalMatchReplay } from '@/lib/localMatchReplayStore';
 import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
@@ -63,10 +65,14 @@ export default function MatchScreen() {
   }>();
   const mode: GameMode = modeParam === 'bot' ? 'bot' : modeParam === 'online' ? 'online' : 'local';
   const difficulty: BotDifficulty =
-    difficultyParam === 'medium' || difficultyParam === 'stockfish-lite' || difficultyParam === 'stockfish-strong'
+    difficultyParam === 'medium' ||
+    difficultyParam === 'stockfish-basic' ||
+    difficultyParam === 'stockfish-lite' ||
+    difficultyParam === 'stockfish-strong'
       ? difficultyParam
       : 'easy';
-  const isStockfishTier = difficulty === 'stockfish-lite' || difficulty === 'stockfish-strong';
+  const isStockfishTier =
+    difficulty === 'stockfish-basic' || difficulty === 'stockfish-lite' || difficulty === 'stockfish-strong';
   const playerColor: 'w' | 'b' = colorParam === 'b' ? 'b' : 'w';
   const online =
     mode === 'online' && matchId && fenParam
@@ -77,6 +83,7 @@ export default function MatchScreen() {
   const [chatOpen, setChatOpen] = useState(false);
   const { profile, refresh: refreshPlayerProfile } = usePlayerProfile();
   const boardTheme = getBoardTheme(profile?.equippedBoardId);
+  const pieceSprites = getPieceSprites(profile?.equippedPieceId);
 
   const requestEngineMove = useCallback((fen: string, config: StockfishConfig): Promise<EngineMove | null> => {
     if (!stockfishRef.current) return Promise.resolve(null);
@@ -125,6 +132,25 @@ export default function MatchScreen() {
         } catch (error) {
           console.log('Failed to claim match reward', error);
         }
+      }
+
+      // No server record exists for these modes -- stash a client-side
+      // replay (cleared explicitly when the player leaves the result
+      // screen via Home, see result-placeholder.tsx) instead. null for
+      // forfeit (never reachable from bot/local -- see ChessGameResult.
+      const replayData = game.getReplayData();
+      if (replayData && reason !== 'forfeit') {
+        setPendingLocalReplay({
+          ...replayData,
+          mode: mode as 'bot' | 'local',
+          // Matches the opponent label already shown live during the match
+          // today (see the PlayerAvatar name below) -- not the bot's real
+          // display name, a pre-existing simplification unrelated to this feature.
+          opponentLabel: mode === 'bot' ? 'STORM_KING' : 'Local Match',
+          outcome,
+          resultType: reason as LocalMatchReplay['resultType'],
+          playedAt: new Date().toISOString(),
+        });
       }
     }
     // Picks up the new balance -- server-credited for online, just-claimed
@@ -185,6 +211,7 @@ export default function MatchScreen() {
           animateLastMove={animateOpponentMove}
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
           theme={boardTheme}
+          pieceSprites={pieceSprites}
         />
 
         <ActionBar

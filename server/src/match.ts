@@ -25,6 +25,14 @@ export interface MatchState {
   // window -- cleared on rejoin, and on expiry the match is forfeited to
   // the other side. See index.ts's RECONNECT_GRACE_MS.
   forfeitTimers: Partial<Record<PieceColor, NodeJS.Timeout>>;
+  // Cumulative ms since createdAt, one entry per ply, appended in applyMove.
+  // Deliberately just timing -- everything else about a move (san, from,
+  // to, piece, captured, promotion, flags, before/after FEN) is already
+  // 100% reconstructable from the pgn column persistMatchResult writes at
+  // match end (chess.loadPgn(pgn) + chess.history({verbose: true})), so
+  // storing it again here would just be duplicated storage for no benefit.
+  // A future replay feature zips this array with that history by index.
+  moveElapsedMs: number[];
 }
 
 export interface MoveInput {
@@ -56,6 +64,7 @@ export function createMatch(playerA: QueuedPlayer, playerB: QueuedPlayer): Match
     },
     createdAt: new Date(),
     forfeitTimers: {},
+    moveElapsedMs: [],
   };
   matches.set(match.id, match);
   return match;
@@ -96,5 +105,6 @@ export function applyMove(match: MatchState, color: PieceColor, move: MoveInput)
   } catch {
     return null;
   }
+  match.moveElapsedMs.push(Date.now() - match.createdAt.getTime());
   return match.chess;
 }

@@ -27,9 +27,11 @@ files without adding `/play` to the URL/deep-link path.
   screen is built.
 - `bots.tsx` — AI opponent gallery, built from `bots_pro_stage_animated`. Each
   bot has a fixed `difficulty` (`src/lib/botEngine.ts`'s `BotDifficulty`):
-  Roadie Rick=easy (random), Valkyrie Riff/Old School Roy/Metal Head=medium
-  (heuristic minimax), The Reaper=stockfish-lite (~1600 Elo), King Axl=
-  stockfish-strong (~2200 Elo) — forwarded to `/match` as a route param.
+  Roadie Rick=easy (1-ply heuristic), Valkyrie Riff/Old School Roy=medium
+  (heuristic minimax, iteratively deepened up to 3-ply), Metal Head=
+  stockfish-basic (~1600 Elo), The Reaper=stockfish-lite (~2000 Elo), King
+  Axl=stockfish-strong (~2800 Elo) — forwarded to `/match`
+  as a route param.
 - `tournaments.tsx` — built from `tournaments_pro_stage_animated`.
 - `puzzles.tsx` — puzzle gallery, grouped by rating band into the same buckets
   `scripts/curate-puzzles.mjs` curated (`src/lib/puzzleCatalog.ts`, ~250 puzzles

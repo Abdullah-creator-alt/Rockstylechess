@@ -1,0 +1,1 @@
+ALTER TABLE "matches" ADD COLUMN "move_elapsed_ms" integer[];

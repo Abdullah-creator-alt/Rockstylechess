@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
+import { clearPendingLocalReplay, getPendingLocalReplay } from '@/lib/localMatchReplayStore';
 import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 
 type Outcome = 'win' | 'loss' | 'draw';
@@ -61,6 +62,11 @@ export default function ResultScreen() {
   const outcome: Outcome = outcomeParam === 'loss' || outcomeParam === 'draw' ? outcomeParam : 'win';
   const isVictory = outcome === 'win';
   const isDraw = outcome === 'draw';
+  // Set by match.tsx's handleGameOver for bot/local outcomes only (online
+  // already has a server-backed replay, reached from Iron ID instead) --
+  // read once per mount, not on every render, since Home explicitly clears
+  // it and we don't want that clear to also blank the button mid-transition.
+  const [localReplay] = useState(() => getPendingLocalReplay());
 
   const { eloBefore, eloAfter } = OUTCOME_ELO[outcome];
   // match.tsx always passes this (the real, just-granted amount) -- the
@@ -116,21 +122,33 @@ export default function ResultScreen() {
       </RockCard>
 
       <View style={styles.buttonStack}>
-        <RockButton
-          label="Rematch"
-          variant="primary"
-          icon={<MaterialCommunityIcons name="refresh" size={20} color={Colors.bgBase} />}
-          onPress={() => {
-            console.log('Rematch pressed');
-            router.replace('/matchmaking');
-          }}
-        />
+        {localReplay ? (
+          <RockButton
+            label="Replay"
+            variant="primary"
+            icon={<MaterialCommunityIcons name="replay" size={20} color={Colors.bgBase} />}
+            onPress={() => router.push({ pathname: '/replay', params: { source: 'local' } })}
+          />
+        ) : (
+          <RockButton
+            label="Rematch"
+            variant="primary"
+            icon={<MaterialCommunityIcons name="refresh" size={20} color={Colors.bgBase} />}
+            onPress={() => {
+              console.log('Rematch pressed');
+              router.replace('/matchmaking');
+            }}
+          />
+        )}
         <RockButton
           label="Home"
           variant="reward"
           icon={<MaterialCommunityIcons name="home" size={20} color={Colors.bgBase} />}
           onPress={() => {
             console.log('Home pressed from result screen');
+            // Explicit "going back" -- the one point the temporary bot/local
+            // replay data gets deleted (no-ops harmlessly if there was none).
+            clearPendingLocalReplay();
             router.replace('/home');
           }}
         />

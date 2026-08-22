@@ -2,6 +2,7 @@ import { Chess, type Square } from 'chess.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { resolveBotMove, type BotDifficulty, type RequestEngineMove } from '@/lib/botEngine';
+import { boardGridFromChess, checkSquareFromChess } from '@/lib/chessBoardSnapshot';
 import { getSocket } from '@/lib/socket';
 import type { MatchEndedPayload, MoveAppliedPayload } from '@/lib/onlineMatch';
 import { parseUciMove } from '@/lib/puzzleEngine';
@@ -107,22 +108,9 @@ function createPuzzleChess(puzzle: PuzzleInfo): Chess {
 }
 
 function buildSnapshot(chess: Chess, lastMoveSource: LastMoveSource, puzzleStatus: PuzzleStatus): GameSnapshot {
-  const rows = chess.board();
-  const board: string[][] = rows.map((row) =>
-    row.map((cell) => (cell ? (cell.color === 'w' ? cell.type.toUpperCase() : cell.type) : '')),
-  );
-
+  const board = boardGridFromChess(chess);
   const turn = chess.turn();
-  let checkSquare: Square | null = null;
-  if (chess.inCheck()) {
-    for (const row of rows) {
-      for (const cell of row) {
-        if (cell && cell.type === 'k' && cell.color === turn) {
-          checkSquare = cell.square;
-        }
-      }
-    }
-  }
+  const checkSquare = checkSquareFromChess(chess);
 
   const history = chess.history({ verbose: true });
   const capturedByWhite: string[] = [];
@@ -174,6 +162,17 @@ export function useChessGame({
   // (applied by the puzzle-reply effect below).
   const puzzleMoveIndexRef = useRef(1);
   const isSolverTurnInPuzzle = puzzleMoveIndexRef.current % 2 === 1;
+  // Bot/local matches never reach the server, so unlike online (server/src/
+  // match.ts's applyMove) they'd otherwise have no timing data for a replay
+  // feature to use -- mirrors that exact Date.now()-since-start pattern
+  // client-side, only for the modes that need it.
+  const matchStartRef = useRef(Date.now());
+  const moveElapsedMsRef = useRef<number[]>([]);
+
+  function recordMoveTiming() {
+    if (mode !== 'bot' && mode !== 'local') return;
+    moveElapsedMsRef.current.push(Date.now() - matchStartRef.current);
+  }
 
   const legalTargets = useMemo(() => {
     if (!selectedSquare) return [];
@@ -257,6 +256,7 @@ export function useChessGame({
         } catch (error) {
           console.log('Unexpected illegal move rejected by chess.js', error);
         }
+        recordMoveTiming();
         refresh('human');
         reportGameOverIfDone();
         if (mode === 'online' && online) {
@@ -347,7 +347,8 @@ export function useChessGame({
     // rapid state changes). `cancelled` stops it from being applied then,
     // which the old purely-synchronous version never had to guard against.
     let cancelled = false;
-    const isStockfish = difficulty === 'stockfish-lite' || difficulty === 'stockfish-strong';
+    const isStockfish =
+      difficulty === 'stockfish-basic' || difficulty === 'stockfish-lite' || difficulty === 'stockfish-strong';
     const delay = isStockfish ? HARD_PRE_DELAY_MS : BOT_MOVE_DELAY_MS;
 
     const timeout = setTimeout(async () => {
@@ -358,6 +359,7 @@ export function useChessGame({
       } catch (error) {
         console.log('Bot move rejected unexpectedly', error);
       }
+      recordMoveTiming();
       refresh('bot');
       reportGameOverIfDone();
     }, delay);
@@ -411,6 +413,15 @@ export function useChessGame({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, puzzle, snapshot]);
 
+  // Bot/local only -- there's no server record to replay from for these
+  // modes, so match.tsx's handleGameOver reads this once at game-over and
+  // hands it to localMatchReplayStore.ts. null for online (already has a
+  // server-backed replay) and puzzle (no replay concept).
+  function getReplayData(): { pgn: string; moveElapsedMs: number[] } | null {
+    if (mode !== 'bot' && mode !== 'local') return null;
+    return { pgn: chessRef.current.pgn(), moveElapsedMs: [...moveElapsedMsRef.current] };
+  }
+
   return {
     board: snapshot.board,
     turn: snapshot.turn,
@@ -427,5 +438,6 @@ export function useChessGame({
     handleSquarePress,
     resetPuzzle,
     resign,
+    getReplayData,
   };
 }

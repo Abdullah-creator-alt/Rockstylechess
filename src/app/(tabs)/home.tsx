@@ -5,8 +5,10 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
+import { getAvatarEmoji } from '@/constants/avatars';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { tierLabel } from '@/lib/tierLabel';
 
 type Duration = '3m' | '5m' | '10m';
 const DURATIONS: Duration[] = ['3m', '5m', '10m'];
@@ -57,7 +59,7 @@ const BENTO_TILES: BentoTile[] = [
 export default function HomeLobbyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { chips, gems } = usePlayerProfile();
+  const { profile, chips, gems } = usePlayerProfile();
   const [selectedVenue, setSelectedVenue] = useState('arena');
   const [duration, setDuration] = useState<Duration>('5m');
 
@@ -79,7 +81,7 @@ export default function HomeLobbyScreen() {
       <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
         <View style={styles.topBarLeft}>
           <View style={styles.avatarWrap}>
-            <PlayerAvatar emoji="🤘" size="small" />
+            <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} level={profile?.level} size="small" />
             <Pressable
               style={styles.forgeBadge}
               onPress={() => {
@@ -91,8 +93,10 @@ export default function HomeLobbyScreen() {
             </Pressable>
           </View>
           <View>
-            <Text style={styles.playerName}>AXL_CHESS</Text>
-            <Text style={styles.playerLevel}>LVL 42 GRANDMASTER</Text>
+            <Text style={styles.playerName}>{profile?.displayName ?? 'Player'}</Text>
+            <Text style={styles.playerLevel}>
+              LVL {profile?.level ?? 1} {tierLabel(profile?.rating ?? 1200)}
+            </Text>
           </View>
         </View>
 

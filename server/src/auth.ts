@@ -5,11 +5,13 @@ import { asyncHandler } from './asyncHandler.js';
 import { requireAuth } from './authMiddleware.js';
 import { BOARD_THEMES } from './boardThemes.js';
 import { purchaseCosmetic } from './db/cosmetics.js';
+import { levelForXp } from './leveling.js';
+import { PIECE_SETS } from './pieceSets.js';
 import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
 import { matchParticipants, matches, playerProfiles, userCosmetics, users } from './db/schema/index.js';
 import { getSpinStatus, performSpin } from './db/spin.js';
-import { MATCH_CHIP_REWARDS, type MatchOutcome } from './matchRewards.js';
+import { MATCH_CHIP_REWARDS, MATCH_XP_REWARDS, type MatchOutcome } from './matchRewards.js';
 
 // Query-param limit shared by /me/matches and /leaderboard -- clamps to a
 // sane range so a client can't ask for an unbounded result set.
@@ -30,8 +32,14 @@ authRouter.patch(
   '/me/profile',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { displayName, avatarId, equippedBoardId } = req.body ?? {};
-    const updates: { displayName?: string; avatarId?: string; equippedBoardId?: string; updatedAt: Date } = {
+    const { displayName, avatarId, equippedBoardId, equippedPieceId } = req.body ?? {};
+    const updates: {
+      displayName?: string;
+      avatarId?: string;
+      equippedBoardId?: string;
+      equippedPieceId?: string;
+      updatedAt: Date;
+    } = {
       updatedAt: new Date(),
     };
     if (typeof displayName === 'string') updates.displayName = displayName.slice(0, 40);
@@ -54,6 +62,25 @@ authRouter.patch(
         }
       }
       updates.equippedBoardId = equippedBoardId;
+    }
+    if (typeof equippedPieceId === 'string') {
+      const set = PIECE_SETS.find((s) => s.id === equippedPieceId);
+      if (!set) {
+        res.status(400).json({ error: 'invalid-piece-set' });
+        return;
+      }
+      if (set.locked) {
+        const [owned] = await db
+          .select({ itemId: userCosmetics.itemId })
+          .from(userCosmetics)
+          .where(and(eq(userCosmetics.userId, req.userId as string), eq(userCosmetics.itemId, set.id)))
+          .limit(1);
+        if (!owned) {
+          res.status(400).json({ error: 'piece-set-not-owned' });
+          return;
+        }
+      }
+      updates.equippedPieceId = equippedPieceId;
     }
 
     await db.update(playerProfiles).set(updates).where(eq(playerProfiles.userId, req.userId as string));
@@ -145,16 +172,33 @@ authRouter.post(
     }
 
     const chipsGranted = MATCH_CHIP_REWARDS[outcome as MatchOutcome];
+    const xpGranted = MATCH_XP_REWARDS[outcome as MatchOutcome];
     const [updated] = await db
       .update(playerProfiles)
-      .set({ chips: sql`${playerProfiles.chips} + ${chipsGranted}`, updatedAt: new Date() })
+      .set({
+        chips: sql`${playerProfiles.chips} + ${chipsGranted}`,
+        xp: sql`${playerProfiles.xp} + ${xpGranted}`,
+        updatedAt: new Date(),
+      })
       .where(eq(playerProfiles.userId, req.userId as string))
-      .returning({ chips: playerProfiles.chips });
+      .returning({ chips: playerProfiles.chips, xp: playerProfiles.xp });
     if (!updated) {
       res.status(404).json({ error: 'profile-not-found' });
       return;
     }
-    res.json({ ok: true, chipsGranted, chips: updated.chips });
+    // level is purely derivative of xp -- recomputed from the post-increment
+    // value returned above rather than folded into the same SQL expression,
+    // so the curve formula (leveling.ts) has exactly one implementation, not
+    // a second copy embedded in a raw SQL expression. This is a second
+    // statement rather than one transaction: a race between two concurrent
+    // grants for the same user could leave level briefly behind what xp
+    // implies, which self-corrects on the next grant. Accepted deliberately,
+    // same tradeoff spin.ts/dailyBonus.ts already accept for grants (as
+    // opposed to purchaseCosmetic's transaction, which is a genuine spend
+    // that can't tolerate it).
+    const level = levelForXp(updated.xp);
+    await db.update(playerProfiles).set({ level }).where(eq(playerProfiles.userId, req.userId as string));
+    res.json({ ok: true, chipsGranted, chips: updated.chips, xpGranted, xp: updated.xp, level });
   }),
 );
 
@@ -277,6 +321,41 @@ authRouter.get(
         };
       }),
     });
+  }),
+);
+
+// Backs the replay screen -- deliberately minimal (just the two columns a
+// future replay needs), since everything else about the match (opponent
+// name, result, color, date) is already in the MatchHistoryEntry the client
+// tapped to get here, passed through as route params instead of re-fetched.
+// Authorization mirrors /me/matches above: joins through matchParticipants
+// rather than comparing matches.whiteUserId/blackUserId directly, since
+// those get nulled out on account deletion (see DELETE /me below) while the
+// OTHER player's matchParticipants row still correctly references the match.
+authRouter.get(
+  '/me/matches/:matchId/replay',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userId = req.userId as string;
+    const { matchId } = req.params;
+
+    const [participant] = await db
+      .select({ matchId: matchParticipants.matchId })
+      .from(matchParticipants)
+      .where(and(eq(matchParticipants.matchId, matchId), eq(matchParticipants.userId, userId)))
+      .limit(1);
+    if (!participant) {
+      res.status(404).json({ error: 'not-found' });
+      return;
+    }
+
+    const [match] = await db
+      .select({ pgn: matches.pgn, moveElapsedMs: matches.moveElapsedMs })
+      .from(matches)
+      .where(eq(matches.id, matchId))
+      .limit(1);
+
+    res.json({ pgn: match?.pgn ?? null, moveElapsedMs: match?.moveElapsedMs ?? null });
   }),
 );
 

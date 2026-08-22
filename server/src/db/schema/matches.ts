@@ -26,6 +26,13 @@ export const matches = pgTable('matches', {
   resultType: matchResultTypeEnum('result_type').notNull(),
   winnerColor: pieceColorEnum('winner_color'),
   pgn: text('pgn'),
+  // Cumulative ms since match start, one entry per ply, index-aligned with
+  // the SAN moves in pgn above. Deliberately just timing, not a richer
+  // per-move structure -- everything else about a move is already
+  // reconstructable from pgn via chess.js (see match.ts's MatchState.moveElapsedMs
+  // comment), so a native int[] here (not jsonb) is the minimal-storage
+  // building block for a future replay/move-review feature.
+  moveElapsedMs: integer('move_elapsed_ms').array(),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
   endedAt: timestamp('ended_at', { withTimezone: true }).notNull().defaultNow(),
 });
