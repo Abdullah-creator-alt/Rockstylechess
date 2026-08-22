@@ -207,7 +207,7 @@ All in [`src/components/ui/`](src/components/ui/), imported via
 | `SectionLabel` | Uppercase label + fading gold rule line, for section headers |
 | `ProgressBar` | Gradient (ember→gold) fill bar with glow, optional caption |
 | `BottomNav` | 4-tab bottom bar + floating circular play button |
-| `ChessBoard` | Self-contained board primitive (interactive or read-only), integer-pixel grid, per-rank square coloring, two-ellipse piece contact shadows |
+| `ChessBoard` | Self-contained board primitive (interactive or read-only), integer-pixel grid, per-rank square coloring, two-ellipse piece contact shadows, swappable piece-set art via its `pieceSprites` prop |
 | `ChatPanel` / `ChatToast` | In-match chat UI |
 | `EmberParticles` | Decorative ambient particle layer |
 

@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChessBoard, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame } from '@/hooks/useChessGame';
@@ -17,6 +18,7 @@ export default function PuzzleMatchScreen() {
   const entry = PUZZLES.find((p) => p.id === puzzleId);
   const { profile } = usePlayerProfile();
   const boardTheme = getBoardTheme(profile?.equippedBoardId);
+  const pieceSprites = getPieceSprites(profile?.equippedPieceId);
 
   // Hooks must run unconditionally -- passed a placeholder puzzle when the
   // param doesn't resolve so useChessGame stays happy; the render below
@@ -86,9 +88,10 @@ export default function PuzzleMatchScreen() {
           checkSquare={game.checkSquare}
           lastMove={game.lastMove}
           turn={game.turn}
-          animateLastMove={game.lastMoveSource !== 'human'}
+          animateLastMove={game.lastMoveSource !== null && game.lastMoveSource !== 'human'}
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
           theme={boardTheme}
+          pieceSprites={pieceSprites}
         />
 
         <View style={styles.actionRow}>

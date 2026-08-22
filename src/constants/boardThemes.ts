@@ -4,9 +4,11 @@
  * Deliberately scoped to squares/glow only -- the frame/bezel/rivets stay
  * fixed chrome (the board's "hardware," not a skin) and gameplay-semantic
  * tints (last-move gold, selected cyan, check crimson) stay fixed too, since
- * those are functional UI signals used app-wide. Piece skins are a separate,
- * unbuilt concern (the current pieces are photographic sprites, not
- * recolorable art). See ChessBoard.tsx and (shop)/forge.tsx for consumers.
+ * those are functional UI signals used app-wide. Piece skins are a parallel,
+ * separately-built feature -- see constants/pieceSets.ts +
+ * components/ui/pieceSprites.ts, which ship pre-recolored per-variant SVGs
+ * rather than deriving colors live like the squares here. See ChessBoard.tsx
+ * and (shop)/forge.tsx for consumers of both.
  *
  * Ids/names/locked/gemPrice mirror forge.tsx's original BOARD_OPTIONS mock.
  * `server/src/boardThemes.ts` mirrors the id/locked subset for server-side

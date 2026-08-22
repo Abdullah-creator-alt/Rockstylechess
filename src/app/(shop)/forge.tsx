@@ -1,11 +1,14 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChessBoard, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
+import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { BOARD_THEMES, getBoardTheme, type BoardTheme } from '@/constants/boardThemes';
+import { PIECE_SETS, type PieceSet } from '@/constants/pieceSets';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { unlockCosmetic, updateProfile } from '@/lib/api';
@@ -19,14 +22,6 @@ interface ForgeOption {
   locked: boolean;
   gemPrice?: number;
 }
-
-const PIECE_OPTIONS: (ForgeOption & { color: string })[] = [
-  { id: 'classic-chrome', name: 'Classic Chrome', locked: false, color: Colors.chrome },
-  { id: 'graphite-tour', name: 'Graphite Tour', locked: false, color: Colors.chromeDark },
-  { id: 'neon-cyan', name: 'Neon Cyan', locked: false, color: Colors.cyan },
-  { id: 'molten-gold', name: 'Molten Gold', locked: true, gemPrice: 250, color: Colors.gold },
-  { id: 'crimson-reaper', name: 'Crimson Reaper', locked: true, gemPrice: 300, color: Colors.crimson },
-];
 
 const AVATAR_OPTIONS: (ForgeOption & { emoji: string })[] = [
   { id: 'axl', name: 'Axl', locked: false, emoji: '🤘' },
@@ -50,7 +45,7 @@ export default function ForgeScreen() {
   const [activeTab, setActiveTab] = useState<ForgeCategory>('boards');
   const [selected, setSelected] = useState<Record<ForgeCategory, string>>({
     boards: 'classic-chrome',
-    pieces: 'classic-chrome',
+    pieces: 'classic-pieces',
     avatars: 'axl',
   });
   // Shared by equip and purchase: both are single in-flight profile
@@ -66,9 +61,20 @@ export default function ForgeScreen() {
     }
   }, [profile?.equippedBoardId]);
 
+  useEffect(() => {
+    if (profile?.equippedPieceId) {
+      setSelected((prev) => ({ ...prev, pieces: profile.equippedPieceId as string }));
+    }
+  }, [profile?.equippedPieceId]);
+
   function isBoardOwned(id: string): boolean {
     const theme = BOARD_THEMES.find((t) => t.id === id);
     return !theme?.locked || (profile?.ownedCosmeticIds?.includes(id) ?? false);
+  }
+
+  function isPieceOwned(id: string): boolean {
+    const set = PIECE_SETS.find((s) => s.id === id);
+    return !set?.locked || (profile?.ownedCosmeticIds?.includes(id) ?? false);
   }
 
   function handleSelect(category: ForgeCategory, option: ForgeOption) {
@@ -77,7 +83,15 @@ export default function ForgeScreen() {
         setSelected((prev) => ({ ...prev, boards: option.id }));
         return;
       }
-      handleLockedBoardTap(option as BoardTheme);
+      handleLockedTap('boards', option as BoardTheme);
+      return;
+    }
+    if (category === 'pieces' && option.locked) {
+      if (isPieceOwned(option.id)) {
+        setSelected((prev) => ({ ...prev, pieces: option.id }));
+        return;
+      }
+      handleLockedTap('pieces', option as PieceSet);
       return;
     }
     if (option.locked) {
@@ -88,35 +102,35 @@ export default function ForgeScreen() {
     console.log('Forge option selected', category, option.name);
   }
 
-  function handleLockedBoardTap(theme: BoardTheme) {
+  function handleLockedTap(category: 'boards' | 'pieces', option: BoardTheme | PieceSet) {
     if (isMutating) return;
-    Alert.alert(`Unlock ${theme.name}`, 'Choose how to pay:', [
+    Alert.alert(`Unlock ${option.name}`, 'Choose how to pay:', [
       { text: 'Cancel', style: 'cancel' },
-      { text: `${(theme.gemPrice ?? 0).toLocaleString()} Gems`, onPress: () => confirmPurchase(theme, 'gems') },
-      { text: `${(theme.chipPrice ?? 0).toLocaleString()} Chips`, onPress: () => confirmPurchase(theme, 'chips') },
+      { text: `${(option.gemPrice ?? 0).toLocaleString()} Gems`, onPress: () => confirmPurchase(category, option, 'gems') },
+      { text: `${(option.chipPrice ?? 0).toLocaleString()} Chips`, onPress: () => confirmPurchase(category, option, 'chips') },
     ]);
   }
 
-  async function confirmPurchase(theme: BoardTheme, currency: 'gems' | 'chips') {
+  async function confirmPurchase(category: 'boards' | 'pieces', option: BoardTheme | PieceSet, currency: 'gems' | 'chips') {
     const token = await getAuthToken();
     if (!token) return;
     setIsMutating(true);
     try {
-      await unlockCosmetic(token, theme.id, currency);
+      await unlockCosmetic(token, option.id, currency);
       await refreshProfile();
-      // Auto-select (not auto-equip) the newly-owned theme -- equip stays a
+      // Auto-select (not auto-equip) the newly-owned item -- equip stays a
       // separate, deliberate action via the Equip button below.
-      setSelected((prev) => ({ ...prev, boards: theme.id }));
+      setSelected((prev) => ({ ...prev, [category]: option.id }));
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       if (message === 'insufficient-funds') {
-        const price = currency === 'gems' ? theme.gemPrice : theme.chipPrice;
-        Alert.alert('Not Enough Funds', `You need ${(price ?? 0).toLocaleString()} ${currency} to unlock ${theme.name}.`);
+        const price = currency === 'gems' ? option.gemPrice : option.chipPrice;
+        Alert.alert('Not Enough Funds', `You need ${(price ?? 0).toLocaleString()} ${currency} to unlock ${option.name}.`);
       } else if (message === 'already-owned') {
-        setSelected((prev) => ({ ...prev, boards: theme.id }));
+        setSelected((prev) => ({ ...prev, [category]: option.id }));
       } else {
-        console.log('Failed to unlock board theme', error);
-        Alert.alert('Something Went Wrong', 'Could not unlock this theme. Please try again.');
+        console.log('Failed to unlock cosmetic', error);
+        Alert.alert('Something Went Wrong', 'Could not unlock this item. Please try again.');
       }
     } finally {
       setIsMutating(false);
@@ -124,7 +138,7 @@ export default function ForgeScreen() {
   }
 
   async function handleEquip() {
-    if (activeTab !== 'boards') {
+    if (activeTab === 'avatars') {
       console.log('Equip pressed', activeTab, selectedName);
       return;
     }
@@ -132,10 +146,14 @@ export default function ForgeScreen() {
     if (!token) return;
     setIsMutating(true);
     try {
-      await updateProfile(token, { equippedBoardId: selected.boards });
+      if (activeTab === 'boards') {
+        await updateProfile(token, { equippedBoardId: selected.boards });
+      } else {
+        await updateProfile(token, { equippedPieceId: selected.pieces });
+      }
       await refreshProfile();
     } catch (error) {
-      console.log('Failed to equip board theme', error);
+      console.log('Failed to equip', activeTab, error);
     } finally {
       setIsMutating(false);
     }
@@ -145,7 +163,7 @@ export default function ForgeScreen() {
     activeTab === 'boards'
       ? BOARD_THEMES.find((o) => o.id === selected.boards)?.name
       : activeTab === 'pieces'
-        ? PIECE_OPTIONS.find((o) => o.id === selected.pieces)?.name
+        ? PIECE_SETS.find((o) => o.id === selected.pieces)?.name
         : AVATAR_OPTIONS.find((o) => o.id === selected.avatars)?.name;
 
   return (
@@ -174,6 +192,9 @@ export default function ForgeScreen() {
         {activeTab === 'boards' ? (
           <ChessBoard theme={getBoardTheme(selected.boards)} style={styles.boardPreview} />
         ) : null}
+        {activeTab === 'pieces' ? (
+          <ChessBoard pieceSprites={getPieceSprites(selected.pieces)} style={styles.boardPreview} />
+        ) : null}
 
         <View style={styles.grid}>
           {activeTab === 'boards'
@@ -197,22 +218,23 @@ export default function ForgeScreen() {
             : null}
 
           {activeTab === 'pieces'
-            ? PIECE_OPTIONS.map((option) => (
-                <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('pieces', option)}>
-                  <RockCard
-                    glowColor={selected.pieces === option.id ? Colors.cyan : undefined}
-                    style={selected.pieces === option.id ? styles.optionCardActive : styles.optionCard}
-                  >
-                    <View style={[styles.optionInner, option.locked && styles.optionInnerLocked]}>
-                      <View style={styles.pieceSwatch}>
-                        <Text style={[styles.pieceGlyph, { color: option.color }]}>♔</Text>
+            ? PIECE_SETS.map((option) => {
+                const showLocked = option.locked && !isPieceOwned(option.id);
+                return (
+                  <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('pieces', option)}>
+                    <RockCard
+                      glowColor={selected.pieces === option.id ? Colors.cyan : undefined}
+                      style={selected.pieces === option.id ? styles.optionCardActive : styles.optionCard}
+                    >
+                      <View style={[styles.optionInner, showLocked && styles.optionInnerLocked]}>
+                        <PieceSwatch setId={option.id} />
+                        <Text style={[styles.optionName, showLocked && styles.optionNameLocked]}>{option.name}</Text>
+                        {showLocked ? <LockBadge gemPrice={option.gemPrice} chipPrice={option.chipPrice} /> : null}
                       </View>
-                      <Text style={[styles.optionName, option.locked && styles.optionNameLocked]}>{option.name}</Text>
-                      {option.locked ? <LockBadge gemPrice={option.gemPrice} /> : null}
-                    </View>
-                  </RockCard>
-                </Pressable>
-              ))
+                    </RockCard>
+                  </Pressable>
+                );
+              })
             : null}
 
           {activeTab === 'avatars'
@@ -265,6 +287,15 @@ function BoardSwatch({ light, dark }: { light: string; dark: string }) {
           ]}
         />
       ))}
+    </View>
+  );
+}
+
+function PieceSwatch({ setId }: { setId: string }) {
+  const sprite = getPieceSprites(setId).wk;
+  return (
+    <View style={styles.pieceSwatch}>
+      {sprite ? <Image source={sprite} contentFit="contain" style={styles.pieceSwatchImage} /> : null}
     </View>
   );
 }
@@ -411,8 +442,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: withOpacity(Colors.chromeDark, 0.4),
   },
-  pieceGlyph: {
-    fontSize: 32,
+  pieceSwatchImage: {
+    width: '78%',
+    height: '78%',
   },
   lockBadgeStack: {
     flexDirection: 'row',
