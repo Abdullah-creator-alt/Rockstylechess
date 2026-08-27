@@ -3,12 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { DAILY_BONUS_REWARDS } from '../dailyBonusRewards.js';
 import { db } from './client.js';
 import { dailyRewardClaims, playerProfiles } from './schema/index.js';
-
-function utcDayDiff(from: Date, to: Date): number {
-  const fromMidnight = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
-  const toMidnight = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
-  return Math.round((toMidnight - fromMidnight) / 86_400_000);
-}
+import { utcDayDiff } from './utcDay.js';
 
 // Pure, read-only rule shared by the status preview and the actual claim so
 // the two can never drift. UTC calendar-day comparison, deliberately not

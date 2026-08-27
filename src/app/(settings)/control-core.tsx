@@ -1,14 +1,17 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
+import { getAvatarEmoji } from '@/constants/avatars';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { loadMusicPreference, setMusicEnabled } from '@/lib/backgroundMusic';
 import { clearAuthToken } from '@/lib/authStorage';
 import { clearSocketAuth } from '@/lib/socket';
+import { loadSoundFxPreference, setSoundFxEnabled } from '@/lib/soundEffects';
 
 interface GameRow {
   id: string;
@@ -21,9 +24,24 @@ interface GameRow {
 export default function ControlCoreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [musicOn, setMusicOn] = useState(false);
+  const [musicOn, setMusicOn] = useState(true);
   const [soundFxOn, setSoundFxOn] = useState(true);
-  const { refresh: refreshPlayerProfile, gems } = usePlayerProfile();
+  const { profile, refresh: refreshPlayerProfile, gems } = usePlayerProfile();
+
+  useEffect(() => {
+    loadSoundFxPreference().then(setSoundFxOn);
+    loadMusicPreference().then(setMusicOn);
+  }, []);
+
+  function handleSoundFxChange(value: boolean) {
+    setSoundFxOn(value);
+    setSoundFxEnabled(value);
+  }
+
+  function handleMusicChange(value: boolean) {
+    setMusicOn(value);
+    setMusicEnabled(value);
+  }
 
   async function handleLogout() {
     await clearAuthToken();
@@ -69,7 +87,7 @@ export default function ControlCoreScreen() {
 
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <View style={styles.headerLeft}>
-          <PlayerAvatar emoji="🤘" size="small" />
+          <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} size="small" />
           <Text style={styles.headerTitle}>Control Core</Text>
         </View>
         <CurrencyPill type="gems" value={gems} />
@@ -85,14 +103,14 @@ export default function ControlCoreScreen() {
               title="Music"
               subtitle="Ambient stage themes"
               value={musicOn}
-              onValueChange={setMusicOn}
+              onValueChange={handleMusicChange}
             />
             <View style={styles.rowDivider} />
             <ToggleRow
               title="Sound FX"
               subtitle="Piece moves & alerts"
               value={soundFxOn}
-              onValueChange={setSoundFxOn}
+              onValueChange={handleSoundFxChange}
             />
           </RockCard>
         </SettingsSection>

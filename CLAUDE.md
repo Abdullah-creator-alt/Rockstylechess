@@ -39,3 +39,4 @@ flag it explicitly rather than silently flattening it.
 
 
 
+Always follow the design system defined in `./DESIGN.md` when creating UI components.

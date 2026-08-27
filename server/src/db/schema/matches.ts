@@ -9,6 +9,7 @@ export const matchResultTypeEnum = pgEnum('match_result_type', [
   'draw',
   'resignation',
   'forfeit',
+  'timeout',
 ]);
 export const pieceColorEnum = pgEnum('piece_color', ['w', 'b']);
 export const matchOutcomeEnum = pgEnum('match_outcome', ['win', 'loss', 'draw']);

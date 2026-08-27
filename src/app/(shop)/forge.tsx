@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChessBoard, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
+import { AVATARS } from '@/constants/avatars';
 import { BOARD_THEMES, getBoardTheme, type BoardTheme } from '@/constants/boardThemes';
 import { PIECE_SETS, type PieceSet } from '@/constants/pieceSets';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
@@ -22,15 +23,6 @@ interface ForgeOption {
   locked: boolean;
   gemPrice?: number;
 }
-
-const AVATAR_OPTIONS: (ForgeOption & { emoji: string })[] = [
-  { id: 'axl', name: 'Axl', locked: false, emoji: '🤘' },
-  { id: 'riff', name: 'Riff', locked: false, emoji: '🎸' },
-  { id: 'beats', name: 'Beats', locked: false, emoji: '🥁' },
-  { id: 'mic-drop', name: 'Mic Drop', locked: false, emoji: '🎤' },
-  { id: 'king-axl', name: 'King Axl', locked: true, gemPrice: 250, emoji: '👑' },
-  { id: 'reaper', name: 'The Reaper', locked: true, gemPrice: 120, emoji: '💀' },
-];
 
 const TABS: { key: ForgeCategory; label: string }[] = [
   { key: 'boards', label: 'Boards' },
@@ -66,6 +58,12 @@ export default function ForgeScreen() {
       setSelected((prev) => ({ ...prev, pieces: profile.equippedPieceId as string }));
     }
   }, [profile?.equippedPieceId]);
+
+  useEffect(() => {
+    if (profile?.avatarId) {
+      setSelected((prev) => ({ ...prev, avatars: profile.avatarId as string }));
+    }
+  }, [profile?.avatarId]);
 
   function isBoardOwned(id: string): boolean {
     const theme = BOARD_THEMES.find((t) => t.id === id);
@@ -138,18 +136,16 @@ export default function ForgeScreen() {
   }
 
   async function handleEquip() {
-    if (activeTab === 'avatars') {
-      console.log('Equip pressed', activeTab, selectedName);
-      return;
-    }
     const token = await getAuthToken();
     if (!token) return;
     setIsMutating(true);
     try {
       if (activeTab === 'boards') {
         await updateProfile(token, { equippedBoardId: selected.boards });
-      } else {
+      } else if (activeTab === 'pieces') {
         await updateProfile(token, { equippedPieceId: selected.pieces });
+      } else {
+        await updateProfile(token, { avatarId: selected.avatars });
       }
       await refreshProfile();
     } catch (error) {
@@ -164,7 +160,7 @@ export default function ForgeScreen() {
       ? BOARD_THEMES.find((o) => o.id === selected.boards)?.name
       : activeTab === 'pieces'
         ? PIECE_SETS.find((o) => o.id === selected.pieces)?.name
-        : AVATAR_OPTIONS.find((o) => o.id === selected.avatars)?.name;
+        : AVATARS.find((o) => o.id === selected.avatars)?.name;
 
   return (
     <View style={styles.root}>
@@ -238,7 +234,7 @@ export default function ForgeScreen() {
             : null}
 
           {activeTab === 'avatars'
-            ? AVATAR_OPTIONS.map((option) => (
+            ? AVATARS.map((option) => (
                 <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('avatars', option)}>
                   <RockCard
                     glowColor={selected.avatars === option.id ? Colors.cyan : undefined}

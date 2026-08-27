@@ -43,7 +43,8 @@ ${STOCKFISH_JS_SOURCE}
     if (
       line.indexOf('uciok') === 0 ||
       line.indexOf('readyok') === 0 ||
-      line.indexOf('bestmove') === 0
+      line.indexOf('bestmove') === 0 ||
+      line.indexOf('info') === 0
     ) {
       if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(line);
     }
@@ -83,10 +84,18 @@ export function buildDifficultyOptions(config: StockfishConfig): string[] {
   ];
 }
 
+// For evaluatePosition (game analysis) -- unlike buildDifficultyOptions,
+// deliberately does NOT weaken the engine. Analysis wants Stockfish's
+// honest best assessment of a position, not a deliberately-dumbed-down one.
+export function buildAnalysisOptions(): string[] {
+  return ['setoption name UCI_LimitStrength value false'];
+}
+
 export type ParsedEngineLine =
   | { type: 'uciok' }
   | { type: 'readyok' }
   | { type: 'bestmove'; move: EngineMove | null }
+  | { type: 'info'; scoreCp?: number; scoreMate?: number }
   | { type: 'ready' }
   | { type: 'error'; message: string }
   | { type: 'unknown' };
@@ -118,6 +127,14 @@ export function parseEngineLine(line: string): ParsedEngineLine {
     const uci = parts[1];
     if (!uci || uci === '(none)') return { type: 'bestmove', move: null };
     return { type: 'bestmove', move: parseUciMove(uci) };
+  }
+  if (line.startsWith('info')) {
+    // Depth-only info lines (no "score" yet) and "info string ..." lines
+    // both fall through to unknown -- only score-bearing lines matter here.
+    const match = line.match(/score (cp|mate) (-?\d+)/);
+    if (!match) return { type: 'unknown' };
+    const value = Number(match[2]);
+    return match[1] === 'cp' ? { type: 'info', scoreCp: value } : { type: 'info', scoreMate: value };
   }
   return { type: 'unknown' };
 }

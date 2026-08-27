@@ -14,6 +14,25 @@ export interface MatchPlayer {
   // Postgres when BOTH seats have this set.
   userId: string | null;
   displayName: string;
+  avatarId: string | null;
+}
+
+// Server-authoritative chess clock. Kept as its own field, deliberately
+// separate from forfeitTimers below -- the two have completely different
+// reschedule cadences (every move vs. only on disconnect/rejoin), and
+// conflating them risks a rejoin accidentally clearing a running clock timer
+// or vice versa. Disconnect does NOT pause this clock (matches lichess/
+// chess.com convention) -- with a 60s reconnect grace already in play
+// (RECONNECT_GRACE_MS in index.ts), pausing on disconnect would let a losing
+// player buy 60 free seconds every time they're in time trouble. The two
+// timers coexist independently and safely: whichever fires first ends the
+// match, and endMatch clears both.
+export interface ClockState {
+  remainingMs: Record<PieceColor, number>;
+  incrementMs: number;
+  // Date.now() ms timestamp of when the currently-running side's deadline began.
+  turnStartedAt: number;
+  deadlineTimer: NodeJS.Timeout | null;
 }
 
 export interface MatchState {
@@ -21,6 +40,7 @@ export interface MatchState {
   chess: Chess;
   players: Record<PieceColor, MatchPlayer>;
   createdAt: Date;
+  clock: ClockState;
   // Set while a player is disconnected and within the reconnect grace
   // window -- cleared on rejoin, and on expiry the match is forfeited to
   // the other side. See index.ts's RECONNECT_GRACE_MS.
@@ -48,21 +68,43 @@ export interface MoveInput {
 // board. This type only covers endings that happen *without* a move.
 export type MatchEndResult =
   | { type: 'resignation'; winner: PieceColor }
-  | { type: 'forfeit'; winner: PieceColor };
+  | { type: 'forfeit'; winner: PieceColor }
+  | { type: 'timeout'; winner: PieceColor };
 
 const matches = new Map<string, MatchState>();
 
-export function createMatch(playerA: QueuedPlayer, playerB: QueuedPlayer): MatchState {
+// baseMs/incrementMs come from the client's chosen duration (setup.tsx's
+// picker, resolved server-side -- see index.ts's DURATION_MS map, never
+// trusted as a raw client-supplied ms value). incrementMs defaults to 0 --
+// no picker exposes a nonzero value yet, but the parameter is real end to
+// end so turning one on later needs no engine change.
+export function createMatch(playerA: QueuedPlayer, playerB: QueuedPlayer, baseMs: number, incrementMs = 0): MatchState {
   // Coin flip for colors -- neither queued player picked a side.
   const [white, black] = Math.random() < 0.5 ? [playerA, playerB] : [playerB, playerA];
   const match: MatchState = {
     id: randomUUID(),
     chess: new Chess(),
     players: {
-      w: { socketId: white.socketId, guestId: white.guestId, userId: white.userId, displayName: white.displayName },
-      b: { socketId: black.socketId, guestId: black.guestId, userId: black.userId, displayName: black.displayName },
+      w: {
+        socketId: white.socketId,
+        guestId: white.guestId,
+        userId: white.userId,
+        displayName: white.displayName,
+        avatarId: white.avatarId,
+      },
+      b: {
+        socketId: black.socketId,
+        guestId: black.guestId,
+        userId: black.userId,
+        displayName: black.displayName,
+        avatarId: black.avatarId,
+      },
     },
     createdAt: new Date(),
+    // deadlineTimer starts unarmed -- match.ts has no Socket.IO `io` access
+    // to broadcast a timeout, so index.ts (which does) arms White's deadline
+    // immediately after createMatch returns, and rearms it after every move.
+    clock: { remainingMs: { w: baseMs, b: baseMs }, incrementMs, turnStartedAt: Date.now(), deadlineTimer: null },
     forfeitTimers: {},
     moveElapsedMs: [],
   };
@@ -78,10 +120,25 @@ export function allMatches(): IterableIterator<MatchState> {
   return matches.values();
 }
 
+// match.clock.remainingMs only updates at move boundaries (inside
+// applyMove) -- it doesn't by itself reflect time spent mid-turn (the clock
+// keeps running during a disconnect, deliberately, see ClockState's
+// comment). Used for match:rejoin's resync payload, where the reconnecting
+// client needs a live snapshot, not a possibly-stale anchor.
+export function liveClockRemaining(match: MatchState): Record<PieceColor, number> {
+  const activeColor = match.chess.turn();
+  const elapsed = Date.now() - match.clock.turnStartedAt;
+  return {
+    ...match.clock.remainingMs,
+    [activeColor]: Math.max(0, match.clock.remainingMs[activeColor] - elapsed),
+  };
+}
+
 export function endMatch(matchId: string): void {
   const match = matches.get(matchId);
   if (match) {
     for (const timer of Object.values(match.forfeitTimers)) clearTimeout(timer);
+    if (match.clock.deadlineTimer) clearTimeout(match.clock.deadlineTimer);
   }
   matches.delete(matchId);
 }
@@ -97,7 +154,11 @@ export function opponentColor(color: PieceColor): PieceColor {
 }
 
 /** Applies a move if legal and it's that color's turn. Returns the updated
- * Chess instance, or null if the move was rejected. */
+ * Chess instance, or null if the move was rejected. Also deducts the mover's
+ * true elapsed thinking time from match.clock and credits any increment --
+ * does NOT touch match.clock.deadlineTimer itself (clearing/rescheduling
+ * that needs an io-capable callback, which only index.ts has -- see its
+ * move:make handler, the caller of this function). */
 export function applyMove(match: MatchState, color: PieceColor, move: MoveInput): Chess | null {
   if (match.chess.turn() !== color) return null;
   try {
@@ -105,6 +166,12 @@ export function applyMove(match: MatchState, color: PieceColor, move: MoveInput)
   } catch {
     return null;
   }
-  match.moveElapsedMs.push(Date.now() - match.createdAt.getTime());
+  const now = Date.now();
+  match.moveElapsedMs.push(now - match.createdAt.getTime());
+
+  const elapsed = now - match.clock.turnStartedAt;
+  match.clock.remainingMs[color] = Math.max(0, match.clock.remainingMs[color] - elapsed) + match.clock.incrementMs;
+  match.clock.turnStartedAt = now;
+
   return match.chess;
 }

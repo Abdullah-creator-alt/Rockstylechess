@@ -153,6 +153,7 @@ Observed shadow "recipes" by component:
 - **CurrencyPill**: `0px 2px 8px bgBase@0.5`; its `+` add-button glows `0px 0px 8px accent@0.6`
 - **ProgressBar** fill: `0px 0px 6px gold@0.6`
 - **BottomNav** bar: `0px -4px 16px bgBase@0.6` (casts upward, it's pinned to the bottom); play button glows `0px 0px 18px ember@0.7`
+- **PlayerAvatar** ring: `0px 0px (outer*0.35)px glowColor@0.55` — `glowColor` is `ember` by default, `cyan` when `selected`; level badge glows `0px 0px 6px gold@0.6`
 
 **Depth is never a flat fill/elevation** — every "glossy" surface is built
 from real layered `LinearGradient`s, per the Component Depth Standard in
@@ -203,7 +204,7 @@ All in [`src/components/ui/`](src/components/ui/), imported via
 | `RockButton` | Primary CTA — 3 variants (primary/reward/danger), gradient fill + gloss + glow, press feedback |
 | `RockCard` | General panel/container — gradient fill, optional accent glow, optional hero background image with scrim |
 | `CurrencyPill` | Chips/gems balance chip with optional inline "+" add action |
-| `PlayerAvatar` | Player avatar rendering |
+| `PlayerAvatar` | Circular avatar — gradient "fire" ring (swaps to cyan when `selected`), optional level badge, image or emoji fallback (see [Avatars](#avatars)) |
 | `SectionLabel` | Uppercase label + fading gold rule line, for section headers |
 | `ProgressBar` | Gradient (ember→gold) fill bar with glow, optional caption |
 | `BottomNav` | 4-tab bottom bar + floating circular play button |
@@ -213,6 +214,71 @@ All in [`src/components/ui/`](src/components/ui/), imported via
 
 Non-UI: `StockfishEngine.tsx` (headless WASM engine host, no themed visual
 surface — lives in `components/` directly, not `ui/`).
+
+---
+
+## Avatars
+
+`PlayerAvatar` ([`src/components/ui/PlayerAvatar.tsx`](src/components/ui/PlayerAvatar.tsx))
+renders every player/character portrait in the app — a circular image or
+emoji, wrapped in a glowing gradient ring, with an optional level badge.
+The ring's ember→gold→crimson sweep and heavy outer glow are a deliberate
+callback to the app's rock-concert theme — it reads like a stage light or
+guitar-pickup halo around the player's portrait, reinforcing the same
+chrome-metal / neon-stage aesthetic the rest of the design system leans on,
+rather than a generic profile-picture border.
+
+### Sizes
+
+Three fixed sizes (`AvatarSize`), each driving ring thickness, emoji scale,
+and badge scale together — never set these dimensions ad hoc in a screen:
+
+| Size | Outer Ø | Ring width | Emoji size | Badge Ø |
+|---|---|---|---|---|
+| `tiny` | 32 | 2 | 14 | 12 |
+| `small` | 44 | 3 | 18 | 16 |
+| `medium` (default) | 68 | 4 | 28 | 20 |
+| `large` | 100 | 5 | 42 | 26 |
+
+`tiny` exists for spots too tight for `small`'s footprint (e.g. the in-match
+player-row card in `(play)/match.tsx`, swapped in for a static accent icon
+without growing the card) — no level badge is ever shown at this size in
+practice.
+
+The inner content circle is always `outer - ring * 2`.
+
+### The "fire" ring
+
+`expo-linear-gradient` only renders linear gradients, not conic ones, so the
+ring's 360° fire effect is **approximated**: a diagonal (top-left → bottom-
+right) multi-stop `LinearGradient` sweep — `ember → gold → crimson → ember` —
+plus a matching colored `boxShadow` glow (`0px 0px (outer*0.35)px ember@0.55`)
+sitting behind it. This is an intentional, documented simplification of a
+conic gradient per the Stitch-fidelity rule, not a dropped effect.
+
+When `selected` is true (e.g. character-select screens), the ring swaps to a
+`cyan → cyan@0.6 → cyan` sweep with a cyan glow instead — used to mark the
+currently-chosen avatar rather than layering a separate selection outline.
+
+### Content
+
+- `imageUri` renders a cropped circular `Image` filling the inner circle.
+- Otherwise, `emoji` renders centered as `Text`, falling back to `♟️` if
+  neither `imageUri` nor `emoji` is passed — an avatar should never render
+  as an empty ring.
+- Inner circle background is `Colors.bgPanel`, so partially-transparent
+  emoji/images never show the screen behind them.
+
+### Level badge
+
+- Passing `level` renders a small solid-gold circular badge overlapping the
+  bottom edge of the ring, with the level number in `Fonts.heading` at
+  `badge * 0.55`px, colored `bgBase` (dark-on-gold for contrast), glow
+  `0px 0px 6px gold@0.6`, and a 1.5px `bgBase` border to separate it from the
+  ring beneath it.
+- Omitting `level` (e.g. character-select grids where rank isn't relevant)
+  renders the avatar with no badge at all — this is the expected way to hide
+  it, not a loading/empty state.
 
 ---
 

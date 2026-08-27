@@ -12,15 +12,21 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
+  makeMutable,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
+  withSequence,
   withSpring,
   withTiming,
+  type EasingFunction,
   type SharedValue,
 } from 'react-native-reanimated';
 
 import { BoardSquares, Colors, withOpacity } from '@/constants/theme';
+import type { MoveSoundKind, VerboseLastMove } from '@/lib/chessBoardSnapshot';
+import { playSound } from '@/lib/soundEffects';
 
 import { getPieceSprites, type PieceSpriteMap } from './pieceSprites';
 
@@ -64,24 +70,192 @@ function squareToRowCol(square: string): [row: number, col: number] {
   return [row, col];
 }
 
-interface DraggingPiece {
+/**
+ * A piece with a stable identity that persists across moves. This, not the
+ * `board` grid, is what PieceLayer renders: each entry is hosted by exactly
+ * one BoardPiece for its entire lifetime on the board (created once, never
+ * unmounted/remounted just for changing squares) and repositioned via
+ * animated transform. See the lastMove-driven reconciliation effect below,
+ * which is the only thing that ever creates, moves, or removes an entry.
+ */
+interface LivePiece {
+  id: number;
+  /** chess.js letter, case = color, e.g. 'K'/'q'. */
+  type: string;
   square: string;
-  piece: string;
-  row: number;
-  col: number;
 }
 
 /**
- * One in-flight slide-in ghost (see `animateLastMove`). Each entry gets its
- * own `MoveGhost` instance, keyed by `id` -- React's mount/key lifecycle is
- * what keeps overlapping slides from corrupting each other, not a shared
- * mutable slot or a staleness token.
+ * A captured piece animating out before being discarded -- structurally the
+ * direct descendant of the old MoveGhost/`slides` queue this replaces: one
+ * instance per capture, keyed by its own id, so two overlapping captures
+ * (e.g. rapid online opponent moves) can never share or stomp each other's
+ * animation state.
  */
-interface SlideEntry {
+interface DyingGhost {
   id: number;
-  from: string;
-  to: string;
-  piece: string;
+  type: string;
+  square: string;
+}
+
+/**
+ * A LivePiece's animated pixel position (in row/col units, not pixels --
+ * BoardPiece multiplies by the live square size itself). Created once per
+ * id via `makeMutable` (not `useSharedValue`, since these are born/destroyed
+ * dynamically as pieces are captured/promoted/reset, not tied to a single
+ * component's mount lifetime) and mutated in place thereafter. Lives in a
+ * ref Map at the ChessBoard level rather than inside BoardPiece itself so
+ * both the drag gesture (owned by Square) and the reconciliation effect can
+ * reach a specific piece's position without prop-drilling a different
+ * object identity through BoardPiece on every unrelated render -- which
+ * would defeat BoardPiece's memo below.
+ */
+interface PiecePosition {
+  row: SharedValue<number>;
+  col: SharedValue<number>;
+  scale: SharedValue<number>;
+}
+
+// Per-MoveSoundKind travel feel -- replaces one flat duration for every move
+// with something that reads differently for a quiet shuffle vs. a capture
+// landing with force, while staying short enough (all well under half a
+// second) that gameplay never feels sluggish regardless of which sound is
+// playing. The "big" sound moments (check/checkmate) get their drama from
+// the decoupled CheckPulse/CheckmateFlourish effects below, not from
+// slowing down piece travel itself.
+const ANIMATION_CONFIG: Record<MoveSoundKind, { duration: number; easing: EasingFunction }> = {
+  move: { duration: 360, easing: Easing.out(Easing.cubic) },
+  capture: { duration: 340, easing: Easing.out(Easing.cubic) },
+  castle: { duration: 420, easing: Easing.out(Easing.cubic) },
+  check: { duration: 380, easing: Easing.out(Easing.cubic) },
+  checkmate: { duration: 400, easing: Easing.out(Easing.cubic) },
+};
+// A local tap-to-move (no drag) previously teleported instantly -- now it
+// gets a quick, deliberately-shorter-than-ANIMATION_CONFIG settle so
+// identity/position updates are never an instant snap, without slowing down
+// a move the player already committed to by tapping.
+const LOCAL_TAP_SETTLE = { duration: 180, easing: Easing.out(Easing.cubic) };
+const DRAG_SETTLE_SPRING = { damping: 16, stiffness: 220, mass: 0.9 };
+// Sits inside the ~570ms capture sound's initial transient.
+const CAPTURE_OUT_DURATION_MS = 260;
+const CHECK_PULSE_DURATION_MS = 2000;
+const CHECKMATE_FLOURISH_DURATION_MS = 2000;
+
+const CASTLE_ROOK_SQUARES: Record<'w' | 'b', Record<'k' | 'q', readonly [string, string]>> = {
+  w: { k: ['h1', 'f1'], q: ['a1', 'd1'] },
+  b: { k: ['h8', 'f8'], q: ['a8', 'd8'] },
+};
+
+function typeMatches(type: string, piece: string, color: 'w' | 'b'): boolean {
+  return type === (color === 'w' ? piece.toUpperCase() : piece);
+}
+
+// En passant's captured pawn never sits on the move's `to` square -- it's on
+// the same file as `to`, same rank as `from`.
+function enPassantCapturedSquare(move: VerboseLastMove): string {
+  return move.to[0] + move.from[1];
+}
+
+// Cheap O(64) guard: does the reconciled piece list actually match what the
+// authoritative board grid says is on every square? Fast-path reconciliation
+// (below) validates its own output against this before it's trusted -- on
+// any mismatch the caller falls back to a full resync rather than render a
+// board that's silently wrong.
+function boardMatchesLivePieces(board: string[][], pieces: LivePiece[]): boolean {
+  let expectedCount = 0;
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      if (board[row][col]) expectedCount++;
+    }
+  }
+  if (pieces.length !== expectedCount) return false;
+  for (const piece of pieces) {
+    const [row, col] = squareToRowCol(piece.square);
+    if (board[row]?.[col] !== piece.type) return false;
+  }
+  return true;
+}
+
+interface ReconcileOutcome {
+  pieces: LivePiece[];
+  dying: DyingGhost[];
+}
+
+// The common case: a single incremental move applied on top of an
+// already-correct `prev` piece list. Resolves normal moves, captures
+// (including en passant), castling (both king AND rook, in one pass), and
+// promotion, entirely from chess.js's own verbose move fields -- no
+// board-diffing ambiguity. Returns null if anything doesn't resolve cleanly
+// (piece not found where expected, result doesn't match `board`), which
+// tells the caller to fall back to resyncFromBoard instead.
+function tryFastPath(
+  prev: LivePiece[],
+  move: VerboseLastMove,
+  board: string[][],
+  makeGhostId: () => number,
+): ReconcileOutcome | null {
+  const mover = prev.find((p) => p.square === move.from && typeMatches(p.type, move.piece, move.color));
+  if (!mover) return null;
+
+  const byId = new Map(prev.map((p) => [p.id, p] as const));
+  const dying: DyingGhost[] = [];
+
+  if (move.captured) {
+    const capturedSquare = move.flags.includes('e') ? enPassantCapturedSquare(move) : move.to;
+    const capturedPiece = prev.find((p) => p.square === capturedSquare && p.id !== mover.id);
+    if (!capturedPiece) return null;
+    byId.delete(capturedPiece.id);
+    dying.push({ id: makeGhostId(), type: capturedPiece.type, square: capturedPiece.square });
+  }
+
+  const promotedType = move.promotion
+    ? move.color === 'w'
+      ? move.promotion.toUpperCase()
+      : move.promotion
+    : mover.type;
+  byId.set(mover.id, { ...mover, square: move.to, type: promotedType });
+
+  if (move.flags.includes('k') || move.flags.includes('q')) {
+    const side = move.flags.includes('k') ? 'k' : 'q';
+    const [rookFrom, rookTo] = CASTLE_ROOK_SQUARES[move.color][side];
+    const rookType = move.color === 'w' ? 'R' : 'r';
+    const rook = prev.find((p) => p.square === rookFrom && p.type === rookType);
+    if (!rook) return null;
+    byId.set(rook.id, { ...rook, square: rookTo });
+  }
+
+  const pieces = Array.from(byId.values());
+  if (!boardMatchesLivePieces(board, pieces)) return null;
+  return { pieces, dying };
+}
+
+// Fallback for anything the fast path can't (or shouldn't) resolve cleanly:
+// initial mount, a game/puzzle reset, or a non-forward replay scrub. Matches
+// each occupied board square to a same-type leftover piece from `prev`
+// (exact square+type match first, then any same-type piece) so ids -- and
+// therefore mounted Images -- are reused wherever possible even across a
+// jump, rather than every piece getting a fresh id. Never produces
+// DyingGhosts (no coherent single-move story to animate a capture out for);
+// callers snap these into place instantly instead of animating.
+function resyncFromBoard(prev: LivePiece[], board: string[][], makePieceId: () => number): LivePiece[] {
+  const remaining = prev.slice();
+  const next: LivePiece[] = [];
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const type = board[row][col];
+      if (!type) continue;
+      const square = squareAt(row, col);
+      let idx = remaining.findIndex((p) => p.square === square && p.type === type);
+      if (idx === -1) idx = remaining.findIndex((p) => p.type === type);
+      if (idx !== -1) {
+        const [claimed] = remaining.splice(idx, 1);
+        next.push({ ...claimed, square });
+      } else {
+        next.push({ id: makePieceId(), type, square });
+      }
+    }
+  }
+  return next;
 }
 
 interface ChessBoardProps {
@@ -93,17 +267,26 @@ interface ChessBoardProps {
   legalTargets?: string[];
   /** Algebraic square of the king currently in check, if any. */
   checkSquare?: string | null;
-  /** From/to squares of the most recently played move, highlighted like chess.com. */
-  lastMove?: { from: string; to: string } | null;
+  /** The most recently played move, highlighted like chess.com and used to drive piece-travel animation. */
+  lastMove?: VerboseLastMove | null;
   /** Whose turn it is -- gates which pieces show the "pick up" drag affordance. */
   turn?: 'w' | 'b';
   /**
-   * Play a slide-in travel animation the next time `lastMove` changes. Only
-   * pass this for moves the player didn't just drag/tap themselves (e.g. the
-   * bot's moves) -- the player's own moves already have feedback from the
-   * gesture that made them, so animating those too would just double up.
+   * Play the full per-kind travel animation the next time `lastMove`
+   * changes (see ANIMATION_CONFIG). Only pass this for moves the player
+   * didn't just drag/tap themselves (e.g. the bot's moves) -- the player's
+   * own moves get a shorter settle instead (their tap/drag already implies
+   * intent instantly), UNLESS the move is a castle, whose rook never gets
+   * direct gesture feedback even on the player's own move.
    */
   animateLastMove?: boolean;
+  /**
+   * Sound cue to play the next time `lastMove` changes -- unlike
+   * `animateLastMove`, this fires for every new move regardless of source,
+   * including the player's own gesture-driven moves (they still want to
+   * hear their own move land).
+   */
+  lastMoveSound?: MoveSoundKind | null;
   /** Omit to keep the board read-only/static, e.g. Front Row's spectate view. */
   onSquarePress?: (square: string) => void;
   /** Square colors + glow accent. Defaults to the original fixed look. */
@@ -121,14 +304,18 @@ export function ChessBoard({
   lastMove = null,
   turn,
   animateLastMove = false,
+  lastMoveSound = null,
   onSquarePress,
   theme = DEFAULT_BOARD_THEME,
   pieceSprites = DEFAULT_PIECE_SPRITES,
 }: ChessBoardProps) {
   const [gridSize, setGridSize] = useState(0);
-  const [dragging, setDragging] = useState<DraggingPiece | null>(null);
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
+  // -1 = no piece currently being dragged. A shared value (not React state)
+  // so BoardPiece's drag/non-drag render branch switches on the UI thread
+  // with no cross-thread latency -- see handleGrab/bakeDraggedPosition below.
+  const draggingIdSV = useSharedValue(-1);
 
   // Exact 8x8. Squares are laid out at an integer pixel size rather than with
   // flex:1, because eight flex children of a fractional width get rounded
@@ -137,61 +324,184 @@ export function ChessBoard({
   // to a whole number and sizing the grid to 8x that keeps every square
   // identical and perfectly square; the few leftover pixels go to the frame.
   const squareSize = Math.floor(gridSize / 8);
+  const boardSize = squareSize * 8;
+  const interactive = Boolean(onSquarePress);
 
-  // Slide-in ghost for moves that appeared without the player dragging/tapping
-  // them into place (the bot's moves) -- see `animateLastMove`. A queue
-  // rather than one mutable slot: each entry gets its own MoveGhost instance
-  // (keyed by id), so two moves landing close together (e.g. an online
-  // opponent's moves, which useChessGame.ts applies with no debounce) can
-  // never share or stomp each other's animation state, however the timing
-  // lands. squareSize is NOT frozen into the entry -- MoveGhost reads it
-  // live from squareSizeShared below, so a board resize mid-flight (extra
-  // layout passes settling, especially prone to happening more than once on
-  // Android) can't leave a ghost animating to a stale position.
-  const [slides, setSlides] = useState<SlideEntry[]>([]);
-  const slideIdRef = useRef(0);
-  const handleSlideDone = useCallback((id: number) => {
-    setSlides((prev) => prev.filter((s) => s.id !== id));
-  }, []);
-  const prevLastMoveRef = useRef<{ from: string; to: string } | null>(null);
-  // Read inside the effect via ref rather than as a dependency -- the effect
-  // only needs `board` to look up which piece landed on `to`, not to decide
-  // whether a new move happened (`isNewMove` below already does that from
-  // `lastMove` alone). Depending on `board` directly would re-run the effect
-  // on any board reference change.
-  const boardRef = useRef(board);
-  boardRef.current = board;
-
-  // Kept in sync with squareSize so MoveGhost can read a live value instead
-  // of a number frozen at animation-start -- see the queue comment above.
+  // Kept in sync with squareSize so every piece's position worklet reads a
+  // live value instead of one frozen at animation-start -- absorbs a board
+  // resize mid-flight (extra layout passes settling, especially prone to
+  // happening more than once on Android) instead of producing a snap.
   const squareSizeShared = useSharedValue(squareSize);
   useEffect(() => {
     squareSizeShared.value = squareSize;
   }, [squareSize, squareSizeShared]);
 
-  // useLayoutEffect (not useEffect): commits the new slide entry -- and so
-  // the isSliding suppression on the destination square -- synchronously
-  // with the same render that changed board/lastMove, instead of one tick
-  // later. That closes the gap where the real piece at the destination was
-  // ready to render before anything suppressed it, which is what produced
-  // the reported "ghosting" (real piece + ghost both visible at once).
+  const nextPieceIdRef = useRef(0);
+  const nextGhostIdRef = useRef(0);
+
+  // The persistent piece list PieceLayer renders. Reconciled incrementally
+  // (never rebuilt wholesale from `board`) by the lastMove-driven effect
+  // below -- see LivePiece's own comment for why this, not `board`, is what
+  // actually fixes pieces reloading on every move.
+  const [livePieces, setLivePieces] = useState<LivePiece[]>(() =>
+    resyncFromBoard([], board, () => nextPieceIdRef.current++),
+  );
+  const [dyingGhosts, setDyingGhosts] = useState<DyingGhost[]>([]);
+  const livePiecesRef = useRef(livePieces);
+  livePiecesRef.current = livePieces;
+
+  // Per-id animated position, created once per LivePiece id and mutated in
+  // place thereafter -- see PiecePosition's own comment for why this lives
+  // here rather than inside BoardPiece. Populated during render (not only in
+  // an effect) so the very first paint already has a valid entry for every
+  // piece in `livePieces` -- including the lazy useState initializer above,
+  // which runs before any effect has had a chance to run -- rather than
+  // pieces popping in a frame late on mount.
+  const positionsRef = useRef<Map<number, PiecePosition>>(new Map());
+  for (const piece of livePieces) {
+    if (!positionsRef.current.has(piece.id)) {
+      const [row, col] = squareToRowCol(piece.square);
+      positionsRef.current.set(piece.id, { row: makeMutable(row), col: makeMutable(col), scale: makeMutable(1) });
+    }
+  }
+
+  const prevLastMoveRef = useRef<VerboseLastMove | null>(null);
+  const [checkEffectId, setCheckEffectId] = useState(0);
+  const [checkmateEffectId, setCheckmateEffectId] = useState(0);
+
+  // Freezes whatever's currently being dragged at its exact released pixel
+  // position (converted into the same row/col units `position` is tracked
+  // in) and clears drag state, WITHOUT deciding where it settles next --
+  // that's the caller's job. Used both for a no-op drop (same square) and,
+  // inside the reconciliation effect below, ahead of finding out whether the
+  // pending move actually landed somewhere new or got rejected. Doing the
+  // freeze here (JS thread, synchronous with the state updates that follow
+  // in the same callback) rather than resetting drag state directly in the
+  // gesture worklet is what avoids a one-frame flash back to the origin
+  // square -- the same class of Android-timing issue the old ghost-swap
+  // drag system had to account for.
+  function bakeDraggedPosition(): number {
+    const draggedId = draggingIdSV.value;
+    if (draggedId !== -1) {
+      const pos = positionsRef.current.get(draggedId);
+      if (pos && squareSize > 0) {
+        pos.col.value += dragX.value / squareSize;
+        pos.row.value += dragY.value / squareSize;
+      }
+      dragX.value = 0;
+      dragY.value = 0;
+      draggingIdSV.value = -1;
+    }
+    return draggedId;
+  }
+
+  function settleDraggedPieceHome(id: number) {
+    if (id === -1) return;
+    const pos = positionsRef.current.get(id);
+    const piece = livePiecesRef.current.find((p) => p.id === id);
+    if (!pos || !piece) return;
+    const [r, c] = squareToRowCol(piece.square);
+    pos.row.value = withSpring(r, DRAG_SETTLE_SPRING);
+    pos.col.value = withSpring(c, DRAG_SETTLE_SPRING);
+  }
+
+  const handleGhostDone = useCallback((id: number) => {
+    setDyingGhosts((prev) => prev.filter((g) => g.id !== id));
+  }, []);
+
+  // The single place sound, the check/checkmate secondary effects, and
+  // piece-identity reconciliation all fire from -- keeps sound-start and
+  // animation-start synchronized in time, same as before this rework.
+  // useLayoutEffect (not useEffect): commits synchronously with the same
+  // render that changed board/lastMove, before paint.
   useLayoutEffect(() => {
-    const prev = prevLastMoveRef.current;
+    const draggedId = bakeDraggedPosition();
+
+    const prevMove = prevLastMoveRef.current;
     prevLastMoveRef.current = lastMove;
+    const isNewMove =
+      lastMove !== null && (!prevMove || prevMove.from !== lastMove.from || prevMove.to !== lastMove.to);
 
-    const isNewMove = lastMove !== null && (!prev || prev.from !== lastMove.from || prev.to !== lastMove.to);
-    if (!isNewMove || !animateLastMove) return;
+    if (isNewMove && lastMoveSound) playSound(lastMoveSound);
+    if (isNewMove && lastMoveSound === 'check' && checkSquare) setCheckEffectId((id) => id + 1);
+    if (isNewMove && lastMoveSound === 'checkmate') setCheckmateEffectId((id) => id + 1);
 
-    const [toRow, toCol] = squareToRowCol(lastMove.to);
-    const piece = boardRef.current[toRow]?.[toCol];
-    if (!piece) return;
+    const fastOutcome =
+      isNewMove && lastMove
+        ? tryFastPath(livePiecesRef.current, lastMove, board, () => nextGhostIdRef.current++)
+        : null;
 
-    const id = (slideIdRef.current += 1);
-    setSlides((prev) => [...prev, { id, from: lastMove.from, to: lastMove.to, piece }]);
-  }, [lastMove, animateLastMove]);
+    let outcome: ReconcileOutcome;
+    let animated: boolean;
 
-  const boardSize = squareSize * 8;
-  const interactive = Boolean(onSquarePress);
+    if (fastOutcome) {
+      outcome = fastOutcome;
+      animated = true;
+    } else if (boardMatchesLivePieces(board, livePiecesRef.current)) {
+      // Nothing about the position actually changed (e.g. a rejected/
+      // illegal attempt, which still triggers a refresh()) -- nothing to
+      // reconcile. If a drag was just frozen above with nowhere new to go,
+      // settle it back home; that's the only loose end.
+      settleDraggedPieceHome(draggedId);
+      return;
+    } else {
+      outcome = { pieces: resyncFromBoard(livePiecesRef.current, board, () => nextPieceIdRef.current++), dying: [] };
+      animated = false;
+    }
+
+    const isCastleMove = Boolean(lastMove && (lastMove.flags.includes('k') || lastMove.flags.includes('q')));
+
+    for (const piece of outcome.pieces) {
+      const prevPiece = livePiecesRef.current.find((p) => p.id === piece.id);
+      if (!positionsRef.current.has(piece.id)) {
+        const [r, c] = squareToRowCol(piece.square);
+        positionsRef.current.set(piece.id, { row: makeMutable(r), col: makeMutable(c), scale: makeMutable(1) });
+        continue; // brand new piece, already placed at its current square
+      }
+      if (prevPiece && prevPiece.square === piece.square && prevPiece.type === piece.type) continue; // unchanged
+
+      const pos = positionsRef.current.get(piece.id)!;
+      const [r, c] = squareToRowCol(piece.square);
+
+      if (!animated) {
+        pos.row.value = r;
+        pos.col.value = c;
+        continue;
+      }
+
+      if (piece.id === draggedId) {
+        pos.row.value = withSpring(r, DRAG_SETTLE_SPRING);
+        pos.col.value = withSpring(c, DRAG_SETTLE_SPRING);
+        continue;
+      }
+
+      const config = isCastleMove
+        ? ANIMATION_CONFIG.castle
+        : animateLastMove
+          ? ANIMATION_CONFIG[lastMoveSound ?? 'move']
+          : LOCAL_TAP_SETTLE;
+      pos.row.value = withTiming(r, config);
+      pos.col.value = withTiming(c, config);
+
+      const promoted = Boolean(prevPiece && prevPiece.type !== piece.type);
+      pos.scale.value = promoted
+        ? withSequence(withTiming(1.3, { duration: 150 }), withTiming(1, { duration: 150 }))
+        : withSequence(
+            withTiming(0.94, { duration: config.duration * 0.4 }),
+            withSpring(1, { damping: 10, stiffness: 200 }),
+          );
+    }
+
+    if (outcome.dying.length) {
+      setDyingGhosts((prev) => [...prev, ...outcome.dying]);
+    }
+    setLivePieces(outcome.pieces);
+    // squareSize is read (for the drag-bake division) but deliberately not a
+    // dependency -- a resize mid-drag is rare and re-running this whole
+    // reconciliation on every resize would be wasted work; it already reads
+    // the live value via closure each time the effect actually runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board, lastMove, animateLastMove, lastMoveSound, checkSquare]);
 
   function handleGridLayout(event: LayoutChangeEvent) {
     setGridSize(Math.min(event.nativeEvent.layout.width, event.nativeEvent.layout.height));
@@ -201,15 +511,11 @@ export function ChessBoard({
     onSquarePress?.(square);
   }
 
-  function handleGrab(square: string, piece: string, row: number, col: number) {
+  function handleGrab(square: string) {
     dragX.value = 0;
     dragY.value = 0;
-    // If a slide-in ghost is still finishing its travel into the square the
-    // player just grabbed, the player taking control makes its remaining
-    // travel meaningless -- evict it so DragGhost doesn't briefly overlap
-    // MoveGhost's tail end on the same square.
-    setSlides((prev) => prev.filter((s) => s.to !== square));
-    setDragging({ square, piece, row, col });
+    const livePiece = livePiecesRef.current.find((p) => p.square === square);
+    if (livePiece) draggingIdSV.value = livePiece.id;
     onSquarePress?.(square);
   }
 
@@ -218,10 +524,15 @@ export function ChessBoard({
     const targetRow = Math.min(7, Math.max(0, fromRow + deltaRow));
     const targetCol = Math.min(7, Math.max(0, fromCol + deltaCol));
     const targetSquare = squareAt(targetRow, targetCol);
-    setDragging(null);
     if (targetSquare !== fromSquare) {
+      // A real attempt (legal or not) -- the reconciliation effect above
+      // resolves where this piece's drag ends up, once refresh() lands.
       onSquarePress?.(targetSquare);
+      return;
     }
+    // Dropped back where it started -- no state change is coming, so there's
+    // nothing to wait on; resolve the drag right here.
+    settleDraggedPieceHome(bakeDraggedPosition());
   }
 
   return (
@@ -278,7 +589,6 @@ export function ChessBoard({
                       <Square
                         key={colIndex}
                         square={square}
-                        piece={piece}
                         squareColor={
                           (isLight ? theme.squares.light : theme.squares.dark)[rowIndex]
                         }
@@ -288,8 +598,6 @@ export function ChessBoard({
                         isCapture={legalTargets.includes(square) && piece !== ''}
                         isCheck={square === checkSquare}
                         isLastMove={lastMove !== null && (square === lastMove.from || square === lastMove.to)}
-                        isBeingDragged={dragging?.square === square}
-                        isSliding={slides.some((s) => s.to === square && s.piece === piece)}
                         showRankLabel={colIndex === 0}
                         rankLabel={8 - rowIndex}
                         showFileLabel={rowIndex === 7}
@@ -297,14 +605,11 @@ export function ChessBoard({
                         squareSize={squareSize}
                         interactive={interactive}
                         canDrag={canDrag}
-                        row={rowIndex}
-                        col={colIndex}
                         dragX={dragX}
                         dragY={dragY}
                         onTapSquare={handleTapSquare}
                         onGrab={handleGrab}
                         onDrop={handleDrop}
-                        pieceSprites={pieceSprites}
                       />
                     );
                   })}
@@ -317,32 +622,43 @@ export function ChessBoard({
                 a second gradient on top double-counted it -- darkening the lower
                 board past the render and washing out the upper. */}
 
-            {squareSize > 0
-              ? slides.map((slide) => (
-                  <MoveGhost
-                    key={slide.id}
-                    id={slide.id}
-                    piece={slide.piece}
-                    from={slide.from}
-                    to={slide.to}
+            {squareSize > 0 ? (
+              <>
+                {dyingGhosts.map((ghost) => (
+                  <DyingPieceGhost
+                    key={ghost.id}
+                    id={ghost.id}
+                    type={ghost.type}
+                    square={ghost.square}
                     squareSize={squareSize}
                     squareSizeShared={squareSizeShared}
                     pieceSprites={pieceSprites}
-                    onDone={handleSlideDone}
+                    onDone={handleGhostDone}
                   />
-                ))
-              : null}
+                ))}
 
-            {dragging && squareSize > 0 ? (
-              <DragGhost
-                piece={dragging.piece}
-                row={dragging.row}
-                col={dragging.col}
-                squareSize={squareSize}
-                dragX={dragX}
-                dragY={dragY}
-                pieceSprites={pieceSprites}
-              />
+                <PieceLayer
+                  pieces={livePieces}
+                  positions={positionsRef.current}
+                  squareSize={squareSize}
+                  squareSizeShared={squareSizeShared}
+                  pieceSprites={pieceSprites}
+                  draggingIdSV={draggingIdSV}
+                  dragX={dragX}
+                  dragY={dragY}
+                />
+
+                {checkSquare && checkEffectId > 0 ? (
+                  <CheckPulse
+                    key={checkEffectId}
+                    checkSquare={checkSquare}
+                    squareSize={squareSize}
+                    squareSizeShared={squareSizeShared}
+                  />
+                ) : null}
+
+                {checkmateEffectId > 0 ? <CheckmateFlourish key={checkmateEffectId} boardSize={boardSize} /> : null}
+              </>
             ) : null}
             </View>
           </View>
@@ -386,7 +702,6 @@ function GlowRing({ color }: { color: string }) {
 
 interface SquareProps {
   square: string;
-  piece: string;
   /** Measured per-rank tone for this square; see BoardSquares in the theme. */
   squareColor: string;
   isLight: boolean;
@@ -395,9 +710,6 @@ interface SquareProps {
   isCapture: boolean;
   isCheck: boolean;
   isLastMove: boolean;
-  isBeingDragged: boolean;
-  /** True while a slide-in ghost (see MoveGhost) is travelling to this square. */
-  isSliding: boolean;
   showRankLabel: boolean;
   rankLabel: number;
   showFileLabel: boolean;
@@ -405,19 +717,20 @@ interface SquareProps {
   squareSize: number;
   interactive: boolean;
   canDrag: boolean;
-  row: number;
-  col: number;
   dragX: SharedValue<number>;
   dragY: SharedValue<number>;
   onTapSquare: (square: string) => void;
-  onGrab: (square: string, piece: string, row: number, col: number) => void;
+  onGrab: (square: string) => void;
   onDrop: (square: string, deltaRow: number, deltaCol: number) => void;
-  pieceSprites: PieceSpriteMap;
 }
 
+// Purely a visual/gesture surface -- tint, labels, legal-move dots, gesture
+// hit-target. Renders no piece of its own any more (see PieceLayer/
+// BoardPiece below): gesture ownership deliberately stays here, keyed by
+// stable grid position, rather than moving onto a piece that's animating
+// away from its square mid-drag.
 const Square = memo(function Square({
   square,
-  piece,
   squareColor,
   isLight,
   isSelected,
@@ -425,8 +738,6 @@ const Square = memo(function Square({
   isCapture,
   isCheck,
   isLastMove,
-  isBeingDragged,
-  isSliding,
   showRankLabel,
   rankLabel,
   showFileLabel,
@@ -434,14 +745,11 @@ const Square = memo(function Square({
   squareSize,
   interactive,
   canDrag,
-  row,
-  col,
   dragX,
   dragY,
   onTapSquare,
   onGrab,
   onDrop,
-  pieceSprites,
 }: SquareProps) {
   const labelColor = isLight ? withOpacity(Colors.boardEdge, 0.75) : withOpacity(Colors.chrome, 0.65);
 
@@ -455,7 +763,7 @@ const Square = memo(function Square({
     .enabled(canDrag)
     .minDistance(4)
     .onStart(() => {
-      runOnJS(onGrab)(square, piece, row, col);
+      runOnJS(onGrab)(square);
     })
     .onUpdate((event) => {
       dragX.value = event.translationX;
@@ -464,8 +772,9 @@ const Square = memo(function Square({
     .onEnd((event) => {
       const deltaCol = Math.round(event.translationX / squareSize);
       const deltaRow = Math.round(event.translationY / squareSize);
-      dragX.value = withSpring(0);
-      dragY.value = withSpring(0);
+      // Deliberately doesn't reset dragX/dragY/draggingIdSV here -- see
+      // bakeDraggedPosition's comment for why that handoff happens on the JS
+      // thread instead, synchronous with whatever state update follows.
       runOnJS(onDrop)(square, deltaRow, deltaCol);
     });
 
@@ -490,10 +799,6 @@ const Square = memo(function Square({
           <Text style={[styles.fileLabel, { color: labelColor }]}>{fileLabel}</Text>
         ) : null}
 
-        {piece && !isBeingDragged && !isSliding ? (
-          <PieceGlyph piece={piece} squareSize={squareSize} pieceSprites={pieceSprites} />
-        ) : null}
-
         {isCapture ? <View style={styles.captureRing} /> : null}
         {isLegalTarget && !isCapture ? <View style={styles.moveDot} /> : null}
       </View>
@@ -501,125 +806,241 @@ const Square = memo(function Square({
   );
 });
 
-// Travels a piece from its origin square to its destination square over the
-// board -- gives moves that arrive without a drag/tap (the bot's moves) the
-// same "I can see where that went" legibility a human's own gesture already
-// provides. Piggybacks on the same absolute-positioned-over-the-grid trick as
-// DragGhost, just driven by a timed progress value instead of a finger.
+// Thin `.map` wrapper -- not memoized itself (its own re-run is O(32) cheap
+// prop-identity checks); the expensive work `memo(BoardPiece)` below
+// prevents is what actually matters for render cost.
+function PieceLayer({
+  pieces,
+  positions,
+  squareSize,
+  squareSizeShared,
+  pieceSprites,
+  draggingIdSV,
+  dragX,
+  dragY,
+}: {
+  pieces: LivePiece[];
+  positions: Map<number, PiecePosition>;
+  squareSize: number;
+  squareSizeShared: SharedValue<number>;
+  pieceSprites: PieceSpriteMap;
+  draggingIdSV: SharedValue<number>;
+  dragX: SharedValue<number>;
+  dragY: SharedValue<number>;
+}) {
+  return (
+    <>
+      {pieces.map((piece) => {
+        const position = positions.get(piece.id);
+        if (!position) return null;
+        return (
+          <BoardPiece
+            key={piece.id}
+            id={piece.id}
+            type={piece.type}
+            position={position}
+            squareSize={squareSize}
+            squareSizeShared={squareSizeShared}
+            pieceSprites={pieceSprites}
+            draggingIdSV={draggingIdSV}
+            dragX={dragX}
+            dragY={dragY}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+// The one persistent home for every piece on the board -- created once per
+// LivePiece id and never remounted for the rest of that piece's lifetime on
+// the board. This is what actually fixes "piece reloads on every move": this
+// component's Image is the SAME mounted instance before, during, and after a
+// move, merely repositioned via `position`'s shared values rather than
+// swapped for a fresh one. Also doubles as the drag surface (no separate
+// DragGhost) -- while `draggingIdSV` names this piece's id, its transform
+// follows the raw gesture instead of `position`.
 //
-// One instance per in-flight slide (see the `slides` queue above, and each
-// instance's `key={slide.id}` at the call site) -- this, not a shared
-// mutable slot, is what makes two overlapping slides independent: each
-// mounts its own `progress` shared value and drives its own `withTiming`, so
-// there's nothing for a second slide to stomp regardless of timing. Reads
-// live position from `squareSizeShared` (kept in sync with the board's
-// actual layout by the parent) inside the worklet, rather than a squareSize
-// frozen at slide-start, so a resize mid-flight (extra Android layout
-// passes) is absorbed immediately instead of producing a snap.
-const MoveGhost = memo(function MoveGhost({
+// memo is load-bearing here, not cosmetic: reconciliation (see the
+// lastMove-driven effect above) always preserves object identity for
+// untouched LivePiece entries, so on a typical move only the 1-4 pieces that
+// actually changed get new prop references -- the other ~28 mounted
+// BoardPiece instances skip re-rendering entirely rather than being
+// re-diffed on every move.
+const BoardPiece = memo(function BoardPiece({
   id,
-  piece,
-  from,
-  to,
+  type,
+  position,
+  squareSize,
+  squareSizeShared,
+  pieceSprites,
+  draggingIdSV,
+  dragX,
+  dragY,
+}: {
+  id: number;
+  type: string;
+  position: PiecePosition;
+  squareSize: number;
+  squareSizeShared: SharedValue<number>;
+  pieceSprites: PieceSpriteMap;
+  draggingIdSV: SharedValue<number>;
+  dragX: SharedValue<number>;
+  dragY: SharedValue<number>;
+}) {
+  const animatedStyle = useAnimatedStyle(() => {
+    const s = squareSizeShared.value;
+    if (draggingIdSV.value === id) {
+      // Lifts the piece well above the fingertip while dragging (like
+      // chess.com) so the hand holding it doesn't cover the piece or the
+      // destination square.
+      return {
+        width: s,
+        height: s,
+        zIndex: 50,
+        transform: [
+          { translateX: position.col.value * s + dragX.value },
+          { translateY: position.row.value * s + dragY.value - s },
+          { scale: 2.1 },
+        ],
+      };
+    }
+    return {
+      width: s,
+      height: s,
+      zIndex: 10,
+      transform: [
+        { translateX: position.col.value * s },
+        { translateY: position.row.value * s },
+        { scale: position.scale.value },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.boardPieceBase, { left: 0, top: 0 }, animatedStyle]}>
+      <PieceGlyph piece={type} squareSize={squareSize} pieceSprites={pieceSprites} />
+    </Animated.View>
+  );
+});
+
+// A captured piece animating out (fade + scale-down + a small knockback)
+// instead of vanishing the instant it's removed from `board`.
+const DyingPieceGhost = memo(function DyingPieceGhost({
+  id,
+  type,
+  square,
   squareSize,
   squareSizeShared,
   pieceSprites,
   onDone,
 }: {
   id: number;
-  piece: string;
-  from: string;
-  to: string;
-  /** Plain, current-render value -- only used for PieceGlyph's own (non-animated) cosmetic sizing. */
+  type: string;
+  square: string;
   squareSize: number;
-  /** Live value read inside the worklet below for position/size -- see the comment above. */
   squareSizeShared: SharedValue<number>;
   pieceSprites: PieceSpriteMap;
-  // Takes `id` rather than the caller closing over it -- an inline arrow at
-  // the call site would be a new function every parent render, which would
-  // make `memo` below see a "changed" prop on every unrelated re-render and
-  // defeat the whole point of memoizing this component (see the comment
-  // above it). `handleSlideDone` in the parent is itself a stable
-  // useCallback, so passing it directly here keeps this prop reference
-  // stable across renders.
   onDone: (id: number) => void;
 }) {
   const progress = useSharedValue(0);
-  const [fromRow, fromCol] = squareToRowCol(from);
-  const [toRow, toCol] = squareToRowCol(to);
+  const [row, col] = squareToRowCol(square);
 
   useEffect(() => {
-    progress.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }, (finished) => {
+    progress.value = withTiming(1, { duration: CAPTURE_OUT_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
       if (finished) runOnJS(onDone)(id);
     });
-    // Mount-only: this instance exists for exactly one slide's lifetime (see
-    // the queue comment above), so there is nothing to re-trigger on.
+    // Mount-only: this instance exists for exactly one capture's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const animatedStyle = useAnimatedStyle(() => {
     const s = squareSizeShared.value;
-    const fromX = fromCol * s;
-    const fromY = fromRow * s;
-    const toX = toCol * s;
-    const toY = toRow * s;
     return {
       width: s,
       height: s,
+      zIndex: 5,
+      opacity: 1 - progress.value,
       transform: [
-        { translateX: fromX + (toX - fromX) * progress.value },
-        { translateY: fromY + (toY - fromY) * progress.value },
+        { translateX: col * s },
+        { translateY: row * s + progress.value * s * 0.18 },
+        { scale: 1 - progress.value * 0.4 },
       ],
     };
   });
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.dragGhost, { left: 0, top: 0 }, animatedStyle]}>
-      <PieceGlyph piece={piece} squareSize={squareSize} pieceSprites={pieceSprites} />
+    <Animated.View pointerEvents="none" style={[styles.boardPieceBase, { left: 0, top: 0 }, animatedStyle]}>
+      <PieceGlyph piece={type} squareSize={squareSize} pieceSprites={pieceSprites} />
     </Animated.View>
   );
 });
 
-function DragGhost({
-  piece,
-  row,
-  col,
+// A one-shot pulse over the checked king's square, layered on top of
+// Square's persistent isCheck tint -- triggered only for a genuinely new
+// check event (remounted via the `key` at the call site), not merely
+// "check is still active". Brackets the check sound cue's ~2.3s length.
+function CheckPulse({
+  checkSquare,
   squareSize,
-  dragX,
-  dragY,
-  pieceSprites,
+  squareSizeShared,
 }: {
-  piece: string;
-  row: number;
-  col: number;
+  checkSquare: string;
   squareSize: number;
-  dragX: SharedValue<number>;
-  dragY: SharedValue<number>;
-  pieceSprites: PieceSpriteMap;
+  squareSizeShared: SharedValue<number>;
 }) {
-  // Lifts the piece well above the fingertip while dragging (like chess.com)
-  // so the hand holding it doesn't cover the piece or the destination square.
-  const liftOffset = -squareSize * 1.0;
+  const progress = useSharedValue(0);
+  const [row, col] = squareToRowCol(checkSquare);
+
+  useEffect(() => {
+    const halfCycle = CHECK_PULSE_DURATION_MS / 4;
+    progress.value = withSequence(
+      withRepeat(withTiming(1, { duration: halfCycle, easing: Easing.inOut(Easing.sin) }), 4, true),
+      withTiming(0, { duration: 200 }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const s = squareSizeShared.value;
+    return {
+      width: s,
+      height: s,
+      opacity: 0.25 + progress.value * 0.45,
+      transform: [{ translateX: col * s }, { translateY: row * s }, { scale: 1 + progress.value * 0.12 }],
+    };
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.checkGlow, { left: 0, top: 0, width: squareSize, height: squareSize }, animatedStyle]}
+    />
+  );
+}
+
+// A bigger, decoupled flourish for the game-ending move -- deliberately
+// short (~2s) relative to the checkmate sound's own ~8.8s decay; the sound
+// keeps playing as ambience after this settles rather than the animation
+// trying to fill its whole length.
+function CheckmateFlourish({ boardSize }: { boardSize: number }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withTiming(1, { duration: CHECKMATE_FLOURISH_DURATION_MS, easing: Easing.out(Easing.cubic) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: dragX.value },
-      { translateY: dragY.value + liftOffset },
-      { scale: 2.1 },
-    ],
+    opacity: 1 - progress.value,
+    transform: [{ scale: 0.3 + progress.value * 1.4 }],
   }));
 
   return (
     <Animated.View
       pointerEvents="none"
-      style={[
-        styles.dragGhost,
-        { width: squareSize, height: squareSize, left: col * squareSize, top: row * squareSize },
-        animatedStyle,
-      ]}
-    >
-      <PieceGlyph piece={piece} squareSize={squareSize} pieceSprites={pieceSprites} />
-    </Animated.View>
+      style={[styles.flourishRing, { width: boardSize, height: boardSize }, animatedStyle]}
+    />
   );
 }
 
@@ -678,16 +1099,14 @@ function PieceGlyph({
         source={sprite}
         contentFit="contain"
         // expo-image's default cachePolicy ('disk') only caches the source
-        // bytes, not the decoded bitmap -- a piece's Image mounts FRESH every
-        // time it lands on a new square (the square goes from rendering
-        // nothing to rendering a PieceGlyph, not a prop update on an
-        // existing one), so without this it re-decodes/re-rasterizes these
-        // unusually complex vtraced SVGs (hundreds of paths, up to ~1.5MB)
-        // from scratch on every single move -- visible as the moved piece
-        // blanking for a moment, especially on Android. 'memory-disk' caches
-        // the decoded bitmap keyed by source, so once every piece type has
-        // been decoded once (already true by the starting position, which
-        // shows all 12), every later move hits the cache instantly.
+        // bytes, not the decoded bitmap -- these are unusually complex
+        // vtraced SVGs (hundreds of paths, up to ~1.5MB), so without this
+        // every fresh decode would be visible as a blank flash, especially
+        // on Android. 'memory-disk' caches the decoded bitmap keyed by
+        // source. Now that pieces are persistent (see BoardPiece above) this
+        // mostly matters for the very first mount of each of the 12 sprites
+        // and for a promotion's source swap, not for ordinary moves any
+        // more -- but costs nothing to keep.
         cachePolicy="memory-disk"
         // Cut per whole square, so the sprite fills it edge to edge and keeps
         // the render's own framing and scale. Lifted a few percent off its own
@@ -859,10 +1278,25 @@ const styles = StyleSheet.create({
     backgroundColor: withOpacity(Colors.bgBase, 0.34),
     boxShadow: `-1px 1px 4px ${withOpacity(Colors.bgBase, 0.45)}`,
   },
-  dragGhost: {
+  // Shared absolute-over-the-grid base for every persistent/transient piece
+  // layer (BoardPiece, DyingPieceGhost) -- width/height/transform/zIndex are
+  // always supplied by each one's own animatedStyle.
+  boardPieceBase: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 50,
+  },
+  checkGlow: {
+    position: 'absolute',
+    borderRadius: 6,
+    backgroundColor: withOpacity(Colors.crimson, 0.5),
+  },
+  flourishRing: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    borderRadius: 999,
+    borderWidth: 6,
+    borderColor: withOpacity(Colors.gold, 0.85),
   },
 });

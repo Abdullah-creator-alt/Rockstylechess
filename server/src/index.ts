@@ -6,12 +6,16 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 
+import { eq } from 'drizzle-orm';
+
 import { allowedWebOrigins } from './allowedOrigins.js';
 import { authRouter } from './auth.js';
 import { socketAuth } from './authMiddleware.js';
 import { auth } from './betterAuth.js';
 import { allowChatMessage, clearChatRateLimit, sanitizeChatText } from './chat.js';
+import { db } from './db/client.js';
 import { persistMatchResult } from './db/persistMatchResult.js';
+import { playerProfiles } from './db/schema/index.js';
 import { cancelRoomBySocketId, createRoom, joinRoom } from './gameRoom.js';
 import {
   allMatches,
@@ -20,11 +24,12 @@ import {
   createMatch,
   endMatch,
   getMatch,
+  liveClockRemaining,
   opponentColor,
   type MatchState,
   type PieceColor,
 } from './match.js';
-import { joinQueue, leaveQueue, type QueuedPlayer, type VenueTier } from './matchmaking.js';
+import { isDuration, joinQueue, leaveQueue, type Duration, type QueuedPlayer, type VenueTier } from './matchmaking.js';
 
 const PORT = Number(process.env.PORT) || 4000;
 // How long a disconnected player's match stays alive waiting for them to
@@ -36,6 +41,30 @@ const RECONNECT_GRACE_MS = 60_000;
 const VENUE_TIERS: VenueTier[] = ['garage', 'club', 'arena', 'stadium', 'mainstage', 'world-tour'];
 function isVenueTier(value: unknown): value is VenueTier {
   return typeof value === 'string' && (VENUE_TIERS as string[]).includes(value);
+}
+
+// The enum, not raw ms, arrives over the wire -- resolved to a real ms value
+// only here, server-side, so a client can't request an arbitrary duration.
+const DURATION_MS: Record<Duration, number> = {
+  '3m': 3 * 60_000,
+  '5m': 5 * 60_000,
+  '10m': 10 * 60_000,
+};
+function resolveDuration(value: unknown): Duration {
+  return isDuration(value) ? value : '5m';
+}
+
+// Guests (userId null) and signed-in players who haven't picked an avatar
+// yet both resolve to null here -- getAvatarEmoji() on the client already
+// treats null as "show the default avatar", so this doesn't need its own
+// fallback string server-side.
+async function getAvatarId(userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const [row] = await db
+    .select({ avatarId: playerProfiles.avatarId })
+    .from(playerProfiles)
+    .where(eq(playerProfiles.userId, userId));
+  return row?.avatarId ?? null;
 }
 
 const app = express();
@@ -64,13 +93,32 @@ io.use(socketAuth);
 // can still be matched back to whichever match its previous guestId was in.
 const guestIdBySocket = new Map<string, string>();
 
+// Fires when a side's clock deadline elapses without them moving -- mirrors
+// the disconnect/forfeit callback below exactly (broadcast match:ended,
+// persist, endMatch), just for a different trigger. match.ts can't own this
+// itself: it has no Socket.IO `io` access, so index.ts (which does) is
+// responsible for arming/clearing/rescheduling match.clock.deadlineTimer at
+// every point the active side changes (see notifyMatched below and
+// move:make's handler further down).
+function fireTimeout(match: MatchState, flaggedColor: PieceColor): void {
+  const winner = opponentColor(flaggedColor);
+  io.to(match.id).emit('match:ended', { result: { type: 'timeout', winner } });
+  persistMatchResult(match, 'timeout', winner).catch((err) => console.error('match persistence failed', err));
+  endMatch(match.id);
+}
+
 // Joins both sockets to the match's Socket.IO room and tells each color's
 // socket who they're playing -- the one piece of "a pair just formed"
 // logic shared by both pairing paths (tier queue and room code), so it
-// isn't duplicated between queue:join and room:join below.
+// isn't duplicated between queue:join and room:join below. Also arms
+// White's clock deadline -- White's clock is already running from move 1,
+// standard chess-clock convention -- since createMatch itself can't (no io
+// access, see fireTimeout's comment).
 function notifyMatched(match: MatchState): void {
   io.sockets.sockets.get(match.players.w.socketId)?.join(match.id);
   io.sockets.sockets.get(match.players.b.socketId)?.join(match.id);
+
+  match.clock.deadlineTimer = setTimeout(() => fireTimeout(match, 'w'), match.clock.remainingMs.w);
 
   for (const color of ['w', 'b'] as PieceColor[]) {
     const me = match.players[color];
@@ -78,55 +126,73 @@ function notifyMatched(match: MatchState): void {
     io.to(me.socketId).emit('queue:matched', {
       matchId: match.id,
       color,
-      opponent: { displayName: opp.displayName },
+      opponent: { displayName: opp.displayName, avatarId: opp.avatarId },
       fen: match.chess.fen(),
+      clocks: match.clock.remainingMs,
+      incrementMs: match.clock.incrementMs,
     });
   }
 }
 
 io.on('connection', (socket: Socket) => {
-  socket.on('queue:join', (payload: { guestId?: string; displayName?: string; venueTier?: string }) => {
-    if (!payload?.guestId || !isVenueTier(payload.venueTier)) return;
-    guestIdBySocket.set(socket.id, payload.guestId);
+  socket.on(
+    'queue:join',
+    async (payload: { guestId?: string; displayName?: string; venueTier?: string; duration?: string }) => {
+      if (!payload?.guestId || !isVenueTier(payload.venueTier)) return;
+      guestIdBySocket.set(socket.id, payload.guestId);
 
-    const player: QueuedPlayer = {
-      socketId: socket.id,
-      guestId: payload.guestId,
-      userId: (socket.data.userId as string | undefined) ?? null,
-      displayName: payload.displayName || 'PLAYER',
-    };
-    const opponent = joinQueue(payload.venueTier, player);
-    if (!opponent) return; // now waiting in queue
+      const userId = (socket.data.userId as string | undefined) ?? null;
+      const player: QueuedPlayer = {
+        socketId: socket.id,
+        guestId: payload.guestId,
+        userId,
+        displayName: payload.displayName || 'PLAYER',
+        avatarId: await getAvatarId(userId),
+        duration: resolveDuration(payload.duration),
+      };
+      const opponent = joinQueue(payload.venueTier, player);
+      if (!opponent) return; // now waiting in queue
 
-    notifyMatched(createMatch(opponent, player));
-  });
+      // The waiting player's duration wins -- see QueuedPlayer.duration's comment.
+      notifyMatched(createMatch(opponent, player, DURATION_MS[opponent.duration]));
+    },
+  );
 
   socket.on('queue:leave', () => {
     leaveQueue(socket.id);
   });
 
-  socket.on('room:create', (payload: { guestId?: string; displayName?: string }) => {
+  socket.on('room:create', async (payload: { guestId?: string; displayName?: string; duration?: string }) => {
     if (!payload?.guestId) return;
     guestIdBySocket.set(socket.id, payload.guestId);
 
+    const userId = (socket.data.userId as string | undefined) ?? null;
     const player: QueuedPlayer = {
       socketId: socket.id,
       guestId: payload.guestId,
-      userId: (socket.data.userId as string | undefined) ?? null,
+      userId,
       displayName: payload.displayName || 'PLAYER',
+      avatarId: await getAvatarId(userId),
+      duration: resolveDuration(payload.duration),
     };
     socket.emit('room:created', { code: createRoom(player) });
   });
 
-  socket.on('room:join', (payload: { guestId?: string; displayName?: string; code?: string }) => {
+  socket.on('room:join', async (payload: { guestId?: string; displayName?: string; code?: string }) => {
     if (!payload?.guestId || !payload?.code) return;
     guestIdBySocket.set(socket.id, payload.guestId);
 
+    const userId = (socket.data.userId as string | undefined) ?? null;
     const player: QueuedPlayer = {
       socketId: socket.id,
       guestId: payload.guestId,
-      userId: (socket.data.userId as string | undefined) ?? null,
+      userId,
       displayName: payload.displayName || 'PLAYER',
+      avatarId: await getAvatarId(userId),
+      // The joiner's own duration is irrelevant -- the room creator's
+      // (result.opponent below) is what createMatch actually uses, since
+      // they're the one who set the room up in the first place.
+      duration: '5m',
     };
     const result = joinRoom(payload.code, player);
     if (result.status !== 'ok') {
@@ -134,7 +200,7 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
-    notifyMatched(createMatch(result.opponent, player));
+    notifyMatched(createMatch(result.opponent, player, DURATION_MS[result.opponent.duration]));
   });
 
   socket.on('room:cancel', () => {
@@ -154,6 +220,17 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
+    // applyMove already deducted the mover's elapsed time (+ increment) into
+    // match.clock -- clear their now-stale deadline (they just moved, it no
+    // longer applies) and arm one for whoever's turn it is now. Clearing
+    // before anything else that could yield is what makes "a move lands
+    // right as the old timer would have fired" safe: Node's single-threaded
+    // event loop means whichever callback actually got invoked first wins
+    // outright, no mutex needed.
+    if (match.clock.deadlineTimer) clearTimeout(match.clock.deadlineTimer);
+    const nextColor = chess.turn();
+    match.clock.deadlineTimer = setTimeout(() => fireTimeout(match, nextColor), match.clock.remainingMs[nextColor]);
+
     io.to(match.id).emit('move:applied', {
       from: payload.from,
       to: payload.to,
@@ -161,6 +238,7 @@ io.on('connection', (socket: Socket) => {
       fen: chess.fen(),
       turn: chess.turn(),
       isGameOver: chess.isGameOver(),
+      clocks: match.clock.remainingMs,
     });
 
     if (chess.isGameOver()) {
@@ -235,8 +313,15 @@ io.on('connection', (socket: Socket) => {
     socket.emit('queue:matched', {
       matchId: match.id,
       color,
-      opponent: { displayName: match.players[opponentColor(color)].displayName },
+      opponent: {
+        displayName: match.players[opponentColor(color)].displayName,
+        avatarId: match.players[opponentColor(color)].avatarId,
+      },
       fen: match.chess.fen(),
+      // A live snapshot, not the possibly-stale anchor -- the clock kept
+      // running the whole time this player was disconnected.
+      clocks: liveClockRemaining(match),
+      incrementMs: match.clock.incrementMs,
     });
   });
 

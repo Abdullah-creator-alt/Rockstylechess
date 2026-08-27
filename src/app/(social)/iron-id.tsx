@@ -56,6 +56,7 @@ const RESULT_LABEL: Record<MatchHistoryEntry['resultType'], string> = {
   draw: 'Draw',
   resignation: 'Resignation',
   forfeit: 'Forfeit',
+  timeout: 'Timeout',
 };
 
 function formatDelta(delta: number): string {

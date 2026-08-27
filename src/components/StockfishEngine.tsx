@@ -3,11 +3,24 @@ import { StyleSheet, View } from 'react-native';
 import WebView, { type WebViewMessageEvent } from 'react-native-webview';
 
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
-import { buildDifficultyOptions, buildStockfishHtml, parseEngineLine } from '@/lib/stockfishProtocol';
+import { buildAnalysisOptions, buildDifficultyOptions, buildStockfishHtml, parseEngineLine } from '@/lib/stockfishProtocol';
+
+export interface EvalResult {
+  cp: number | null;
+  mate: number | null;
+  /** The engine's own suggested move from this position. */
+  bestMove: EngineMove | null;
+}
 
 export interface StockfishEngineHandle {
   requestBestMove(fen: string, config: StockfishConfig): Promise<EngineMove | null>;
+  /** For game analysis -- full engine strength, no elo weakening. */
+  evaluatePosition(fen: string, movetimeMs: number): Promise<EvalResult>;
 }
+
+type Pending =
+  | { kind: 'move'; resolve: (move: EngineMove | null) => void }
+  | { kind: 'eval'; lastScore: { cp: number | null; mate: number | null }; resolve: (result: EvalResult) => void };
 
 interface StockfishEngineProps {
   /** Only mount the WebView when a Stockfish-tier bot is actually in play. */
@@ -32,7 +45,7 @@ export const StockfishEngine = forwardRef<StockfishEngineHandle, StockfishEngine
   const webviewRef = useRef<WebView>(null);
   const uciReadyRef = useRef(false);
   const readyWaitersRef = useRef<(() => void)[]>([]);
-  const pendingRef = useRef<{ resolve: (move: EngineMove | null) => void } | null>(null);
+  const pendingRef = useRef<Pending | null>(null);
 
   function send(cmd: string) {
     webviewRef.current?.injectJavaScript(`window.__sfSend(${JSON.stringify(cmd)}); true;`);
@@ -56,13 +69,27 @@ export const StockfishEngine = forwardRef<StockfishEngineHandle, StockfishEngine
       uciReadyRef.current = true;
       readyWaitersRef.current.forEach((resolve) => resolve());
       readyWaitersRef.current = [];
+    } else if (parsed.type === 'info') {
+      if (pendingRef.current?.kind === 'eval') {
+        pendingRef.current.lastScore = {
+          cp: parsed.scoreCp ?? pendingRef.current.lastScore.cp,
+          mate: parsed.scoreMate ?? pendingRef.current.lastScore.mate,
+        };
+      }
     } else if (parsed.type === 'bestmove') {
-      pendingRef.current?.resolve(parsed.move);
+      const pending = pendingRef.current;
       pendingRef.current = null;
+      if (pending?.kind === 'move') {
+        pending.resolve(parsed.move);
+      } else if (pending?.kind === 'eval') {
+        pending.resolve({ ...pending.lastScore, bestMove: parsed.move });
+      }
     } else if (parsed.type === 'error') {
       console.log('StockfishEngine error:', parsed.message);
-      pendingRef.current?.resolve(null);
+      const pending = pendingRef.current;
       pendingRef.current = null;
+      if (pending?.kind === 'move') pending.resolve(null);
+      else if (pending?.kind === 'eval') pending.resolve({ cp: null, mate: null, bestMove: null });
     }
   }
 
@@ -70,11 +97,21 @@ export const StockfishEngine = forwardRef<StockfishEngineHandle, StockfishEngine
     async requestBestMove(fen, config) {
       await waitUntilReady();
       return new Promise((resolve) => {
-        pendingRef.current = { resolve };
+        pendingRef.current = { kind: 'move', resolve };
         send('ucinewgame');
         for (const option of buildDifficultyOptions(config)) send(option);
         send(`position fen ${fen}`);
         send(`go movetime ${config.movetimeMs}`);
+      });
+    },
+    async evaluatePosition(fen, movetimeMs) {
+      await waitUntilReady();
+      return new Promise((resolve) => {
+        pendingRef.current = { kind: 'eval', lastScore: { cp: null, mate: null }, resolve };
+        send('ucinewgame');
+        for (const option of buildAnalysisOptions()) send(option);
+        send(`position fen ${fen}`);
+        send(`go movetime ${movetimeMs}`);
       });
     },
   }));

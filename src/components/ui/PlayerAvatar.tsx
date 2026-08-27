@@ -3,7 +3,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Fonts, withOpacity } from '@/constants/theme';
 
-export type AvatarSize = 'small' | 'medium' | 'large';
+export type AvatarSize = 'tiny' | 'small' | 'medium' | 'large';
 
 interface PlayerAvatarProps {
   imageUri?: string;
@@ -16,6 +16,12 @@ interface PlayerAvatarProps {
 }
 
 const SIZE_MAP: Record<AvatarSize, { outer: number; ring: number; emoji: number; badge: number }> = {
+  // For tight spots that can't absorb 'small''s footprint (e.g. the in-match
+  // player-row card, where the box has to stay close to its old
+  // icon-plus-two-lines-of-text height) -- no level badge is ever shown at
+  // this size in practice, so its badge value only exists to keep the
+  // container-height formula below uniform across sizes.
+  tiny: { outer: 32, ring: 2, emoji: 14, badge: 12 },
   small: { outer: 44, ring: 3, emoji: 18, badge: 16 },
   medium: { outer: 68, ring: 4, emoji: 28, badge: 20 },
   large: { outer: 100, ring: 5, emoji: 42, badge: 26 },

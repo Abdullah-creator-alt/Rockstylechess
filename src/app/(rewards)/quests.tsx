@@ -2,82 +2,73 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CurrencyPill, ProgressBar, RockCard } from '@/components/ui';
+import { CurrencyPill, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { claimQuest, getQuestsStatus, type QuestStatus } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
 
 // Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
 // verified resolvable. No documented permanence guarantee.
 const FORGE_BACKGROUND_URI =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuAD29GW5HaLnJJMpVAFiDYO0n97AJZu2jr_jwgz-lzjuq4-qSGAWtK-ieChyRlsl5uPYvX_Hb2X2dsti0GgmkTnUVakYQqdlkbsGJcPWCWGzADOjgz9VxqbFKpO1jtytLgQyEw24MOvN0UUfdZq1UeTN1wOjy8jN0DVXG8n9JfHxrruJbJaTV8y_SXy4kxUG_R02NkePI39A6QokmX3RUBdUXs0e-xXHrofSIGjX9lUNmKjSxy4Ift-4u0LJL3vlX2ibl879lp9Qys';
 
-interface Quest {
-  id: string;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  accent: string;
-  title: string;
-  description: string;
-  progress: number;
-  target: number;
-  reward: number;
-  claimed?: boolean;
-}
-
-const DAILY_QUESTS: Quest[] = [
-  {
-    id: 'blitz-wins',
-    icon: 'timer-outline',
-    accent: Colors.emberLight,
-    title: 'Win 3 Blitz Games',
-    description: 'Master the speed under the spotlights.',
-    progress: 2,
-    target: 3,
-    reward: 500,
-  },
-  {
-    id: 'captures',
-    icon: 'sword-cross',
-    accent: Colors.cyan,
-    title: 'Capture 20 Pieces',
-    description: 'No survivors on the board tonight.',
-    progress: 12,
-    target: 20,
-    reward: 350,
-  },
-  {
-    id: 'perfect-opening',
-    icon: 'check-circle',
-    accent: Colors.cyan,
-    title: 'Perfect Opening',
-    description: 'Play the Sicilian Defense once.',
-    progress: 1,
-    target: 1,
-    reward: 0,
-    claimed: true,
-  },
-  {
-    id: 'enter-tournament',
-    icon: 'trophy-outline',
-    accent: Colors.gold,
-    title: 'Enter 1 Tournament',
-    description: 'The main stage awaits your presence.',
-    progress: 0,
-    target: 1,
-    reward: 1000,
-  },
-];
+// Server doesn't send UI colors (theme stays a client concern) -- keyed by
+// the quest's stable id, which matches server/src/questCatalog.ts's seed ids.
+const ACCENT_BY_QUEST_ID: Record<string, string> = {
+  'win-games': Colors.emberLight,
+  'capture-pieces': Colors.cyan,
+  'solve-puzzles': Colors.cyan,
+  'checkmate-opponent': Colors.gold,
+};
 
 type QuestTab = 'daily' | 'weekly';
 
 export default function QuestsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { gems } = usePlayerProfile();
+  const { status: profileStatus, gems, refresh } = usePlayerProfile();
   const [activeTab, setActiveTab] = useState<QuestTab>('daily');
+  const [quests, setQuests] = useState<QuestStatus[] | null>(null);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (profileStatus !== 'ready') return;
+    let cancelled = false;
+    (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      try {
+        const { quests: fetched } = await getQuestsStatus(token);
+        if (!cancelled) setQuests(fetched);
+      } catch (error) {
+        console.log('Failed to load quests', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileStatus]);
+
+  async function handleClaim(questId: string) {
+    if (claimingId) return;
+    setClaimingId(questId);
+    try {
+      const token = await getAuthToken();
+      if (!token) return;
+      await claimQuest(token, questId);
+      setQuests((prev) => prev?.map((q) => (q.id === questId ? { ...q, claimed: true } : q)) ?? prev);
+      refresh();
+    } catch (error) {
+      console.log('Failed to claim quest', error);
+    } finally {
+      setClaimingId(null);
+    }
+  }
 
   return (
     <View style={styles.root}>
@@ -117,14 +108,29 @@ export default function QuestsScreen() {
       </View>
 
       {activeTab === 'daily' ? (
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
-          showsVerticalScrollIndicator={false}
-        >
-          {DAILY_QUESTS.map((quest) => (
-            <QuestRow key={quest.id} quest={quest} />
-          ))}
-        </ScrollView>
+        profileStatus === 'guest' ? (
+          <View style={styles.guestWrap}>
+            <Text style={styles.guestText}>Sign in to track your battle quests.</Text>
+            <RockButton label="Sign In" variant="primary" onPress={() => router.push('/sign-in')} />
+          </View>
+        ) : !quests ? (
+          <ActivityIndicator color={Colors.cyan} style={styles.loadingSpinner} />
+        ) : (
+          <ScrollView
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 + insets.bottom }]}
+            showsVerticalScrollIndicator={false}
+          >
+            {quests.map((quest) => (
+              <QuestRow
+                key={quest.id}
+                quest={quest}
+                accent={ACCENT_BY_QUEST_ID[quest.id] ?? Colors.cyan}
+                claiming={claimingId === quest.id}
+                onClaim={() => handleClaim(quest.id)}
+              />
+            ))}
+          </ScrollView>
+        )
       ) : (
         <View style={styles.weeklyLock}>
           <MaterialCommunityIcons name="lock" size={56} color={Colors.textMuted} />
@@ -139,15 +145,30 @@ export default function QuestsScreen() {
   );
 }
 
-function QuestRow({ quest }: { quest: Quest }) {
+function QuestRow({
+  quest,
+  accent,
+  claiming,
+  onClaim,
+}: {
+  quest: QuestStatus;
+  accent: string;
+  claiming: boolean;
+  onClaim: () => void;
+}) {
   const isComplete = quest.progress >= quest.target;
+  const canClaim = isComplete && !quest.claimed;
 
   return (
     <RockCard style={styles.questCard}>
       <View style={styles.questTopRow}>
         <View style={styles.questLeft}>
-          <View style={[styles.questIconCircle, { borderColor: withOpacity(quest.accent, 0.4) }]}>
-            <MaterialCommunityIcons name={quest.icon} size={26} color={quest.accent} />
+          <View style={[styles.questIconCircle, { borderColor: withOpacity(accent, 0.4) }]}>
+            <MaterialCommunityIcons
+              name={quest.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+              size={26}
+              color={accent}
+            />
           </View>
           <View style={styles.questTextCol}>
             <Text style={[styles.questTitle, quest.claimed && styles.questTitleClaimed]}>{quest.title}</Text>
@@ -159,9 +180,18 @@ function QuestRow({ quest }: { quest: Quest }) {
           <Pressable style={styles.claimedButton} disabled hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.claimedButtonText}>Claimed</Text>
           </Pressable>
+        ) : canClaim ? (
+          <Pressable
+            style={[styles.claimButton, claiming && styles.claimButtonDisabled]}
+            disabled={claiming}
+            onPress={onClaim}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.claimButtonText}>{claiming ? 'Claiming...' : 'Claim'}</Text>
+          </Pressable>
         ) : (
           <View style={styles.questRewardCol}>
-            <Text style={styles.questRewardValue}>{quest.reward} Chips</Text>
+            <Text style={styles.questRewardValue}>{quest.rewardChips.toLocaleString('en-US')} Chips</Text>
             <Text style={styles.questRewardLabel}>Reward</Text>
           </View>
         )}
@@ -247,6 +277,22 @@ const styles = StyleSheet.create({
   tabLabelActive: {
     color: Colors.bgBase,
   },
+  guestWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+  },
+  guestText: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  loadingSpinner: {
+    marginTop: Spacing.xl,
+  },
   scrollContent: {
     padding: Spacing.lg,
     paddingTop: 0,
@@ -317,6 +363,22 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cyan,
   },
   claimedButtonText: {
+    fontFamily: Fonts.heading,
+    fontSize: 11,
+    color: Colors.bgBase,
+    textTransform: 'uppercase',
+  },
+  claimButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.gold,
+    boxShadow: `0px 0px 10px ${withOpacity(Colors.gold, 0.5)}`,
+  },
+  claimButtonDisabled: {
+    opacity: 0.6,
+  },
+  claimButtonText: {
     fontFamily: Fonts.heading,
     fontSize: 11,
     color: Colors.bgBase,

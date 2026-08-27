@@ -4,11 +4,13 @@ import { Router } from 'express';
 import { asyncHandler } from './asyncHandler.js';
 import { requireAuth } from './authMiddleware.js';
 import { BOARD_THEMES } from './boardThemes.js';
+import { chargeForAnalysis } from './db/analysisCharge.js';
 import { purchaseCosmetic } from './db/cosmetics.js';
 import { levelForXp } from './leveling.js';
 import { PIECE_SETS } from './pieceSets.js';
 import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
+import { claimQuest, getQuestsStatus, reportMatchForQuests, reportPuzzleSolvedForQuests } from './db/quests.js';
 import { matchParticipants, matches, playerProfiles, userCosmetics, users } from './db/schema/index.js';
 import { getSpinStatus, performSpin } from './db/spin.js';
 import { MATCH_CHIP_REWARDS, MATCH_XP_REWARDS, type MatchOutcome } from './matchRewards.js';
@@ -153,6 +155,33 @@ authRouter.post(
   }),
 );
 
+// Premium, paid action: Game Analysis (client-side Stockfish move review)
+// charges chips or gems every time it's used -- no persistent "unlocked"
+// record, deliberately (see analysisCharge.ts). Same response-mapping
+// convention as /me/cosmetics/:itemId/unlock just above.
+authRouter.post(
+  '/me/analysis/charge',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const currency = req.body?.currency;
+    if (currency !== 'chips' && currency !== 'gems') {
+      res.status(400).json({ error: 'invalid-currency' });
+      return;
+    }
+    const result = await chargeForAnalysis(req.userId as string, currency);
+    if (result.status === 'insufficient-funds') {
+      res.status(400).json({
+        error: 'insufficient-funds',
+        currency: result.currency,
+        price: result.price,
+        balance: result.balance,
+      });
+      return;
+    }
+    res.json({ ok: true, currency: result.currency, price: result.price, chips: result.chips, gems: result.gems });
+  }),
+);
+
 // Bot/local matches never reach the server otherwise (pure client-side
 // chess.js, called from match.tsx's handleGameOver) -- this is the only
 // point a reward gets persisted for those modes. Only the outcome claim is
@@ -257,6 +286,64 @@ authRouter.post(
       chips: result.chips,
       gems: result.gems,
     });
+  }),
+);
+
+authRouter.get(
+  '/me/quests',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json({ quests: await getQuestsStatus(req.userId as string) });
+  }),
+);
+
+authRouter.post(
+  '/me/quests/:questId/claim',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await claimQuest(req.userId as string, req.params.questId);
+    if (result.status === 'not-found') {
+      res.status(404).json({ error: 'quest-not-found' });
+      return;
+    }
+    if (result.status === 'not-complete') {
+      res.status(400).json({ error: 'quest-not-complete' });
+      return;
+    }
+    if (result.status === 'already-claimed') {
+      res.status(409).json({ error: 'already-claimed' });
+      return;
+    }
+    res.json({ ok: true, chipsGranted: result.rewardChips, chips: result.chips });
+  }),
+);
+
+// Bot/local matches never reach the server otherwise (pure client-side
+// chess.js), same reason POST /me/match-reward exists -- see that route's
+// comment for the accepted trust tradeoff (client-reported, not validated
+// against a server-side match record). Never called for online matches:
+// those get their quest progress from persistMatchResult.ts instead, computed
+// server-side from the authoritative PGN.
+authRouter.post(
+  '/me/quests/report-match',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { won, checkmate, capturedCount } = req.body ?? {};
+    if (typeof won !== 'boolean' || typeof checkmate !== 'boolean' || typeof capturedCount !== 'number') {
+      res.status(400).json({ error: 'invalid-report' });
+      return;
+    }
+    await reportMatchForQuests(req.userId as string, { won, checkmate, capturedCount: Math.max(0, Math.floor(capturedCount)) });
+    res.json({ ok: true });
+  }),
+);
+
+authRouter.post(
+  '/me/quests/report-puzzle-solved',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await reportPuzzleSolvedForQuests(req.userId as string);
+    res.json({ ok: true });
   }),
 );
 

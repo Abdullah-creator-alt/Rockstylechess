@@ -7,8 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CurrencyPill, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import type { Duration } from '@/lib/onlineMatch';
 
-type Duration = '3m' | '5m' | '10m';
 const DURATIONS: Duration[] = ['3m', '5m', '10m'];
 
 interface Venue {
@@ -145,8 +145,7 @@ export default function PlaySetupScreen() {
               variant="primary"
               icon={<MaterialCommunityIcons name="play" size={20} color={Colors.bgBase} />}
               onPress={() => {
-                console.log('Play Now pressed', { venue: selectedVenue.id, duration });
-                router.push({ pathname: '/matchmaking', params: { venueTier: selectedVenue.id } });
+                router.push({ pathname: '/matchmaking', params: { venueTier: selectedVenue.id, duration } });
               }}
             />
           </View>

@@ -5,9 +5,10 @@ import type { MatchState, PieceColor } from '../match.js';
 import { MATCH_CHIP_REWARDS, MATCH_XP_REWARDS } from '../matchRewards.js';
 import { db } from './client.js';
 import { expectedScore, updatedRating } from './elo.js';
+import { reportMatchForQuests } from './quests.js';
 import { matchParticipants, matches, playerProfiles } from './schema/index.js';
 
-type ResultType = 'checkmate' | 'stalemate' | 'draw' | 'resignation' | 'forfeit';
+type ResultType = 'checkmate' | 'stalemate' | 'draw' | 'resignation' | 'forfeit' | 'timeout';
 
 function scoreFor(color: PieceColor, resultType: ResultType, winnerColor: PieceColor | null): number {
   if (resultType === 'stalemate' || resultType === 'draw') return 0.5;
@@ -35,6 +36,14 @@ export async function persistMatchResult(
 
   const whiteScore = scoreFor('w', resultType, winnerColor);
   const blackScore = 1 - whiteScore;
+
+  // Quest progress ('captures') counts each side's OWN captures -- the piece
+  // they took, not pieces taken from them -- same convention useChessGame.ts's
+  // capturedByWhite/capturedByBlack already use client-side for the in-match
+  // captured-piece trays.
+  const history = match.chess.history({ verbose: true });
+  const whiteCaptures = history.filter((move) => move.color === 'w' && move.captured).length;
+  const blackCaptures = history.filter((move) => move.color === 'b' && move.captured).length;
   const whiteExpected = expectedScore(whiteProfile.rating, blackProfile.rating);
   const blackExpected = 1 - whiteExpected;
   const whiteRatingAfter = updatedRating(whiteProfile.rating, whiteExpected, whiteScore);
@@ -78,6 +87,16 @@ export async function persistMatchResult(
   await Promise.all([
     updateProfileStats(white.userId, whiteRatingAfter, whiteScore, whiteProfile.xp),
     updateProfileStats(black.userId, blackRatingAfter, blackScore, blackProfile.xp),
+    reportMatchForQuests(white.userId, {
+      won: whiteScore === 1,
+      checkmate: whiteScore === 1 && resultType === 'checkmate',
+      capturedCount: whiteCaptures,
+    }),
+    reportMatchForQuests(black.userId, {
+      won: blackScore === 1,
+      checkmate: blackScore === 1 && resultType === 'checkmate',
+      capturedCount: blackCaptures,
+    }),
   ]);
 }
 

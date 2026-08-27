@@ -1,11 +1,15 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { chargeForAnalysis } from '@/lib/api';
+import { ANALYSIS_COST } from '@/lib/analysisCost';
+import { getAuthToken } from '@/lib/authStorage';
 import { clearPendingLocalReplay, getPendingLocalReplay } from '@/lib/localMatchReplayStore';
 import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 
@@ -25,6 +29,7 @@ const REASON_LABEL: Record<string, string> = {
   stalemate: 'by Stalemate',
   draw: 'by Draw',
   resignation: 'by Resignation',
+  timeout: 'by Timeout',
 };
 
 function useCountUp(target: number, durationMs = 1200) {
@@ -67,6 +72,37 @@ export default function ResultScreen() {
   // read once per mount, not on every render, since Home explicitly clears
   // it and we don't want that clear to also blank the button mid-transition.
   const [localReplay] = useState(() => getPendingLocalReplay());
+  const { chips: currentChips, refresh: refreshPlayerProfile } = usePlayerProfile();
+
+  async function handleAnalyzePress() {
+    const token = await getAuthToken();
+    if (!token) {
+      Alert.alert('Sign In Required', 'Sign in to use Game Analysis.');
+      return;
+    }
+    const currency: 'chips' | 'gems' = currentChips >= ANALYSIS_COST.chips ? 'chips' : 'gems';
+    const price = ANALYSIS_COST[currency];
+    Alert.alert('Analyze This Game', `Get move-by-move analysis for ${price.toLocaleString()} ${currency}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Analyze',
+        onPress: async () => {
+          try {
+            await chargeForAnalysis(token, currency);
+            refreshPlayerProfile();
+            router.push({ pathname: '/replay', params: { source: 'local', mode: 'analysis' } });
+          } catch (error) {
+            if (error instanceof Error && error.message === 'insufficient-funds') {
+              Alert.alert('Not Enough Currency', `You need ${price.toLocaleString()} ${currency} to analyze this game.`);
+            } else {
+              console.log('Failed to charge for analysis', error);
+              Alert.alert('Something Went Wrong', 'Please try again.');
+            }
+          }
+        },
+      },
+    ]);
+  }
 
   const { eloBefore, eloAfter } = OUTCOME_ELO[outcome];
   // match.tsx always passes this (the real, just-granted amount) -- the
@@ -122,24 +158,28 @@ export default function ResultScreen() {
       </RockCard>
 
       <View style={styles.buttonStack}>
-        {localReplay ? (
+        {localReplay && localReplay.mode !== 'online' ? (
           <RockButton
             label="Replay"
             variant="primary"
             icon={<MaterialCommunityIcons name="replay" size={20} color={Colors.bgBase} />}
             onPress={() => router.push({ pathname: '/replay', params: { source: 'local' } })}
           />
-        ) : (
-          <RockButton
-            label="Rematch"
-            variant="primary"
-            icon={<MaterialCommunityIcons name="refresh" size={20} color={Colors.bgBase} />}
-            onPress={() => {
-              console.log('Rematch pressed');
-              router.replace('/matchmaking');
-            }}
-          />
-        )}
+        ) : null}
+        {localReplay ? (
+          <View style={styles.analyzeButtonWrap}>
+            <RockButton
+              label="Analyze Game"
+              variant="primary"
+              icon={<MaterialCommunityIcons name="chart-line" size={20} color={Colors.bgBase} />}
+              onPress={handleAnalyzePress}
+            />
+            <View style={styles.analyzePriceRow}>
+              <Text style={styles.analyzePriceCaption}>Costs</Text>
+              <CurrencyPill type="chips" value={ANALYSIS_COST.chips} />
+            </View>
+          </View>
+        ) : null}
         <RockButton
           label="Home"
           variant="reward"
@@ -260,6 +300,22 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 320,
     gap: Spacing.md,
+  },
+  analyzeButtonWrap: {
+    gap: Spacing.xs,
+  },
+  analyzePriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+  },
+  analyzePriceCaption: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   shareLink: {
     fontFamily: Fonts.body,

@@ -43,7 +43,10 @@ export default function BotsGalleryScreen() {
       return;
     }
     console.log('Bot challenged', bot.name);
-    router.push({ pathname: '/match', params: { mode: 'bot', difficulty: bot.difficulty } });
+    router.push({
+      pathname: '/match',
+      params: { mode: 'bot', difficulty: bot.difficulty, botName: bot.name, botEmoji: bot.emoji },
+    });
   }
 
   return (

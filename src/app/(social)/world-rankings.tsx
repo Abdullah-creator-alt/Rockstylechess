@@ -97,7 +97,7 @@ export default function WorldRankingsScreen() {
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <View style={styles.headerLeft}>
-          <PlayerAvatar emoji="🤘" size="small" />
+          <PlayerAvatar emoji={getAvatarEmoji(myProfile?.avatarId)} size="small" />
           <Text style={styles.headerTitle}>World Rankings</Text>
         </View>
         <CurrencyPill type="gems" value={myProfile?.gems ?? 0} />

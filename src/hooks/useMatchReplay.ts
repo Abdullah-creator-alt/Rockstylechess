@@ -1,14 +1,22 @@
 import { Chess, type Square } from 'chess.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { boardGridFromChess, checkSquareFromChess } from '@/lib/chessBoardSnapshot';
+import {
+  boardGridFromChess,
+  checkSquareFromChess,
+  classifyMoveSound,
+  pickVerboseLastMove,
+  type MoveSoundKind,
+  type VerboseLastMove,
+} from '@/lib/chessBoardSnapshot';
 
 export interface ReplayPly {
   board: string[][];
-  lastMove: { from: Square; to: Square };
+  lastMove: VerboseLastMove;
   checkSquare: Square | null;
   turn: 'w' | 'b';
   san: string;
+  soundKind: MoveSoundKind | null;
   /** This ply's own recorded think time, clamped for watchable auto-play. */
   elapsedMs: number;
 }
@@ -43,10 +51,11 @@ export function useMatchReplay(pgn: string | null, moveElapsedMs: number[] | nul
       const raw = moveElapsedMs?.[i] ?? MIN_STEP_MS;
       return {
         board: boardGridFromChess(after),
-        lastMove: { from: entry.from, to: entry.to },
+        lastMove: pickVerboseLastMove(entry)!,
         checkSquare: checkSquareFromChess(after),
         turn: after.turn(),
         san: entry.san,
+        soundKind: classifyMoveSound(after, entry),
         elapsedMs: Math.min(MAX_STEP_MS, Math.max(MIN_STEP_MS, raw)),
       };
     });
@@ -103,6 +112,7 @@ export function useMatchReplay(pgn: string | null, moveElapsedMs: number[] | nul
     lastMove: current?.lastMove ?? null,
     checkSquare: current?.checkSquare ?? null,
     turn: current?.turn ?? 'w',
+    lastMoveSound: current?.soundKind ?? null,
     plyIndex,
     totalPlies: plies.length,
     plies,

@@ -5,6 +5,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, PlayerAvatar, ProgressBar, RockButton, RockCard } from '@/components/ui';
+import { getAvatarEmoji } from '@/constants/avatars';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { deleteAccount } from '@/lib/api';
@@ -30,7 +31,7 @@ const LINKED_ACCOUNTS: LinkedAccount[] = [
 export default function AccountSecurityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { refresh: refreshPlayerProfile, gems } = usePlayerProfile();
+  const { profile, refresh: refreshPlayerProfile, gems } = usePlayerProfile();
   const [isDeleting, setIsDeleting] = useState(false);
 
   function handleDeletePress() {
@@ -92,7 +93,7 @@ export default function AccountSecurityScreen() {
           <Rivet style={{ bottom: 8, right: 8 }} />
 
           <View style={styles.ironIdInner}>
-            <PlayerAvatar emoji="🤘" size="large" />
+            <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} size="large" />
             <Text style={styles.ironIdName}>IRON ID: GRANDMASTER_X</Text>
             <Text style={styles.ironIdSubtitle}>Verified Contender • Level 88</Text>
             <ProgressBar progress={0.75} height={6} />

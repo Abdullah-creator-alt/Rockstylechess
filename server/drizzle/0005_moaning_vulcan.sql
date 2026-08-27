@@ -1,0 +1,1 @@
+ALTER TYPE "public"."match_result_type" ADD VALUE 'timeout';

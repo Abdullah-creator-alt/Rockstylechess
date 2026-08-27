@@ -13,15 +13,17 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { BottomNav, ChatPanel, ChatToast, ChessBoard, EmberParticles, RockCard } from '@/components/ui';
+import { BottomNav, ChatPanel, ChatToast, ChessBoard, EmberParticles, PlayerAvatar, RockCard } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
+import { getAvatarEmoji } from '@/constants/avatars';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { useChessClock, type ClockTimes } from '@/hooks/useChessClock';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
 import { useMatchChat } from '@/hooks/useMatchChat';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
-import { claimMatchReward } from '@/lib/api';
+import { claimMatchReward, reportMatchForQuests } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 import { setPendingLocalReplay, type LocalMatchReplay } from '@/lib/localMatchReplayStore';
@@ -31,6 +33,14 @@ import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 // verified resolvable. No documented permanence guarantee.
 const CROWD_SILHOUETTE_URI =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDaXXF0CMT7YW54CZmBpXIOWSCkNu7f13zeFglHBL71SHNZUnIcnmsAPYJuARLUDUhW2NLzJeYUoroRs7WPB1MX64AwC4XcrsGxqyHm0rwQMwHXNDD4bM2A2mmcbPGaofF-E65LuOEAmQnE76snvgaeLDgOkZQaIRDsMuRZb6zpM8cpvnCavM9yobNyZJ5Beuq0tWPeQheeG4D22tc0571ruxYhbts4_8_jNbt8Y-ENdSAul4ZsKWQxW1Xzqd2801Uz8BWyT-lmbKg';
+
+// Bot/local always default to this (matches setup.tsx's own default duration
+// pick, no dedicated picker exists for these modes). Online's real starting
+// time comes from the server once phase 2 lands (server/src/match.ts's
+// createMatch, threaded through setup.tsx's actual 3m/5m/10m picker) -- this
+// is the interim guess used until then, so online still gets a real ticking
+// clock today rather than reverting to static placeholder text.
+const DEFAULT_CLOCK_MS = 5 * 60_000;
 
 const MOVE_HISTORY =
   '1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 a6 6.Be3 e5 7.Nb3 Be7 8.f3 Be6 9.Qd2 Nbd7 10.O-O-O O-O 11.g4 b5 12.g5 Nh5  •  ';
@@ -55,6 +65,12 @@ export default function MatchScreen() {
     color: colorParam,
     fen: fenParam,
     opponentName,
+    opponentAvatarId,
+    botName,
+    botEmoji,
+    clockW: clockWParam,
+    clockB: clockBParam,
+    incrementMs: incrementMsParam,
   } = useLocalSearchParams<{
     mode?: string;
     difficulty?: string;
@@ -62,6 +78,12 @@ export default function MatchScreen() {
     color?: string;
     fen?: string;
     opponentName?: string;
+    opponentAvatarId?: string;
+    botName?: string;
+    botEmoji?: string;
+    clockW?: string;
+    clockB?: string;
+    incrementMs?: string;
   }>();
   const mode: GameMode = modeParam === 'bot' ? 'bot' : modeParam === 'online' ? 'online' : 'local';
   const difficulty: BotDifficulty =
@@ -78,6 +100,10 @@ export default function MatchScreen() {
     mode === 'online' && matchId && fenParam
       ? { matchId, playerColor, initialFen: fenParam }
       : undefined;
+  const opponentDisplayName =
+    mode === 'online' ? opponentName || 'OPPONENT' : mode === 'bot' ? botName || 'STORM_KING' : 'LOCAL PLAYER';
+  const opponentEmoji =
+    mode === 'bot' ? botEmoji || '🤖' : mode === 'online' ? getAvatarEmoji(opponentAvatarId) : '🤘';
   const navigatedRef = useRef(false);
   const stockfishRef = useRef<StockfishEngineHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -108,6 +134,9 @@ export default function MatchScreen() {
     } else if (result.type === 'forfeit') {
       outcome = result.winner === playerColor ? 'win' : 'loss';
       reason = 'forfeit';
+    } else if (result.type === 'timeout') {
+      outcome = result.winner === playerColor ? 'win' : 'loss';
+      reason = 'timeout';
     } else if (result.type === 'stalemate') {
       outcome = 'draw';
       reason = 'stalemate';
@@ -132,27 +161,43 @@ export default function MatchScreen() {
         } catch (error) {
           console.log('Failed to claim match reward', error);
         }
-      }
-
-      // No server record exists for these modes -- stash a client-side
-      // replay (cleared explicitly when the player leaves the result
-      // screen via Home, see result-placeholder.tsx) instead. null for
-      // forfeit (never reachable from bot/local -- see ChessGameResult.
-      const replayData = game.getReplayData();
-      if (replayData && reason !== 'forfeit') {
-        setPendingLocalReplay({
-          ...replayData,
-          mode: mode as 'bot' | 'local',
-          // Matches the opponent label already shown live during the match
-          // today (see the PlayerAvatar name below) -- not the bot's real
-          // display name, a pre-existing simplification unrelated to this feature.
-          opponentLabel: mode === 'bot' ? 'STORM_KING' : 'Local Match',
-          outcome,
-          resultType: reason as LocalMatchReplay['resultType'],
-          playedAt: new Date().toISOString(),
-        });
+        try {
+          const capturedCount =
+            playerColor === 'w' ? game.capturedByWhite.length : game.capturedByBlack.length;
+          await reportMatchForQuests(token, {
+            won: outcome === 'win',
+            checkmate: outcome === 'win' && reason === 'checkmate',
+            capturedCount,
+          });
+        } catch (error) {
+          console.log('Failed to report match for quests', error);
+        }
       }
     }
+
+    // Stashes a client-side replay for the immediate post-match Replay/
+    // Analyze Game entry points on result-placeholder.tsx -- for bot/local
+    // this is the only record that will ever exist (no server-side match
+    // row at all); for online it's a deliberate *duplicate* of what
+    // persistMatchResult.ts is also persisting server-side right now, used
+    // only for this immediate moment since the server-assigned matches.id
+    // isn't knowable client-side yet (see localMatchReplayStore.ts's header
+    // comment). null for forfeit (never reachable from bot/local, and not
+    // worth the reconnect-mid-game edge case for online either).
+    const replayData = game.getReplayData();
+    if (replayData && reason !== 'forfeit') {
+      setPendingLocalReplay({
+        ...replayData,
+        mode: mode as 'bot' | 'local' | 'online',
+        // Matches the opponent name shown live during the match (opponentDisplayName above).
+        opponentLabel: mode === 'local' ? 'Local Match' : opponentDisplayName,
+        outcome,
+        resultType: reason as LocalMatchReplay['resultType'],
+        playedAt: new Date().toISOString(),
+        playerColor,
+      });
+    }
+
     // Picks up the new balance -- server-credited for online, just-claimed
     // for bot/local, or a no-op for guests (still 'guest' status).
     refreshPlayerProfile();
@@ -167,9 +212,46 @@ export default function MatchScreen() {
     }, 900);
   }
 
-  const game = useChessGame({ mode, difficulty, requestEngineMove, online, onGameOver: handleGameOver });
+  // useChessClock needs game.turn/isGameOver, so it can't be created before
+  // `game` -- but useChessGame's onClockSync needs to reach whichever clock
+  // instance that later-created hook returns. Broken via a ref: the arrow
+  // passed to useChessGame below only looks up clockReconcileRef.current at
+  // CALL time (when a move actually arrives), by which point the clock
+  // instance has already been assigned into it a few lines further down,
+  // synchronously, in the same render.
+  const clockReconcileRef = useRef<((clocks: ClockTimes) => void) | null>(null);
+  const game = useChessGame({
+    mode,
+    difficulty,
+    requestEngineMove,
+    online,
+    onGameOver: handleGameOver,
+    onClockSync: (clocks) => clockReconcileRef.current?.(clocks),
+  });
   const chat = useMatchChat({ mode, online, isOpen: chatOpen });
   const animateOpponentMove = game.lastMoveSource !== null && game.lastMoveSource !== 'human';
+
+  // Online's real starting time/increment come from the server (via
+  // matchmaking.tsx/game-room.tsx's route params, themselves from
+  // queue:matched) -- clockW/clockB/incrementMs are only ever present for
+  // mode === 'online'; bot/local always fall through to the fixed default.
+  const parsedClockW = Number(clockWParam);
+  const parsedClockB = Number(clockBParam);
+  const parsedIncrement = Number(incrementMsParam);
+  const initialClockMs =
+    mode === 'online' && Number.isFinite(parsedClockW) && Number.isFinite(parsedClockB)
+      ? { w: parsedClockW, b: parsedClockB }
+      : { w: DEFAULT_CLOCK_MS, b: DEFAULT_CLOCK_MS };
+  const clockIncrementMs = mode === 'online' && Number.isFinite(parsedIncrement) ? parsedIncrement : 0;
+
+  const clock = useChessClock({
+    turn: game.turn,
+    isGameOver: game.isGameOver,
+    initialMs: initialClockMs,
+    incrementMs: clockIncrementMs,
+    onExpire: (color) => game.reportTimeout(color),
+  });
+  clockReconcileRef.current = clock.reconcile;
 
   return (
     <View style={styles.root}>
@@ -191,9 +273,10 @@ export default function MatchScreen() {
 
       <View style={styles.middle}>
         <PlayerRow
-          name={mode === 'online' ? opponentName || 'OPPONENT' : 'STORM_KING'}
+          name={opponentDisplayName}
+          emoji={opponentEmoji}
           rank="GRANDMASTER (2150)"
-          time="03:45"
+          remainingMs={clock.remainingMs.b}
           accent={Colors.crimson}
           pulsing={game.turn === 'b'}
           captured={game.capturedByBlack}
@@ -209,6 +292,7 @@ export default function MatchScreen() {
           lastMove={game.lastMove}
           turn={game.turn}
           animateLastMove={animateOpponentMove}
+          lastMoveSound={game.lastMoveSound}
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
           theme={boardTheme}
           pieceSprites={pieceSprites}
@@ -222,9 +306,10 @@ export default function MatchScreen() {
         />
 
         <PlayerRow
-          name="AXL_CHESS"
+          name={profile?.displayName ?? 'AXL_CHESS'}
+          emoji={getAvatarEmoji(profile?.avatarId)}
           rank="PRO (2145)"
-          time="04:12"
+          remainingMs={clock.remainingMs.w}
           accent={Colors.cyan}
           pulsing={game.turn === 'w'}
           captured={game.capturedByWhite}
@@ -261,15 +346,17 @@ export default function MatchScreen() {
 
 function PlayerRow({
   name,
+  emoji,
   rank,
-  time,
+  remainingMs,
   accent,
   pulsing = false,
   captured = [],
 }: {
   name: string;
+  emoji: string;
   rank: string;
-  time: string;
+  remainingMs: number;
   accent: string;
   pulsing?: boolean;
   captured?: string[];
@@ -279,7 +366,7 @@ function PlayerRow({
       <View style={styles.playerRow}>
         <RockCard style={styles.playerCard}>
           <View style={styles.playerCardInner}>
-            <MaterialCommunityIcons name="lightning-bolt" size={16} color={accent} />
+            <PlayerAvatar emoji={emoji} size="tiny" />
             <View>
               <Text style={styles.playerCardName}>{name}</Text>
               <Text style={styles.playerCardRank}>{rank}</Text>
@@ -287,18 +374,7 @@ function PlayerRow({
           </View>
         </RockCard>
 
-        <View
-          style={[
-            styles.timerPill,
-            {
-              backgroundColor: withOpacity(accent, 0.18),
-              borderColor: accent,
-              boxShadow: pulsing ? `0px 0px 15px ${withOpacity(accent, 0.5)}` : undefined,
-            },
-          ]}
-        >
-          <Text style={[styles.timerText, { color: accent }]}>{time}</Text>
-        </View>
+        <TimerPill remainingMs={remainingMs} accent={accent} pulsing={pulsing} />
       </View>
 
       {captured.length > 0 ? (
@@ -311,6 +387,63 @@ function PlayerRow({
         </View>
       ) : null}
     </View>
+  );
+}
+
+type ClockUrgency = 'normal' | 'low' | 'critical';
+
+// Absolute thresholds, not proportional to base time -- the last 10-30
+// seconds reads as "flag territory" regardless of whether the game started
+// with 3 or 10 minutes on the clock, matching established chess-app convention.
+function clockUrgency(ms: number): ClockUrgency {
+  if (ms < 10_000) return 'critical';
+  if (ms < 30_000) return 'low';
+  return 'normal';
+}
+
+function formatClockMs(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+// Urgency color applies regardless of whose turn it is (a frozen-but-low
+// clock is still worth flagging visually) -- the breathing pulse below is
+// reserved for critical AND actively ticking, since a clock that isn't
+// running can't be racing toward zero.
+function TimerPill({ remainingMs, accent, pulsing }: { remainingMs: number; accent: string; pulsing: boolean }) {
+  const urgency = clockUrgency(remainingMs);
+  const isCriticalAndTicking = urgency === 'critical' && pulsing;
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    pulse.value = isCriticalAndTicking
+      ? withRepeat(withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }), -1, true)
+      : 0;
+  }, [isCriticalAndTicking, pulse]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: isCriticalAndTicking ? 0.75 + pulse.value * 0.25 : 1,
+    transform: [{ scale: isCriticalAndTicking ? 1 + pulse.value * 0.05 : 1 }],
+  }));
+
+  const urgencyColor = urgency === 'critical' ? Colors.crimson : urgency === 'low' ? Colors.gold : accent;
+
+  return (
+    <Animated.View
+      style={[
+        styles.timerPill,
+        {
+          backgroundColor: withOpacity(urgencyColor, 0.18),
+          borderColor: urgencyColor,
+          boxShadow: pulsing ? `0px 0px 15px ${withOpacity(urgencyColor, 0.5)}` : undefined,
+        },
+        animatedStyle,
+      ]}
+    >
+      <Text style={[styles.timerText, { color: urgencyColor }]}>{formatClockMs(remainingMs)}</Text>
+    </Animated.View>
   );
 }
 

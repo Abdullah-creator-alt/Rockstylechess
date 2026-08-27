@@ -2,10 +2,18 @@ import { Chess, type Square } from 'chess.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { resolveBotMove, type BotDifficulty, type RequestEngineMove } from '@/lib/botEngine';
-import { boardGridFromChess, checkSquareFromChess } from '@/lib/chessBoardSnapshot';
+import {
+  boardGridFromChess,
+  checkSquareFromChess,
+  classifyMoveSound,
+  pickVerboseLastMove,
+  type MoveSoundKind,
+  type VerboseLastMove,
+} from '@/lib/chessBoardSnapshot';
 import { getSocket } from '@/lib/socket';
 import type { MatchEndedPayload, MoveAppliedPayload } from '@/lib/onlineMatch';
 import { parseUciMove } from '@/lib/puzzleEngine';
+import { playSound } from '@/lib/soundEffects';
 
 export type { BotDifficulty } from '@/lib/botEngine';
 
@@ -16,7 +24,8 @@ export type ChessGameResult =
   | { type: 'stalemate' }
   | { type: 'draw' }
   | { type: 'resignation'; winner: 'w' | 'b' }
-  | { type: 'forfeit'; winner: 'w' | 'b' };
+  | { type: 'forfeit'; winner: 'w' | 'b' }
+  | { type: 'timeout'; winner: 'w' | 'b' };
 
 export interface OnlineMatchInfo {
   matchId: string;
@@ -48,7 +57,7 @@ interface GameSnapshot {
   isGameOver: boolean;
   capturedByWhite: string[];
   capturedByBlack: string[];
-  lastMove: { from: Square; to: Square } | null;
+  lastMove: VerboseLastMove | null;
   // Which side made this snapshot's move -- ChessBoard uses this to only
   // play the slide-in travel animation for moves that weren't this device's
   // own tap/drag (bot moves, or an online opponent's moves), since the local
@@ -59,6 +68,12 @@ interface GameSnapshot {
   // torn/partial update on some platforms, which was the root cause of a
   // slide-in animation glitch (see git history).
   lastMoveSource: LastMoveSource;
+  // Which sound cue this move's landing should play -- null when there's no
+  // move yet (initial mount/reset). See ChessBoard.tsx's lastMove-driven
+  // effect, which plays it whenever lastMove changes, independent of
+  // lastMoveSource (unlike the slide animation, sound isn't skipped for the
+  // player's own move -- they still want to hear it land).
+  lastMoveSound: MoveSoundKind | null;
   // 'playing' for every non-puzzle mode -- only meaningful when
   // mode === 'puzzle'. Folded into the snapshot for the same reason
   // lastMoveSource is: a wrong-guess/solved/failed transition must land in
@@ -79,6 +94,11 @@ interface UseChessGameOptions {
   online?: OnlineMatchInfo;
   /** The puzzle being solved. Required when mode === 'puzzle'. */
   puzzle?: PuzzleInfo;
+  /** Online only -- forwards the server's authoritative remaining-time payload
+   * (from move:applied) to whatever owns the live clock display (match.tsx's
+   * useChessClock). Pure passthrough, no clock semantics live in this hook --
+   * see reportTimeout's comment for why. */
+  onClockSync?: (clocks: { w: number; b: number }) => void;
 }
 
 // Bot "thinks" for a beat so its move doesn't feel instant -- long enough
@@ -123,7 +143,8 @@ function buildSnapshot(chess: Chess, lastMoveSource: LastMoveSource, puzzleStatu
   }
 
   const lastHistoryMove = history[history.length - 1];
-  const lastMove = lastHistoryMove ? { from: lastHistoryMove.from, to: lastHistoryMove.to } : null;
+  const lastMove = pickVerboseLastMove(lastHistoryMove);
+  const lastMoveSound = classifyMoveSound(chess, lastHistoryMove);
 
   return {
     board,
@@ -134,6 +155,7 @@ function buildSnapshot(chess: Chess, lastMoveSource: LastMoveSource, puzzleStatu
     capturedByBlack,
     lastMove,
     lastMoveSource,
+    lastMoveSound,
     puzzleStatus,
   };
 }
@@ -149,12 +171,15 @@ export function useChessGame({
   onGameOver,
   online,
   puzzle,
+  onClockSync,
 }: UseChessGameOptions) {
   const chessRef = useRef<Chess>(puzzle ? createPuzzleChess(puzzle) : new Chess(online?.initialFen));
   const [snapshot, setSnapshot] = useState<GameSnapshot>(() => buildSnapshot(chessRef.current, null, 'playing'));
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const onGameOverRef = useRef(onGameOver);
   onGameOverRef.current = onGameOver;
+  const onClockSyncRef = useRef(onClockSync);
+  onClockSyncRef.current = onClockSync;
   const gameOverFiredRef = useRef(false);
   // Next index to consume from puzzle.moves -- 0 was already auto-played by
   // createPuzzleChess. Odd indices are the solver's own moves (applied via
@@ -209,6 +234,7 @@ export function useChessGame({
     const chess = chessRef.current;
     const expected = parseUciMove(puzzle.moves[puzzleMoveIndexRef.current]);
     if (from !== expected.from || to !== expected.to) {
+      playSound('illegal');
       refresh(null, 'failed');
       return;
     }
@@ -216,6 +242,7 @@ export function useChessGame({
       chess.move({ from, to, promotion: expected.promotion ?? 'q' });
     } catch (error) {
       console.log('Puzzle move unexpectedly rejected by chess.js', error);
+      playSound('illegal');
       refresh(null, 'failed');
       return;
     }
@@ -255,6 +282,7 @@ export function useChessGame({
           chess.move({ from, to: square, promotion: 'q' });
         } catch (error) {
           console.log('Unexpected illegal move rejected by chess.js', error);
+          playSound('illegal');
         }
         recordMoveTiming();
         refresh('human');
@@ -302,12 +330,36 @@ export function useChessGame({
     onGameOverRef.current?.({ type: 'resignation', winner: resigningColor === 'w' ? 'b' : 'w' });
   }
 
+  // The clock (match.tsx's useChessClock) lives entirely outside this hook --
+  // ticking on wall-clock time independent of any chess.js mutation would be
+  // a real boundary violation of "thin chess.js mirror" (every other change
+  // in this hook is move-triggered). This is the one narrow door it calls
+  // through when a side's clock actually reaches 0, structurally mirroring
+  // resign() exactly: online defers to the server's authoritative
+  // match:ended (a client can't be trusted to declare its own opponent timed
+  // out, or itself), bot/local fire immediately since nothing else could.
+  function reportTimeout(flaggedColor: 'w' | 'b') {
+    if (gameOverFiredRef.current) return;
+    if (mode === 'online') return;
+    gameOverFiredRef.current = true;
+    onGameOverRef.current?.({ type: 'timeout', winner: flaggedColor === 'w' ? 'b' : 'w' });
+  }
+
   useEffect(() => {
     if (mode !== 'online' || !online) return;
     const socket = getSocket();
     const chess = chessRef.current;
 
     function handleMoveApplied(payload: MoveAppliedPayload) {
+      // Called unconditionally, BEFORE the early-return below -- that guard
+      // exists to skip re-applying a move the player already applied
+      // optimistically themselves, but it would just as happily (and
+      // wrongly) skip syncing clock data for the mover's own moves too,
+      // since payload.turn after their own move never equals their own
+      // color. The server's clocks are authoritative regardless of whose
+      // move this was.
+      onClockSyncRef.current?.(payload.clocks);
+
       // Our own moves are applied locally the instant the player taps (see
       // handleSquarePress) -- this broadcast only needs acting on when it's
       // the opponent's move, identifiable because the turn just became ours.
@@ -413,12 +465,19 @@ export function useChessGame({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, puzzle, snapshot]);
 
-  // Bot/local only -- there's no server record to replay from for these
-  // modes, so match.tsx's handleGameOver reads this once at game-over and
-  // hands it to localMatchReplayStore.ts. null for online (already has a
-  // server-backed replay) and puzzle (no replay concept).
+  // Bot/local/online -- match.tsx's handleGameOver reads this once at
+  // game-over and hands it to localMatchReplayStore.ts for the immediate
+  // post-match "Replay"/"Analyze Game" entry points (a *separate* thing
+  // from online's existing server-backed replay reached later via Iron
+  // ID's match history, which stays untouched -- see localMatchReplayStore.ts's
+  // header comment for why the immediate post-game moment needs this
+  // client-side capture instead of the persisted matches.id). null only
+  // for puzzle (no replay concept there at all). moveElapsedMs is only
+  // ever populated for bot/local (recordMoveTiming's own guard) -- online
+  // callers just get an empty array here, which is fine since analysis
+  // doesn't use timing at all, only useMatchReplay's auto-play pacing does.
   function getReplayData(): { pgn: string; moveElapsedMs: number[] } | null {
-    if (mode !== 'bot' && mode !== 'local') return null;
+    if (mode !== 'bot' && mode !== 'local' && mode !== 'online') return null;
     return { pgn: chessRef.current.pgn(), moveElapsedMs: [...moveElapsedMsRef.current] };
   }
 
@@ -431,6 +490,7 @@ export function useChessGame({
     capturedByBlack: snapshot.capturedByBlack,
     lastMove: snapshot.lastMove,
     lastMoveSource: snapshot.lastMoveSource,
+    lastMoveSound: snapshot.lastMoveSound,
     puzzleStatus: snapshot.puzzleStatus,
     hintSquare,
     selectedSquare,
@@ -438,6 +498,7 @@ export function useChessGame({
     handleSquarePress,
     resetPuzzle,
     resign,
+    reportTimeout,
     getReplayData,
   };
 }

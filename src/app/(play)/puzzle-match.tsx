@@ -1,5 +1,6 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,6 +10,8 @@ import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame } from '@/hooks/useChessGame';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { reportPuzzleSolvedForQuests } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
 import { PUZZLES } from '@/lib/puzzleCatalog';
 
 export default function PuzzleMatchScreen() {
@@ -27,6 +30,24 @@ export default function PuzzleMatchScreen() {
     mode: 'puzzle',
     puzzle: entry ? { puzzleId: entry.id, fen: entry.fen, moves: entry.moves } : undefined,
   });
+
+  // Fire-once per puzzle (same pattern as useChessGame.ts's gameOverFiredRef)
+  // -- resetPuzzle()/retrying after a failed attempt must never re-report a
+  // solve that already landed.
+  const reportedSolvedRef = useRef(false);
+  useEffect(() => {
+    if (game.puzzleStatus !== 'solved' || reportedSolvedRef.current) return;
+    reportedSolvedRef.current = true;
+    (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      try {
+        await reportPuzzleSolvedForQuests(token);
+      } catch (error) {
+        console.log('Failed to report puzzle solve for quests', error);
+      }
+    })();
+  }, [game.puzzleStatus]);
 
   if (!entry) {
     return (
@@ -89,6 +110,7 @@ export default function PuzzleMatchScreen() {
           lastMove={game.lastMove}
           turn={game.turn}
           animateLastMove={game.lastMoveSource !== null && game.lastMoveSource !== 'human'}
+          lastMoveSound={game.lastMoveSound}
           onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
           theme={boardTheme}
           pieceSprites={pieceSprites}

@@ -146,7 +146,35 @@ the whole "promote local changes to production" workflow. Also see
 `server/README.md` for the full protocol reference, why Drizzle over
 Prisma, and why auth is self-hosted rather than a third-party provider.
 
-### Android (local release build)
+### Redeploying the server to Railway
+
+The one-time Railway/Neon project setup is in `server/README.md`. Once that
+exists, shipping a server code change is just:
+
+```bash
+cd server
+railway up --detach   # builds + deploys the local server/ dir directly
+```
+
+The service is already linked (`railway status` from `server/` resolves to
+project `RockStyleChess`, service `server`, environment `production`), so
+this pushes straight from your working tree via the Railway CLI — no
+`git push` + auto-deploy round trip needed, and no extra `DATABASE_URL` step
+either (it's already set as a Railway service variable pointing at the
+production Neon database). Poll `railway status --json` for the new
+deployment's `status` (`BUILDING` → `DEPLOYING` → `SUCCESS`), then confirm
+with:
+
+```bash
+curl https://server-production-62b1.up.railway.app/health   # -> {"ok":true}
+```
+
+Client builds that should hit this instead of your local dev server need
+root `.env`'s `EXPO_PUBLIC_SERVER_URL` pointed at that same URL (see the
+note in **Client** above — it's a manual edit, remember to swap it back for
+local dev afterward).
+
+### Android (local build)
 
 `android/` is gitignored (standard Expo managed workflow, regenerated on
 demand) — generate it, then build with Gradle directly, no EAS account
@@ -155,10 +183,25 @@ needed:
 ```bash
 npx expo prebuild -p android   # generates android/, safe to re-run
 cd android
-./gradlew assembleRelease
+./gradlew assembleRelease       # standalone APK, bundles JS statically
+# or: ./gradlew assembleDebug   # see warning below
 ```
 
-Two things that aren't obvious the first time:
+**Use `assembleRelease` for anything you're going to install and actually use
+off this machine.** `assembleDebug` produces an APK that does *not* bundle
+the JS — it connects to a Metro dev server over
+`ws://localhost:8081/message` at runtime and fetches the bundle live. Without
+that server reachable (which it never is for a standalone install on a real
+device), the app hangs on the splash screen forever, silently retrying the
+websocket connection — no crash, no error, just stuck. `assembleRelease`
+runs `bundleReleaseJsAndAssets` and packages the JS into the APK itself, so
+it needs nothing else running.
+
+If `android/` already exists and nothing native-facing changed (no new
+native module, no `app.json` plugin/icon changes), you can skip
+`prebuild` and just re-run Gradle directly against the existing `android/`.
+
+Things that aren't obvious the first time:
 
 - **`android/local.properties` isn't committed** (machine-specific SDK path)
   — create it with `sdk.dir=/path/to/Android/Sdk` if it's missing, or export
@@ -167,12 +210,48 @@ Two things that aren't obvious the first time:
   toolchain resolution can pick a JRE-only Java install (some distros ship a
   headless `java-21` package with no `javac`) and fail deep into the build
   with a confusing "does not provide the required capabilities: JAVA_COMPILER"
-  error. Point `JAVA_HOME` at a JDK that actually has `javac` if that happens.
+  error. Point `JAVA_HOME` at a JDK that actually has `javac` if that
+  happens, e.g. `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ./gradlew ...`.
 - The pinned NDK version (currently `27.1.12297006`, see the Gradle error if
   it drifts) has to be installed once: `sdkmanager "ndk;<version>"`.
+- **The native build is disk-hungry (2GB+ in `android/app/build` alone) —
+  fatal if the repo lives on a drive that's nearly full**, which is the case
+  here (this repo is on an exFAT SD card). A build that dies mid-way with
+  `No space left on device` can leave CMake/ninja's intermediate state (and
+  Kotlin's compiled classes for individual Expo modules) corrupted badly
+  enough that even `./gradlew clean` fails trying to reconfigure it, or
+  succeeds but leaves one module's stale compiled output behind (see the
+  `expo-modules-core`/`AnyTypeCache` note below — that's how it was
+  discovered: a partial cleanup that missed one module's `android/build`).
+  If a build dies from disk space, free space first, then nuke **every**
+  module's native build output rather than hand-picking which ones —
+  cheaper than debugging a stale-cache mismatch later:
+  ```bash
+  find node_modules -maxdepth 3 -type d \( -path "*/android/build" -o -path "*/android/.cxx" \) \
+    | xargs rm -rf
+  rm -rf android/app/build android/build android/app/.cxx android/.gradle
+  ```
+  then re-run `./gradlew assembleRelease`.
+- **`package.json` has an `"overrides": { "expo-asset": "~12.0.13" }`.**
+  Don't remove it without understanding why: `expo-audio@1.1.1` declares an
+  unbounded `"expo-asset": "*"` dependency, which npm resolves to whatever
+  the latest published `expo-asset` is (was `57.0.13`, a version from a
+  completely different/newer Expo SDK generation) and hoists to the top of
+  `node_modules` — shadowing the `~12.0.13` that `expo@54.0.35` actually
+  needs, which gets nested under `node_modules/expo/node_modules/expo-asset`
+  instead. Android's autolinking picks up the wrong top-level one; its
+  compiled Kotlin references an `expo-modules-core` internal API
+  (`AnyTypeCache`) that doesn't exist in the older, actually-installed
+  `expo-modules-core`, and the app crashes with `NoClassDefFoundError` right
+  after the splash screen hands off to JS — no build error, only a runtime
+  crash, and a full clean rebuild alone does *not* fix it (only re-resolving
+  `node_modules` to a single consistent version does). Verify with
+  `npm ls expo-asset` — it should show one version, not two, before trusting
+  a build.
 
-Output lands at `android/app/build/outputs/apk/release/app-release.apk`. The
-release build type currently signs with the Expo-generated debug keystore
+Output lands at `android/app/build/outputs/apk/release/app-release.apk` (or
+`.../debug/app-debug.apk` if you built that variant). The release build type
+currently signs with the Expo-generated debug keystore
 (`android/app/debug.keystore`) — fine for sideloading/testing, but swap in a
 real release keystore before shipping to the Play Store.
 

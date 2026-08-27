@@ -4,6 +4,10 @@ import { users } from './users.js';
 
 export const questTypeEnum = pgEnum('quest_type', ['daily', 'weekly']);
 export const rewardTypeEnum = pgEnum('reward_type', ['chips', 'gems', 'xp']);
+// What real gameplay event a quest's progress is driven by -- lets increment
+// logic stay generic ("on event X, bump every quest whose metric is X")
+// instead of hardcoding quest ids into game-event code. See db/quests.ts.
+export const questMetricEnum = pgEnum('quest_metric', ['wins', 'captures', 'puzzles_solved', 'checkmates']);
 
 // Backs both achievements.tsx's badge grid AND iron-id.tsx's "trophies" --
 // those are the same underlying concept (a catalog of unlockable badges
@@ -48,6 +52,7 @@ export const quests = pgTable('quests', {
   target: integer('target').notNull(),
   rewardChips: integer('reward_chips').notNull().default(0),
   minLevel: integer('min_level').notNull().default(1),
+  metric: questMetricEnum('metric').notNull(),
 });
 
 // periodStart is part of the primary key because daily/weekly quests reset

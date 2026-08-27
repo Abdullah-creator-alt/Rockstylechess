@@ -5,25 +5,10 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomNav, CurrencyPill, PlayerAvatar, RockButton, SectionLabel } from '@/components/ui';
+import { AVATARS, type AvatarOption } from '@/constants/avatars';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { updateProfile } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
-
-interface RockstarOption {
-  id: string;
-  name: string;
-  emoji: string;
-  locked: boolean;
-  gemPrice?: number;
-}
-
-const ROCKSTARS: RockstarOption[] = [
-  { id: 'axe', name: 'AXE', emoji: '🎸', locked: false },
-  { id: 'nova', name: 'NOVA', emoji: '⚡', locked: false },
-  { id: 'riff', name: 'RIFF', emoji: '🤘', locked: false },
-  { id: 'reaper', name: 'REAPER', emoji: '💀', locked: true, gemPrice: 120 },
-  { id: 'king', name: 'KING', emoji: '👑', locked: true, gemPrice: 150 },
-];
 
 const AVATAR_SLOT = 100;
 
@@ -34,7 +19,7 @@ export default function PickRockstarScreen() {
   const [stageName, setStageName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSelect(option: RockstarOption) {
+  function handleSelect(option: AvatarOption) {
     if (option.locked) {
       console.log('Locked rockstar tapped', option.name, option.gemPrice, 'gems');
       return;
@@ -80,7 +65,7 @@ export default function PickRockstarScreen() {
         <Text style={styles.subheading}>Select your stage persona</Text>
 
         <View style={styles.grid}>
-          {ROCKSTARS.map((option) => {
+          {AVATARS.map((option) => {
             const isSelected = !option.locked && selectedId === option.id;
             return (
               <Pressable

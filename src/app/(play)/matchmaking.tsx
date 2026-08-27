@@ -11,17 +11,24 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { EmberParticles, PlayerAvatar, RockButton } from '@/components/ui';
+import { getAvatarEmoji } from '@/constants/avatars';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { getPlayerId } from '@/lib/playerId';
 import { ensureAuthenticated, getSocket } from '@/lib/socket';
-import { isVenueTier, type QueueMatchedPayload } from '@/lib/onlineMatch';
+import { isDuration, isVenueTier, type QueueMatchedPayload } from '@/lib/onlineMatch';
 
 export default function MatchmakingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const pulse = useSharedValue(0);
-  const { venueTier: venueTierParam } = useLocalSearchParams<{ venueTier?: string }>();
+  const { profile } = usePlayerProfile();
+  const { venueTier: venueTierParam, duration: durationParam } = useLocalSearchParams<{
+    venueTier?: string;
+    duration?: string;
+  }>();
   const venueTier = isVenueTier(venueTierParam) ? venueTierParam : 'garage';
+  const duration = isDuration(durationParam) ? durationParam : '5m';
 
   useEffect(() => {
     pulse.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }), -1, true);
@@ -41,6 +48,10 @@ export default function MatchmakingScreen() {
           color: payload.color,
           fen: payload.fen,
           opponentName: payload.opponent.displayName,
+          opponentAvatarId: payload.opponent.avatarId ?? undefined,
+          clockW: String(payload.clocks.w),
+          clockB: String(payload.clocks.b),
+          incrementMs: String(payload.incrementMs),
         },
       });
     }
@@ -55,7 +66,7 @@ export default function MatchmakingScreen() {
     function joinQueue() {
       Promise.all([ensureAuthenticated(), getPlayerId()]).then(([, guestId]) => {
         if (cancelled) return;
-        socket.emit('queue:join', { guestId, displayName: 'AXL_CHESS', venueTier });
+        socket.emit('queue:join', { guestId, displayName: 'AXL_CHESS', venueTier, duration });
       });
     }
 
@@ -77,7 +88,7 @@ export default function MatchmakingScreen() {
       socket.off('connect', joinQueue);
       socket.emit('queue:leave');
     };
-  }, [router, venueTier]);
+  }, [router, venueTier, duration]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     opacity: 0.5 + pulse.value * 0.5,
@@ -92,8 +103,8 @@ export default function MatchmakingScreen() {
 
       <View style={styles.vsRow}>
         <View style={styles.playerCol}>
-          <PlayerAvatar emoji="🤘" size="large" />
-          <Text style={styles.playerName}>AXL_CHESS</Text>
+          <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} size="large" />
+          <Text style={styles.playerName}>{profile?.displayName ?? 'AXL_CHESS'}</Text>
         </View>
 
         <Text style={styles.vsLabel}>VS</Text>

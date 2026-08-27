@@ -2,12 +2,7 @@ import { desc, eq, sql } from 'drizzle-orm';
 
 import { db } from './client.js';
 import { playerProfiles, spinPrizes, userSpinLog } from './schema/index.js';
-
-function utcDayDiff(from: Date, to: Date): number {
-  const fromMidnight = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
-  const toMidnight = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
-  return Math.round((toMidnight - fromMidnight) / 86_400_000);
-}
+import { utcDayDiff } from './utcDay.js';
 
 export async function getSpinStatus(userId: string) {
   const [latest] = await db

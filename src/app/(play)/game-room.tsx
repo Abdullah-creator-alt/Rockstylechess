@@ -59,6 +59,10 @@ export default function GameRoomScreen() {
           color: payload.color,
           fen: payload.fen,
           opponentName: payload.opponent.displayName,
+          opponentAvatarId: payload.opponent.avatarId ?? undefined,
+          clockW: String(payload.clocks.w),
+          clockB: String(payload.clocks.b),
+          incrementMs: String(payload.incrementMs),
         },
       });
     }

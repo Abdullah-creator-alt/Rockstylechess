@@ -55,6 +55,16 @@ export function unlockCosmetic(
   });
 }
 
+// Premium action: charges chips or gems every time Game Analysis is used
+// (no persistent "unlocked" record). Rejects with Error('insufficient-funds')
+// -- callers catch that specifically, same pattern as unlockCosmetic.
+export function chargeForAnalysis(
+  token: string,
+  currency: 'chips' | 'gems',
+): Promise<{ ok: true; currency: 'chips' | 'gems'; price: number; chips: number; gems: number }> {
+  return request('/me/analysis/charge', { method: 'POST', body: { currency }, token });
+}
+
 export interface PlayerProfile {
   userId: string;
   displayName: string | null;
@@ -143,11 +153,51 @@ export function spinWheel(token: string): Promise<SpinResult> {
   return request('/me/spin', { method: 'POST', token });
 }
 
+export interface QuestStatus {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  target: number;
+  rewardChips: number;
+  progress: number;
+  claimed: boolean;
+}
+
+// Full quest objects come back from the server directly (unlike daily-bonus/
+// spin's minimal status shape) -- quests.tsx renders straight from this, no
+// local catalog mirror needed.
+export function getQuestsStatus(token: string): Promise<{ quests: QuestStatus[] }> {
+  return request('/me/quests', { method: 'GET', token });
+}
+
+// Rejects with Error('quest-not-complete') if progress hasn't reached target,
+// or Error('already-claimed') on a repeat call.
+export function claimQuest(token: string, questId: string): Promise<{ ok: true; chipsGranted: number; chips: number }> {
+  return request(`/me/quests/${questId}/claim`, { method: 'POST', token });
+}
+
+// Bot/local matches only (see server/src/auth.ts's POST /me/quests/report-match
+// comment) -- never called for mode: 'online', which gets its quest progress
+// server-side from persistMatchResult.ts instead. capturedCount is the
+// player's OWN captures for that game (game.capturedByWhite/capturedByBlack
+// picked by playerColor), not the opponent's.
+export function reportMatchForQuests(
+  token: string,
+  report: { won: boolean; checkmate: boolean; capturedCount: number },
+): Promise<{ ok: true }> {
+  return request('/me/quests/report-match', { method: 'POST', body: report, token });
+}
+
+export function reportPuzzleSolvedForQuests(token: string): Promise<{ ok: true }> {
+  return request('/me/quests/report-puzzle-solved', { method: 'POST', token });
+}
+
 export interface MatchHistoryEntry {
   matchId: string;
   playedAt: string;
   mode: 'bot' | 'local' | 'online';
-  resultType: 'checkmate' | 'stalemate' | 'draw' | 'resignation' | 'forfeit';
+  resultType: 'checkmate' | 'stalemate' | 'draw' | 'resignation' | 'forfeit' | 'timeout';
   color: 'w' | 'b';
   outcome: 'win' | 'loss' | 'draw';
   ratingBefore: number;
