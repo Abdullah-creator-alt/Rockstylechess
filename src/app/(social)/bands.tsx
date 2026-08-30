@@ -6,13 +6,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { ScreenArt } from '@/constants/screenArt';
 import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
-
-// Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
-// verified resolvable. No documented permanence guarantee.
-const REHEARSAL_GARAGE_URI =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuAvE0LJwoxhkm0jsSFYgQ2Y7gtHgT3oLrCMBfICiZ8Ul3hTKfaovU_DvuDjUl7-ycALlgqKRChs_ux0Jh_Zmu99ScOreZuMJatoWnvxJJlxg0D8AZaos67PPnoHXJ65ULTq9_oA38feIknfuqZGFHcQQgltOmi14Emarh4knu7mSJXPAEX_PIaBrXM22u4erVQcm10rU51-KvaXFz7NWwUmbOT6Eoo8vxtNPcdtDcGFXHx1Yzptban9BL5Eg2DTn_aNda3-EZyW69U';
 
 interface BrowseBand {
   id: string;
@@ -51,7 +47,7 @@ export default function BandsScreen() {
   return (
     <View style={styles.root}>
       <Image
-        source={{ uri: REHEARSAL_GARAGE_URI }}
+        source={ScreenArt.rehearsalGarage}
         contentFit="cover"
         cachePolicy="memory-disk"
         style={styles.backgroundImage}
@@ -165,6 +161,7 @@ export default function BandsScreen() {
   );
 }
 
+// #region Styles
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -377,3 +374,4 @@ const styles = StyleSheet.create({
     height: 20,
   },
 });
+// #endregion

@@ -97,6 +97,7 @@ function Ember({ leftPercent, size, durationMs, delayMs, driftPx, color }: Parti
   );
 }
 
+// #region Styles
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
@@ -107,3 +108,4 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
 });
+// #endregion

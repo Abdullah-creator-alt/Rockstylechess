@@ -1133,6 +1133,7 @@ function Rivet({ style }: { style: object }) {
   );
 }
 
+// #region Styles
 const styles = StyleSheet.create({
   boardWrap: {
     alignItems: 'center',
@@ -1300,3 +1301,4 @@ const styles = StyleSheet.create({
     borderColor: withOpacity(Colors.gold, 0.85),
   },
 });
+// #endregion

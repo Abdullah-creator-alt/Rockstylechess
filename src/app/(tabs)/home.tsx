@@ -1,23 +1,20 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomNav, CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, BottomNav, CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { getAvatarEmoji } from '@/constants/avatars';
-import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import type { ICONS } from '@/constants/icons';
+import { ScreenArt } from '@/constants/screenArt';
+import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { tierLabel } from '@/lib/tierLabel';
 
 type Duration = '3m' | '5m' | '10m';
 const DURATIONS: Duration[] = ['3m', '5m', '10m'];
-
-// Stitch-generated preview asset (lh3.googleusercontent.com/aida-public/...).
-// Currently resolves fine but has no documented permanence guarantee -- swap
-// for a locally bundled asset if it ever 404s.
-const ARENA_HERO_IMAGE_URI =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuDTtmmYTscDjrsZ86iV8qSp2msuu0-FhpXqgkv3CBMmnYdzD47w98Fk2VKQ_V7gkKiKDgfCAJpyZjbIT9__OBUB2gDTE6EtPDmp4K0ekLTnP6Q1AOGdSVYwHN6X6ZMudanTrkzQLsCiG5NWD_faMGPtIKK02DCzEIMRCzv_4dd4HU8rnzbtYOOk1g4pzokbl-ZzqTllXsqI0fhSPFDOCm0B6bnB5W4rrx_CQfWAY_ZFyh_q5rsJNPv8Mh8PoxF-JgkGy_B7I2G4aPI';
 
 interface VenueTile {
   id: string;
@@ -32,28 +29,23 @@ const VENUES: VenueTile[] = [
   { id: 'stadium', name: 'Stadium', icon: 'castle', locked: true },
 ];
 
-interface BentoTile {
-  id: string;
-  title: string;
-  subtitle?: string;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  accent: string;
-  size: 'lg' | 'sm';
-  /** Omit for tiles with no destination screen yet (still console.log-only). */
-  route?: '/setup' | '/tournaments' | '/bots' | '/game-room' | '/puzzles';
-}
+// Bento grid -- migrated 1:1 from new_ui (tabs)/index.tsx (icons, labels,
+// sub-labels, accent colors, routes). `glow: undefined` = no colored card
+// glow (new_ui's `glowColor="none"` for the ember tile).
+type HomeTile = {
+  icon: keyof typeof ICONS;
+  color: string;
+  glow: string | undefined;
+  label: string;
+  sub: string;
+  route: '/setup' | '/tournaments' | '/bots' | '/puzzles';
+};
 
-const BENTO_TILES: BentoTile[] = [
-  { id: 'iron-duel', title: 'Iron Duel', subtitle: '1v1 High Stakes', icon: 'sword-cross', accent: Colors.cyan, size: 'lg', route: '/setup' },
-  { id: 'tournaments', title: 'Tournaments', subtitle: '8 Live Now', icon: 'trophy', accent: Colors.emberLight, size: 'lg', route: '/tournaments' },
-  { id: 'bots', title: 'Vs Bots', icon: 'robot', accent: Colors.cyan, size: 'sm', route: '/bots' },
-  { id: 'puzzles', title: 'Puzzles', icon: 'puzzle', accent: Colors.cyan, size: 'sm', route: '/puzzles' },
-  { id: 'learn', title: 'Learn', icon: 'school', accent: Colors.cyan, size: 'sm' },
-  // Replaces the old decorative, unwired "Watch" tile -- distinct warm
-  // accent (rather than the cyan every other small tile uses) so the two
-  // real, functional tiles (Puzzles/Game Room) don't blend into the still-
-  // decorative one next to them (Learn).
-  { id: 'game-room', title: 'Game Room', subtitle: 'Play a Friend', icon: 'door-open', accent: Colors.emberLight, size: 'sm', route: '/game-room' },
+const HOME_TILES: HomeTile[] = [
+  { icon: 'swords', color: Colors.cyan, glow: Colors.cyan, label: 'Iron Duel', sub: '1v1 Ranked', route: '/setup' },
+  { icon: 'emoji_events', color: Colors.gold, glow: Colors.gold, label: 'Tournaments', sub: 'High Stakes', route: '/tournaments' },
+  { icon: 'smart_toy', color: Colors.ember, glow: undefined, label: 'Bots', sub: 'Practice', route: '/bots' },
+  { icon: 'extension', color: Colors.cyan, glow: Colors.cyan, label: 'Puzzles', sub: 'Daily Grind', route: '/puzzles' },
 ];
 
 export default function HomeLobbyScreen() {
@@ -73,17 +65,21 @@ export default function HomeLobbyScreen() {
   }
 
   return (
-    <View style={styles.root}>
-      <View style={styles.ambientGlowCyan} />
-      <View style={styles.ambientGlowEmber} />
+    <View className="flex-1 bg-bg-base">
+      <View pointerEvents="none" style={{ position: 'absolute', top: -80, right: -60, width: 260, height: 260, borderRadius: 130, backgroundColor: withOpacity(Colors.cyan, 0.06), boxShadow: `0px 0px 120px ${withOpacity(Colors.cyan, 0.25)}` }} />
+      <View pointerEvents="none" style={{ position: 'absolute', bottom: 60, left: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: withOpacity(Colors.ember, 0.06), boxShadow: `0px 0px 100px ${withOpacity(Colors.ember, 0.22)}` }} />
       <EmberParticles count={10} />
 
-      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
-        <View style={styles.topBarLeft}>
-          <View style={styles.avatarWrap}>
+      <View
+        className="flex-row items-center justify-between px-lg pb-md"
+        style={{ paddingTop: insets.top + 16, backgroundColor: withOpacity(Colors.bgPanel, 0.85), borderBottomWidth: 1, borderBottomColor: withOpacity(Colors.cyan, 0.15) }}
+      >
+        <View className="flex-1 flex-row items-center gap-sm">
+          <View style={{ position: 'relative' }}>
             <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} level={profile?.level} size="small" />
             <Pressable
-              style={styles.forgeBadge}
+              className="items-center justify-center rounded-full"
+              style={{ position: 'absolute', bottom: -4, right: -4, width: 26, height: 26, backgroundColor: Colors.gold, borderWidth: 1.5, borderColor: Colors.bgBase, boxShadow: `0px 0px 6px ${withOpacity(Colors.gold, 0.6)}` }}
               onPress={() => {
                 console.log('Forge entry point pressed');
                 router.push('/forge');
@@ -93,14 +89,16 @@ export default function HomeLobbyScreen() {
             </Pressable>
           </View>
           <View>
-            <Text style={styles.playerName}>{profile?.displayName ?? 'Player'}</Text>
-            <Text style={styles.playerLevel}>
+            <Text className="font-display-hero text-cyan" style={{ fontSize: 15, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              {profile?.displayName ?? 'Player'}
+            </Text>
+            <Text className="font-section-header" style={{ fontSize: 10, color: Colors.emberLight, textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 2 }}>
               LVL {profile?.level ?? 1} {tierLabel(profile?.rating ?? 1200)}
             </Text>
           </View>
         </View>
 
-        <View style={styles.topBarRight}>
+        <View className="flex-row gap-sm">
           <CurrencyPill
             type="chips"
             value={chips}
@@ -120,44 +118,32 @@ export default function HomeLobbyScreen() {
         </View>
       </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.venueRow}
-        >
+      <ScrollView className="flex-1" contentContainerClassName="gap-xl px-lg" contentContainerStyle={{ paddingTop: 20, paddingBottom: 130 + insets.bottom }} showsVerticalScrollIndicator={false}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-md" contentContainerStyle={{ paddingBottom: 4 }}>
           {VENUES.map((venue) => {
             const isActive = !venue.locked && selectedVenue === venue.id;
             return (
               <Pressable
                 key={venue.id}
                 onPress={() => handleVenuePress(venue)}
-                style={[
-                  styles.venueTile,
-                  isActive && styles.venueTileActive,
-                  venue.locked && styles.venueTileLocked,
-                ]}
+                className="items-center justify-center gap-1 rounded-lg"
+                style={{
+                  width: isActive ? 130 : 110,
+                  height: isActive ? 92 : 80,
+                  backgroundColor: isActive ? withOpacity(Colors.cyan, 0.14) : withOpacity(Colors.bgPanel, 0.7),
+                  borderWidth: isActive ? 2 : 1,
+                  borderColor: isActive ? Colors.cyan : withOpacity(Colors.ember, 0.18),
+                  boxShadow: isActive ? `0px 0px 20px ${withOpacity(Colors.cyan, 0.4)}` : undefined,
+                  opacity: venue.locked ? 0.6 : 1,
+                }}
               >
                 {venue.locked ? (
-                  <View style={styles.venueLockOverlay}>
+                  <View style={{ position: 'absolute', top: 6, right: 6 }}>
                     <MaterialCommunityIcons name="lock" size={18} color={Colors.chromeMid} />
                   </View>
                 ) : null}
-                <MaterialCommunityIcons
-                  name={venue.icon}
-                  size={isActive ? 28 : 22}
-                  color={venue.locked ? Colors.chromeMid : isActive ? Colors.cyan : Colors.textMuted}
-                />
-                <Text
-                  style={[
-                    styles.venueLabel,
-                    isActive && styles.venueLabelActive,
-                    venue.locked && styles.venueLabelLocked,
-                  ]}
-                >
+                <MaterialCommunityIcons name={venue.icon} size={isActive ? 28 : 22} color={venue.locked ? Colors.chromeMid : isActive ? Colors.cyan : Colors.textMuted} />
+                <Text className="font-heading-md uppercase" style={{ fontSize: isActive ? 13 : 11, color: venue.locked ? Colors.chromeMid : isActive ? Colors.cyan : Colors.textMuted }}>
                   {venue.name}
                 </Text>
               </Pressable>
@@ -165,28 +151,30 @@ export default function HomeLobbyScreen() {
           })}
         </ScrollView>
 
-        <RockCard
-          glowColor={Colors.cyan}
-          backgroundImageUri={ARENA_HERO_IMAGE_URI}
-          style={styles.heroCard}
-        >
-          <View style={styles.heroTopRow}>
-            <View style={styles.heroLeft}>
-              <Text style={styles.heroTitle}>The Arena</Text>
-              <View style={styles.statsRow}>
-                <View style={styles.statCol}>
-                  <Text style={styles.statLabel}>Buy-In</Text>
-                  <Text style={[styles.statValue, { color: Colors.cyan }]}>250K</Text>
+        <RockCard variant="surface" glowColor={Colors.cyan} backgroundImage={ScreenArt.homeArenaHero} style={{ minHeight: 280 }}>
+          <View className="flex-row items-end justify-between gap-md">
+            <View className="flex-shrink">
+              <Text className="font-display-hero text-text-primary" style={{ fontSize: 26, textTransform: 'uppercase', textShadowColor: withOpacity(Colors.bgBase, 0.8), textShadowRadius: 6, textShadowOffset: { width: 0, height: 2 } }}>
+                The Arena
+              </Text>
+              <View className="mt-sm flex-row items-center gap-md">
+                <View>
+                  <Text className="font-heading-md text-caption uppercase tracking-wide text-text-muted">Buy-In</Text>
+                  <Text className="font-display-hero" style={{ fontSize: 18, color: Colors.cyan }}>
+                    250K
+                  </Text>
                 </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statCol}>
-                  <Text style={styles.statLabel}>Grand Prize</Text>
-                  <Text style={[styles.statValue, { color: Colors.emberLight }]}>500K</Text>
+                <View style={{ width: 1, height: 28, backgroundColor: withOpacity(Colors.chromeDark, 0.5) }} />
+                <View>
+                  <Text className="font-heading-md text-caption uppercase tracking-wide text-text-muted">Grand Prize</Text>
+                  <Text className="font-display-hero" style={{ fontSize: 18, color: Colors.emberLight }}>
+                    500K
+                  </Text>
                 </View>
               </View>
             </View>
 
-            <View style={styles.durationRow}>
+            <View className="flex-row gap-xs">
               {DURATIONS.map((d) => {
                 const active = duration === d;
                 return (
@@ -196,17 +184,20 @@ export default function HomeLobbyScreen() {
                       setDuration(d);
                       console.log('Duration selected', d);
                     }}
-                    style={[styles.durationChip, active && styles.durationChipActive]}
+                    className="rounded"
+                    style={{ paddingHorizontal: 8, paddingVertical: 6, backgroundColor: active ? Colors.cyan : withOpacity(Colors.bgBase, 0.5), borderWidth: 1, borderColor: active ? Colors.cyan : withOpacity(Colors.chromeDark, 0.4) }}
                     hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                   >
-                    <Text style={[styles.durationText, active && styles.durationTextActive]}>{d}</Text>
+                    <Text className="font-heading-md" style={{ fontSize: 12, color: active ? Colors.bgBase : Colors.textPrimary }}>
+                      {d}
+                    </Text>
                   </Pressable>
                 );
               })}
             </View>
           </View>
 
-          <View style={styles.heroButtonWrap}>
+          <View className="mt-lg">
             <RockButton
               label="Play Now"
               variant="primary"
@@ -219,481 +210,100 @@ export default function HomeLobbyScreen() {
           </View>
         </RockCard>
 
-        <View style={styles.bentoGrid}>
-          {BENTO_TILES.map((tile) => (
-            <Pressable
-              key={tile.id}
-              onPress={() => {
-                console.log('Bento tile pressed', tile.title);
-                if (tile.route) {
-                  router.push(tile.route);
-                }
-              }}
-              style={tile.size === 'lg' ? styles.bentoSlotLg : styles.bentoSlotSm}
-            >
-              <RockCard glowColor={tile.accent} style={styles.bentoCard}>
-                <View style={tile.size === 'lg' ? styles.bentoInnerLg : styles.bentoInnerSm}>
-                  <MaterialCommunityIcons name={tile.icon} size={tile.size === 'lg' ? 36 : 26} color={tile.accent} />
-                  <View>
-                    <Text style={styles.bentoTitle}>{tile.title}</Text>
-                    {tile.subtitle ? <Text style={styles.bentoSubtitle}>{tile.subtitle}</Text> : null}
+        {/* Bento grid -- from new_ui (tabs)/index.tsx. Fixed tile height (not
+            aspect-ratio) so all four are identical regardless of screen width
+            or how many lines a label wraps to -- icon/label/sub stay at one
+            fixed size each, never shrink-to-fit. */}
+        <View className="flex-row flex-wrap gap-gutter">
+          {HOME_TILES.map((tile) => (
+            <Pressable key={tile.label} onPress={() => router.push(tile.route)} style={{ width: '47%' }}>
+              <RockCard variant="surface" glowColor={tile.glow} style={{ height: 160 }}>
+                <View className="flex-1 items-center justify-center">
+                  <AppIcon name={tile.icon} size={36} color={tile.color} />
+                  {/* Fixed-height label slot -- keeps the icon and sub-label
+                      at the same y across all four tiles even when a label
+                      wraps to two lines. Tightened line height so a 2-line
+                      label fits without shrinking the 20px type. */}
+                  <View className="mt-sm items-center justify-center" style={{ height: 52 }}>
+                    <Text
+                      className="text-center font-heading-md text-heading-md text-text-primary"
+                      numberOfLines={2}
+                      style={{ lineHeight: 22 }}
+                    >
+                      {tile.label}
+                    </Text>
                   </View>
+                  <Text className="text-center font-caption text-caption text-text-muted" numberOfLines={1}>
+                    {tile.sub}
+                  </Text>
                 </View>
               </RockCard>
             </Pressable>
           ))}
         </View>
 
-        <View style={styles.dailyHeadingRow}>
-          <View style={styles.dailyHeading}>
-            <MaterialCommunityIcons name="star" size={18} color={Colors.emberLight} />
-            <Text style={styles.dailyHeadingText}>Daily Bonuses</Text>
-          </View>
-          <View style={styles.dailyHeadingIcons}>
-            <Pressable
-              style={[styles.dailyHeadingIconButton, styles.dailyHeadingIconButtonGold]}
-              onPress={() => {
-                console.log('Achievements entry point pressed');
-                router.push('/achievements');
-              }}
-            >
-              <MaterialCommunityIcons name="trophy" size={20} color={Colors.gold} />
-            </Pressable>
-            <Pressable
-              style={[styles.dailyHeadingIconButton, styles.dailyHeadingIconButtonCyan]}
-              onPress={() => {
-                console.log('Collections entry point pressed');
-                router.push('/collections');
-              }}
-            >
-              <MaterialCommunityIcons name="cards" size={20} color={Colors.cyan} />
-            </Pressable>
-          </View>
-        </View>
-        <View style={styles.dailyGrid}>
-          <Pressable
-            style={styles.dailySlot}
-            onPress={() => {
-              console.log('Spin the 45 pressed');
-              router.push('/spin');
-            }}
-          >
-            <RockCard glowColor={Colors.emberLight} style={styles.dailyCard}>
-              <View style={styles.dailyInner}>
-                <View style={styles.dailyIconCircle}>
-                  <MaterialCommunityIcons name="rotate-right" size={26} color={Colors.emberLight} />
-                </View>
-                <View>
-                  <Text style={styles.dailyTitle}>Spin the 45</Text>
-                  <Text style={styles.dailyReady}>Ready!</Text>
-                </View>
-              </View>
-            </RockCard>
-          </Pressable>
+        {/* Daily rewards -- migrated 1:1 from new_ui (tabs)/index.tsx */}
+        <View className="gap-sm">
+          <Text className="pl-xs font-section-header text-section-header uppercase tracking-widest text-text-muted">
+            Daily Rewards
+          </Text>
 
-          <Pressable
-            style={styles.dailySlot}
-            onPress={() => {
-              console.log('Claim daily bonus pressed');
-              router.push('/daily-bonus');
-            }}
-          >
-            <RockCard glowColor={Colors.cyan} style={styles.dailyCard}>
-              <View style={styles.dailyInner}>
-                <View style={[styles.dailyIconCircle, styles.dailyIconCircleCyan]}>
-                  <MaterialCommunityIcons name="gift-outline" size={22} color={Colors.cyan} />
-                </View>
-                <View>
-                  <Text style={styles.dailyTitle}>Daily Bonus</Text>
-                  <View style={styles.claimPill}>
-                    <Text style={styles.claimPillText}>Claim</Text>
+          <Pressable onPress={() => router.push('/daily-bonus')}>
+            <RockCard variant="surface">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-md">
+                  <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.chrome, 0.1) }}>
+                    <AppIcon name="calendar_today" size={20} color={Colors.gold} />
+                  </View>
+                  <View>
+                    <Text className="font-heading-md text-heading-md text-text-primary">Daily Bonus</Text>
+                    <Text className="font-caption text-caption text-text-muted">Claim in 2h 45m</Text>
                   </View>
                 </View>
+                <View className="h-4 w-24 overflow-hidden rounded-full" style={{ backgroundColor: withOpacity(Colors.chrome, 0.1) }}>
+                  <LinearGradient
+                    colors={[Colors.cyan, Colors.chrome]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{ width: '80%', height: '100%' }}
+                  />
+                </View>
               </View>
             </RockCard>
           </Pressable>
 
-          <Pressable
-            style={styles.questsSlot}
-            onPress={() => {
-              console.log('Battle Quests pressed');
-              router.push('/quests');
-            }}
-          >
-            <RockCard glowColor={Colors.gold} style={styles.dailyCard}>
-              <View style={styles.dailyInner}>
-                <View style={[styles.dailyIconCircle, styles.dailyIconCircleGold]}>
-                  <MaterialCommunityIcons name="sword-cross" size={22} color={Colors.gold} />
+          <RockCard variant="surface">
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-md">
+                <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.chrome, 0.1) }}>
+                  <AppIcon name="casino" size={20} color={Colors.ember} />
                 </View>
                 <View>
-                  <Text style={styles.dailyTitle}>Battle Quests</Text>
-                  <Text style={styles.dailyReady}>3 Active</Text>
+                  <Text className="font-heading-md text-heading-md text-text-primary">Spin to Win</Text>
+                  <Text className="font-caption text-caption text-text-muted">1 Free Spin</Text>
                 </View>
               </View>
-            </RockCard>
-          </Pressable>
+              <Pressable
+                onPress={() => router.push('/spin')}
+                className="rounded-full px-md py-xs"
+                style={{ backgroundColor: withOpacity(Colors.chrome, 0.1), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}
+              >
+                <Text className="font-button-label text-button-label uppercase text-text-primary">Spin</Text>
+              </Pressable>
+            </View>
+          </RockCard>
         </View>
-
-        <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      <View style={styles.navWrap}>
-        <BottomNav
-          activeTab="home"
-          onTabPress={(tab) => {
-            if (tab === 'ranks') router.push('/world-rankings');
-            else if (tab === 'profile') router.push('/iron-id');
-            else if (tab === 'shop') router.push('/shop');
-            else console.log('tab pressed', tab);
-          }}
-        />
-      </View>
+      <BottomNav
+        activeTab="home"
+        onTabPress={(tab) => {
+          if (tab === 'ranks') router.push('/world-rankings');
+          else if (tab === 'profile') router.push('/iron-id');
+          else if (tab === 'shop') router.push('/shop');
+          else console.log('tab pressed', tab);
+        }}
+      />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.bgBase,
-  },
-  ambientGlowCyan: {
-    position: 'absolute',
-    top: -80,
-    right: -60,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: withOpacity(Colors.cyan, 0.06),
-    boxShadow: `0px 0px 120px ${withOpacity(Colors.cyan, 0.25)}`,
-  },
-  ambientGlowEmber: {
-    position: 'absolute',
-    bottom: 60,
-    left: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: withOpacity(Colors.ember, 0.06),
-    boxShadow: `0px 0px 100px ${withOpacity(Colors.ember, 0.22)}`,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.md,
-    backgroundColor: withOpacity(Colors.bgPanel, 0.85),
-    borderBottomWidth: 1,
-    borderBottomColor: withOpacity(Colors.cyan, 0.15),
-  },
-  topBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flexShrink: 1,
-  },
-  avatarWrap: {
-    position: 'relative',
-  },
-  forgeBadge: {
-    position: 'absolute',
-    bottom: -4,
-    right: -4,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.gold,
-    borderWidth: 1.5,
-    borderColor: Colors.bgBase,
-    boxShadow: `0px 0px 6px ${withOpacity(Colors.gold, 0.6)}`,
-  },
-  playerName: {
-    fontFamily: Fonts.display,
-    fontSize: 15,
-    color: Colors.cyan,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  playerLevel: {
-    fontFamily: Fonts.heading,
-    fontSize: 10,
-    color: Colors.emberLight,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    marginTop: 2,
-  },
-  topBarRight: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  scrollContent: {
-    padding: Spacing.lg,
-    paddingBottom: 120,
-    gap: Spacing.xl,
-  },
-  venueRow: {
-    gap: Spacing.md,
-    paddingBottom: Spacing.xs,
-  },
-  venueTile: {
-    width: 110,
-    height: 80,
-    borderRadius: Radius.lg,
-    backgroundColor: withOpacity(Colors.bgPanel, 0.7),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.ember, 0.18),
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  venueTileActive: {
-    width: 130,
-    height: 92,
-    backgroundColor: withOpacity(Colors.cyan, 0.14),
-    borderWidth: 2,
-    borderColor: Colors.cyan,
-    boxShadow: `0px 0px 20px ${withOpacity(Colors.cyan, 0.4)}`,
-  },
-  venueTileLocked: {
-    opacity: 0.6,
-  },
-  venueLockOverlay: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-  },
-  venueLabel: {
-    fontFamily: Fonts.heading,
-    fontSize: 11,
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-  },
-  venueLabelActive: {
-    fontFamily: Fonts.heading,
-    fontSize: 13,
-    color: Colors.cyan,
-  },
-  venueLabelLocked: {
-    color: Colors.chromeMid,
-  },
-  heroCard: {
-    minHeight: 280,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    gap: Spacing.md,
-  },
-  heroLeft: {
-    flexShrink: 1,
-  },
-  heroTitle: {
-    fontFamily: Fonts.display,
-    fontSize: 26,
-    color: Colors.textPrimary,
-    textTransform: 'uppercase',
-    textShadowColor: withOpacity(Colors.bgBase, 0.8),
-    textShadowRadius: 6,
-    textShadowOffset: { width: 0, height: 2 },
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    marginTop: Spacing.sm,
-  },
-  statCol: {
-    gap: 2,
-  },
-  statLabel: {
-    fontFamily: Fonts.heading,
-    fontSize: 10,
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  statValue: {
-    fontFamily: Fonts.display,
-    fontSize: 18,
-  },
-  statDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: withOpacity(Colors.chromeDark, 0.5),
-  },
-  durationRow: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-  },
-  durationChip: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    borderRadius: Radius.sm,
-    backgroundColor: withOpacity(Colors.bgBase, 0.5),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.chromeDark, 0.4),
-  },
-  durationChipActive: {
-    backgroundColor: Colors.cyan,
-    borderColor: Colors.cyan,
-  },
-  durationText: {
-    fontFamily: Fonts.heading,
-    fontSize: 12,
-    color: Colors.textPrimary,
-  },
-  durationTextActive: {
-    color: Colors.bgBase,
-  },
-  heroButtonWrap: {
-    marginTop: Spacing.lg,
-  },
-  bentoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: Spacing.md,
-  },
-  bentoSlotLg: {
-    width: '48%',
-  },
-  bentoSlotSm: {
-    width: '48%',
-  },
-  bentoCard: {},
-  bentoInnerLg: {
-    minHeight: 140,
-    justifyContent: 'space-between',
-  },
-  bentoInnerSm: {
-    minHeight: 90,
-    justifyContent: 'space-between',
-  },
-  bentoTitle: {
-    fontFamily: Fonts.heading,
-    fontSize: 15,
-    color: Colors.textPrimary,
-    textTransform: 'uppercase',
-  },
-  bentoSubtitle: {
-    fontFamily: Fonts.body,
-    fontSize: 10,
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: 2,
-  },
-  dailyHeadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  dailyHeading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  dailyHeadingIcons: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  dailyHeadingIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  dailyHeadingIconButtonGold: {
-    backgroundColor: withOpacity(Colors.gold, 0.16),
-    borderColor: withOpacity(Colors.gold, 0.5),
-    boxShadow: `0px 0px 8px ${withOpacity(Colors.gold, 0.3)}`,
-  },
-  dailyHeadingIconButtonCyan: {
-    backgroundColor: withOpacity(Colors.cyan, 0.16),
-    borderColor: withOpacity(Colors.cyan, 0.5),
-    boxShadow: `0px 0px 8px ${withOpacity(Colors.cyan, 0.3)}`,
-  },
-  dailyHeadingText: {
-    fontFamily: Fonts.heading,
-    fontSize: 16,
-    color: Colors.emberLight,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  dailyGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: Spacing.md,
-    marginTop: Spacing.md,
-  },
-  dailySlot: {
-    width: '48%',
-  },
-  questsSlot: {
-    width: '100%',
-  },
-  dailyCard: {},
-  dailyInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  dailyIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: withOpacity(Colors.emberLight, 0.12),
-  },
-  dailyIconCircleCyan: {
-    backgroundColor: withOpacity(Colors.cyan, 0.12),
-  },
-  dailyIconCircleGold: {
-    backgroundColor: withOpacity(Colors.gold, 0.12),
-  },
-  dailyTitle: {
-    fontFamily: Fonts.heading,
-    fontSize: 12,
-    color: Colors.textPrimary,
-    textTransform: 'uppercase',
-  },
-  dailyReady: {
-    fontFamily: Fonts.display,
-    fontSize: 11,
-    color: Colors.emberLight,
-    letterSpacing: 1,
-    marginTop: 2,
-  },
-  claimPill: {
-    marginTop: 4,
-    alignSelf: 'flex-start',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.cyan,
-  },
-  claimPillText: {
-    fontFamily: Fonts.display,
-    fontSize: 9,
-    color: Colors.bgBase,
-    letterSpacing: 0.5,
-  },
-  bottomSpacer: {
-    height: 20,
-  },
-  navWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-});

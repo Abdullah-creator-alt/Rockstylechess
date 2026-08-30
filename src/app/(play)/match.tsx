@@ -1,9 +1,8 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, type ColorValue } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -13,12 +12,13 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { BottomNav, ChatPanel, ChatToast, ChessBoard, EmberParticles, PlayerAvatar, RockCard } from '@/components/ui';
+import { ChatPanel, ChatToast, ChessBoard, ConfirmModal, EmberParticles, PlayerAvatar } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getAvatarEmoji } from '@/constants/avatars';
 import { getBoardTheme } from '@/constants/boardThemes';
-import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { ScreenArt } from '@/constants/screenArt';
+import { Colors, Spacing, withOpacity } from '@/constants/theme';
 import { useChessClock, type ClockTimes } from '@/hooks/useChessClock';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
 import { useMatchChat } from '@/hooks/useMatchChat';
@@ -29,10 +29,6 @@ import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 import { setPendingLocalReplay, type LocalMatchReplay } from '@/lib/localMatchReplayStore';
 import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 
-// Real, currently-live Stitch preview asset (lh3.googleusercontent.com/aida-public/...),
-// verified resolvable. No documented permanence guarantee.
-const CROWD_SILHOUETTE_URI =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuDaXXF0CMT7YW54CZmBpXIOWSCkNu7f13zeFglHBL71SHNZUnIcnmsAPYJuARLUDUhW2NLzJeYUoroRs7WPB1MX64AwC4XcrsGxqyHm0rwQMwHXNDD4bM2A2mmcbPGaofF-E65LuOEAmQnE76snvgaeLDgOkZQaIRDsMuRZb6zpM8cpvnCavM9yobNyZJ5Beuq0tWPeQheeG4D22tc0571ruxYhbts4_8_jNbt8Y-ENdSAul4ZsKWQxW1Xzqd2801Uz8BWyT-lmbKg';
 
 // Bot/local always default to this (matches setup.tsx's own default duration
 // pick, no dedicated picker exists for these modes). Online's real starting
@@ -41,9 +37,6 @@ const CROWD_SILHOUETTE_URI =
 // is the interim guess used until then, so online still gets a real ticking
 // clock today rather than reverting to static placeholder text.
 const DEFAULT_CLOCK_MS = 5 * 60_000;
-
-const MOVE_HISTORY =
-  '1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 a6 6.Be3 e5 7.Nb3 Be7 8.f3 Be6 9.Qd2 Nbd7 10.O-O-O O-O 11.g4 b5 12.g5 Nh5  •  ';
 
 // Pieces are always lowercase letters from chess.js's `captured` field --
 // a tiny local glyph map just for rendering the captured-piece trays.
@@ -107,6 +100,7 @@ export default function MatchScreen() {
   const navigatedRef = useRef(false);
   const stockfishRef = useRef<StockfishEngineHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [resignVisible, setResignVisible] = useState(false);
   const { profile, refresh: refreshPlayerProfile } = usePlayerProfile();
   const boardTheme = getBoardTheme(profile?.equippedBoardId);
   const pieceSprites = getPieceSprites(profile?.equippedPieceId);
@@ -257,21 +251,27 @@ export default function MatchScreen() {
     <View style={styles.root}>
       <StockfishEngine ref={stockfishRef} enabled={isStockfishTier} />
       <Image
-        source={{ uri: CROWD_SILHOUETTE_URI }}
+        source={ScreenArt.frontRowCrowd}
         contentFit="cover"
         cachePolicy="memory-disk"
         style={styles.crowdImage}
       />
       <EmberParticles count={8} />
 
-      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
-        <Text style={styles.topBarTitle}>RockStyle Chess</Text>
-        <View style={styles.xpPill}>
-          <Text style={styles.xpPillText}>XP: 2400</Text>
-        </View>
+      <View className="flex-row items-center justify-between px-lg pb-sm" style={{ paddingTop: insets.top + Spacing.sm }}>
+        <Text className="font-display-hero text-cyan" style={{ fontSize: 16, fontStyle: 'italic', letterSpacing: 0.5 }}>
+          RockStyle Chess
+        </Text>
+        <Pressable
+          onPress={() => console.log('Match menu pressed')}
+          className="h-10 w-10 items-center justify-center rounded-full"
+          style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.6), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.4) }}
+        >
+          <MaterialCommunityIcons name="dots-vertical" size={20} color={Colors.textPrimary} />
+        </Pressable>
       </View>
 
-      <View style={styles.middle}>
+      <View className="flex-1 justify-between px-md pb-sm">
         <PlayerRow
           name={opponentDisplayName}
           emoji={opponentEmoji}
@@ -281,8 +281,6 @@ export default function MatchScreen() {
           pulsing={game.turn === 'b'}
           captured={game.capturedByBlack}
         />
-
-        <MoveTicker />
 
         <ChessBoard
           board={game.board}
@@ -298,13 +296,6 @@ export default function MatchScreen() {
           pieceSprites={pieceSprites}
         />
 
-        <ActionBar
-          onResign={() => game.resign(playerColor)}
-          mode={mode}
-          unreadCount={chat.unreadCount}
-          onOpenChat={() => setChatOpen(true)}
-        />
-
         <PlayerRow
           name={profile?.displayName ?? 'AXL_CHESS'}
           emoji={getAvatarEmoji(profile?.avatarId)}
@@ -316,16 +307,26 @@ export default function MatchScreen() {
         />
       </View>
 
-      <View style={styles.navWrap}>
-        <BottomNav
-          activeTab="play"
-          onTabPress={(tab) => {
-            if (tab === 'ranks') router.push('/world-rankings');
-            else if (tab === 'profile') router.push('/iron-id');
-            else if (tab === 'shop') router.push('/shop');
-            else console.log('tab pressed', tab);
-          }}
+      <View
+        className="flex-row items-center gap-sm rounded-t-xl px-margin-mobile pt-md"
+        style={{ paddingBottom: insets.bottom + 10, backgroundColor: withOpacity(Colors.bgPanel, 0.96), borderTopWidth: 1, borderTopColor: withOpacity(Colors.chromeDark, 0.5) }}
+      >
+        <ActionPillButton
+          icon="chat"
+          label="Chat"
+          onPress={() => setChatOpen(true)}
+          disabled={mode !== 'online'}
+          badgeCount={mode === 'online' ? chat.unreadCount : 0}
         />
+        <ActionPillButton icon="flag" label="Resign" tone="danger" onPress={() => setResignVisible(true)} />
+        <ActionPillButton icon="handshake" label="Draw" onPress={() => console.log('Draw offered')} />
+        <Pressable
+          onPress={() => router.push('/control-core')}
+          className="h-12 w-12 items-center justify-center rounded-lg"
+          style={{ backgroundColor: withOpacity(Colors.chromeDark, 0.25), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.4) }}
+        >
+          <MaterialCommunityIcons name="menu" size={22} color={Colors.textPrimary} />
+        </Pressable>
       </View>
 
       <ChatPanel
@@ -340,6 +341,20 @@ export default function MatchScreen() {
       {chat.toastMessage ? (
         <ChatToast key={chat.toastMessage.id} message={chat.toastMessage} onDismiss={chat.dismissToast} />
       ) : null}
+
+      <ConfirmModal
+        visible={resignVisible}
+        variant="danger"
+        icon="flag"
+        title="Resign Match?"
+        message="This counts as a loss and your rating will drop. This can't be undone."
+        confirmLabel="Resign"
+        onCancel={() => setResignVisible(false)}
+        onConfirm={() => {
+          setResignVisible(false);
+          game.resign(playerColor);
+        }}
+      />
     </View>
   );
 }
@@ -362,30 +377,37 @@ function PlayerRow({
   captured?: string[];
 }) {
   return (
-    <View style={styles.playerBlock}>
-      <View style={styles.playerRow}>
-        <RockCard style={styles.playerCard}>
-          <View style={styles.playerCardInner}>
-            <PlayerAvatar emoji={emoji} size="tiny" />
-            <View>
-              <Text style={styles.playerCardName}>{name}</Text>
-              <Text style={styles.playerCardRank}>{rank}</Text>
-            </View>
+    <View className="flex-row items-center justify-between gap-sm px-sm py-xs">
+      <View className="flex-shrink flex-row items-center gap-sm">
+        <PlayerAvatar emoji={emoji} size="small" />
+        <View className="flex-shrink">
+          <Text className="font-display-hero uppercase text-text-primary" style={{ fontSize: 14 }} numberOfLines={1}>
+            {name}
+          </Text>
+          <View className="mt-0.5 flex-row items-center gap-1">
+            <MaterialCommunityIcons name="star" size={11} color={Colors.gold} />
+            <Text className="font-heading-md uppercase text-text-muted" style={{ fontSize: 10 }}>
+              {rank}
+            </Text>
           </View>
-        </RockCard>
-
-        <TimerPill remainingMs={remainingMs} accent={accent} pulsing={pulsing} />
+        </View>
       </View>
 
-      {captured.length > 0 ? (
-        <View style={styles.capturedRow}>
-          {captured.map((piece, index) => (
-            <Text key={`${piece}-${index}`} style={[styles.capturedGlyph, { color: accent }]}>
-              {CAPTURED_GLYPHS[piece] ?? ''}
-            </Text>
-          ))}
-        </View>
-      ) : null}
+      <View className="items-end gap-1">
+        <TimerPill remainingMs={remainingMs} accent={accent} pulsing={pulsing} />
+        {captured.length > 0 ? (
+          <View
+            className="flex-row flex-wrap rounded-full px-sm"
+            style={{ paddingVertical: 2, backgroundColor: withOpacity(Colors.chromeDark, 0.35), maxWidth: 120 }}
+          >
+            {captured.map((piece, index) => (
+              <Text key={`${piece}-${index}`} style={{ fontSize: 13, color: accent, opacity: 0.9 }}>
+                {CAPTURED_GLYPHS[piece] ?? ''}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -428,166 +450,75 @@ function TimerPill({ remainingMs, accent, pulsing }: { remainingMs: number; acce
     transform: [{ scale: isCriticalAndTicking ? 1 + pulse.value * 0.05 : 1 }],
   }));
 
-  const urgencyColor = urgency === 'critical' ? Colors.crimson : urgency === 'low' ? Colors.gold : accent;
+  // Urgency wins (critical -> crimson, low -> gold); otherwise the active
+  // side glows its accent and the idle side sits muted grey.
+  const urgencyColor =
+    urgency === 'critical' ? Colors.crimson : urgency === 'low' ? Colors.gold : pulsing ? accent : Colors.chromeMid;
 
   return (
     <Animated.View
+      className="items-center justify-center rounded-lg px-md"
       style={[
-        styles.timerPill,
         {
-          backgroundColor: withOpacity(urgencyColor, 0.18),
-          borderColor: urgencyColor,
+          minWidth: 92,
+          paddingVertical: 6,
+          borderWidth: 1,
+          backgroundColor: withOpacity(urgencyColor, pulsing ? 0.12 : 0.06),
+          borderColor: withOpacity(urgencyColor, pulsing ? 0.9 : 0.35),
           boxShadow: pulsing ? `0px 0px 15px ${withOpacity(urgencyColor, 0.5)}` : undefined,
         },
         animatedStyle,
       ]}
     >
-      <Text style={[styles.timerText, { color: urgencyColor }]}>{formatClockMs(remainingMs)}</Text>
+      <Text className="font-display-hero" style={{ fontSize: 22, color: urgencyColor }}>
+        {formatClockMs(remainingMs)}
+      </Text>
     </Animated.View>
   );
 }
 
-function MoveTicker() {
-  const [textWidth, setTextWidth] = useState(0);
-  const translateX = useSharedValue(0);
-
-  useEffect(() => {
-    if (textWidth === 0) return;
-    translateX.value = 0;
-    translateX.value = withRepeat(withTiming(-textWidth, { duration: 14000, easing: Easing.linear }), -1, false);
-  }, [textWidth, translateX]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
-  return (
-    <View style={styles.tickerContainer}>
-      <Animated.Text
-        onLayout={(e) => setTextWidth(e.nativeEvent.layout.width)}
-        style={[styles.tickerText, animatedStyle]}
-        numberOfLines={1}
-      >
-        {MOVE_HISTORY + MOVE_HISTORY}
-      </Animated.Text>
-    </View>
-  );
-}
-
-function ActionBar({
-  onResign,
-  mode,
-  unreadCount,
-  onOpenChat,
-}: {
-  onResign: () => void;
-  mode: GameMode;
-  unreadCount: number;
-  onOpenChat: () => void;
-}) {
-  return (
-    <View style={styles.actionBarWrap}>
-      <RockCard style={styles.actionBarCard}>
-        <View style={styles.actionBarRow}>
-          <ActionButton
-            icon="message-text-outline"
-            label="Chat"
-            colors={[Colors.chromeDark, Colors.bgBase]}
-            onPress={onOpenChat}
-            badgeCount={mode === 'online' ? unreadCount : 0}
-            disabled={mode !== 'online'}
-          />
-          <ActionButton
-            icon="lightbulb-on-outline"
-            label="Hint"
-            colors={[Colors.cyan, Colors.cyan]}
-            onPress={() => console.log('Hint pressed')}
-          />
-          <ActionButton
-            icon="flag"
-            label=""
-            colors={[Colors.crimson, Colors.crimson]}
-            shape="circle"
-            size={60}
-            iconSize={24}
-            onPress={onResign}
-          />
-          <ActionButton
-            icon="handshake"
-            label="Draw"
-            colors={[Colors.chromeDark, Colors.bgBase]}
-            onPress={() => console.log('Draw offered')}
-          />
-          <ActionButton
-            icon="menu"
-            label="Menu"
-            colors={[Colors.chromeDark, Colors.bgBase]}
-            onPress={() => console.log('Menu pressed')}
-          />
-        </View>
-      </RockCard>
-    </View>
-  );
-}
-
-function ActionButton({
+function ActionPillButton({
   icon,
   label,
-  colors,
   onPress,
-  shape = 'square',
-  size = 52,
-  iconSize = 20,
-  badgeCount = 0,
+  tone = 'neutral',
   disabled = false,
+  badgeCount = 0,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   label: string;
-  colors: readonly [ColorValue, ColorValue];
   onPress: () => void;
-  shape?: 'square' | 'circle';
-  size?: number;
-  iconSize?: number;
-  badgeCount?: number;
+  tone?: 'neutral' | 'danger';
   disabled?: boolean;
+  badgeCount?: number;
 }) {
-  const radius = shape === 'circle' ? size / 2 : Radius.md;
+  const bg = tone === 'danger' ? Colors.crimson : withOpacity(Colors.chromeDark, 0.25);
+  const border = tone === 'danger' ? withOpacity(Colors.textPrimary, 0.2) : withOpacity(Colors.chromeDark, 0.4);
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
-      style={({ pressed }) => [
-        styles.actionButton,
-        {
-          width: size,
-          height: size,
-          borderRadius: radius,
-          boxShadow: `0px 4px 12px ${withOpacity(Colors.bgBase, 0.7)}, 0px 0px 14px ${withOpacity(String(colors[0]), 0.4)}`,
-          transform: [{ scale: pressed ? 0.92 : 1 }],
-          opacity: disabled ? 0.4 : 1,
-        },
-      ]}
+      className="h-12 flex-1 flex-row items-center justify-center gap-1 rounded-lg"
+      style={{ backgroundColor: bg, borderWidth: 1, borderColor: border, opacity: disabled ? 0.4 : 1 }}
     >
-      <LinearGradient
-        pointerEvents="none"
-        colors={colors}
-        style={[StyleSheet.absoluteFillObject, { borderRadius: radius }]}
-      />
-      <LinearGradient
-        pointerEvents="none"
-        colors={[withOpacity(Colors.chrome, 0.4), withOpacity(Colors.chrome, 0)]}
-        style={[styles.actionButtonGloss, { borderRadius: radius }]}
-      />
-      <MaterialCommunityIcons name={icon} size={iconSize} color={Colors.textPrimary} />
-      {label ? <Text style={styles.actionButtonLabel}>{label}</Text> : null}
+      <MaterialCommunityIcons name={icon} size={16} color={Colors.textPrimary} />
+      <Text className="font-button-label uppercase text-text-primary" style={{ fontSize: 13 }}>
+        {label}
+      </Text>
       {badgeCount > 0 ? (
-        <View style={styles.actionButtonBadge}>
-          <Text style={styles.actionButtonBadgeText}>{badgeCount > 9 ? '9+' : badgeCount}</Text>
+        <View
+          className="absolute items-center justify-center rounded-full px-1"
+          style={{ top: -4, right: -4, minWidth: 16, height: 16, backgroundColor: Colors.emberLight }}
+        >
+          <Text className="font-heading-md" style={{ fontSize: 9, color: Colors.bgBase }}>
+            {badgeCount > 9 ? '9+' : badgeCount}
+          </Text>
         </View>
       ) : null}
     </Pressable>
   );
 }
 
+// #region Styles
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -601,160 +532,5 @@ const styles = StyleSheet.create({
     height: '22%',
     opacity: 0.35,
   },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.sm,
-  },
-  topBarTitle: {
-    fontFamily: Fonts.display,
-    fontSize: 16,
-    color: Colors.cyan,
-    fontStyle: 'italic',
-    letterSpacing: 0.5,
-  },
-  xpPill: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 4,
-    borderRadius: Radius.full,
-    backgroundColor: withOpacity(Colors.cyan, 0.1),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.cyan, 0.2),
-  },
-  xpPillText: {
-    fontFamily: Fonts.heading,
-    fontSize: 12,
-    color: Colors.cyan,
-  },
-  middle: {
-    flex: 1,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-    justifyContent: 'space-between',
-  },
-  playerBlock: {
-    gap: 4,
-  },
-  playerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.sm,
-  },
-  capturedRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 2,
-    paddingHorizontal: Spacing.sm,
-  },
-  capturedGlyph: {
-    fontSize: 14,
-    opacity: 0.85,
-  },
-  playerCard: {
-    flexShrink: 1,
-  },
-  playerCardInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  playerCardName: {
-    fontFamily: Fonts.display,
-    fontSize: 13,
-    color: Colors.textPrimary,
-    textTransform: 'uppercase',
-  },
-  playerCardRank: {
-    fontFamily: Fonts.heading,
-    fontSize: 10,
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-  },
-  timerPill: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.md,
-    borderWidth: 1.5,
-  },
-  timerText: {
-    fontFamily: Fonts.display,
-    fontSize: 16,
-  },
-  tickerContainer: {
-    height: 28,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    backgroundColor: withOpacity(Colors.bgPanel, 0.6),
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: withOpacity(Colors.cyan, 0.2),
-  },
-  tickerText: {
-    fontFamily: Fonts.heading,
-    fontSize: 12,
-    color: Colors.cyan,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    width: 2000,
-  },
-  actionBarWrap: {
-    marginTop: Spacing.xs,
-  },
-  actionBarCard: {},
-  actionBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-  },
-  actionButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  actionButtonGloss: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '45%',
-  },
-  actionButtonLabel: {
-    fontFamily: Fonts.heading,
-    fontSize: 9,
-    // Pinned explicitly (not left to the font's natural metrics) -- custom
-    // TTFs like Oswald can report a much taller default line height on
-    // native than in a browser, which combined with actionButton's
-    // overflow: 'hidden' silently clipped the bottom of this label on
-    // native even though it looked fine on web.
-    lineHeight: 11,
-    color: withOpacity(Colors.textPrimary, 0.85),
-    textTransform: 'uppercase',
-    marginTop: 2,
-  },
-  actionButtonBadge: {
-    position: 'absolute',
-    top: 3,
-    right: 3,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.emberLight,
-    boxShadow: `0px 0px 8px ${withOpacity(Colors.emberLight, 0.6)}`,
-  },
-  actionButtonBadgeText: {
-    fontFamily: Fonts.heading,
-    fontSize: 9,
-    color: Colors.bgBase,
-  },
-  navWrap: {
-    left: 0,
-    right: 0,
-  },
 });
+// #endregion

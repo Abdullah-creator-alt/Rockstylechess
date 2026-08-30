@@ -1,16 +1,14 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
 
-import { ChessBoard, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, ChessBoard, CurrencyPill, PlayerAvatar, RockButton } from '@/components/ui';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
+import { SubPageHeader } from '@/components/layout';
 import { AVATARS } from '@/constants/avatars';
 import { BOARD_THEMES, getBoardTheme, type BoardTheme } from '@/constants/boardThemes';
 import { PIECE_SETS, type PieceSet } from '@/constants/pieceSets';
-import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { unlockCosmetic, updateProfile } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
@@ -31,9 +29,7 @@ const TABS: { key: ForgeCategory; label: string }[] = [
 ];
 
 export default function ForgeScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { profile, refresh: refreshProfile } = usePlayerProfile();
+  const { profile, gems, refresh: refreshProfile } = usePlayerProfile();
   const [activeTab, setActiveTab] = useState<ForgeCategory>('boards');
   const [selected, setSelected] = useState<Record<ForgeCategory, string>>({
     boards: 'classic-chrome',
@@ -163,125 +159,136 @@ export default function ForgeScreen() {
         : AVATARS.find((o) => o.id === selected.avatars)?.name;
 
   return (
-    <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>The Forge</Text>
-        <View style={{ width: 38 }} />
-      </View>
+    <View className="flex-1 bg-bg-base">
+      <SubPageHeader title="The Forge" trailing={<CurrencyPill type="gems" value={gems} />} />
 
-      <View style={styles.tabBar}>
-        {TABS.map((tab) => (
-          <Pressable
-            key={tab.key}
-            onPress={() => setActiveTab(tab.key)}
-            style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]}
-          >
-            <Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>{tab.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {activeTab === 'boards' ? (
-          <ChessBoard theme={getBoardTheme(selected.boards)} style={styles.boardPreview} />
-        ) : null}
-        {activeTab === 'pieces' ? (
-          <ChessBoard pieceSprites={getPieceSprites(selected.pieces)} style={styles.boardPreview} />
-        ) : null}
-
-        <View style={styles.grid}>
-          {activeTab === 'boards'
-            ? BOARD_THEMES.map((option) => {
-                const showLocked = option.locked && !isBoardOwned(option.id);
-                return (
-                  <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('boards', option)}>
-                    <RockCard
-                      glowColor={selected.boards === option.id ? Colors.cyan : undefined}
-                      style={selected.boards === option.id ? styles.optionCardActive : styles.optionCard}
-                    >
-                      <View style={[styles.optionInner, showLocked && styles.optionInnerLocked]}>
-                        <BoardSwatch light={option.squares.light[3]} dark={option.squares.dark[3]} />
-                        <Text style={[styles.optionName, showLocked && styles.optionNameLocked]}>{option.name}</Text>
-                        {showLocked ? <LockBadge gemPrice={option.gemPrice} chipPrice={option.chipPrice} /> : null}
-                      </View>
-                    </RockCard>
-                  </Pressable>
-                );
-              })
-            : null}
-
-          {activeTab === 'pieces'
-            ? PIECE_SETS.map((option) => {
-                const showLocked = option.locked && !isPieceOwned(option.id);
-                return (
-                  <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('pieces', option)}>
-                    <RockCard
-                      glowColor={selected.pieces === option.id ? Colors.cyan : undefined}
-                      style={selected.pieces === option.id ? styles.optionCardActive : styles.optionCard}
-                    >
-                      <View style={[styles.optionInner, showLocked && styles.optionInnerLocked]}>
-                        <PieceSwatch setId={option.id} />
-                        <Text style={[styles.optionName, showLocked && styles.optionNameLocked]}>{option.name}</Text>
-                        {showLocked ? <LockBadge gemPrice={option.gemPrice} chipPrice={option.chipPrice} /> : null}
-                      </View>
-                    </RockCard>
-                  </Pressable>
-                );
-              })
-            : null}
-
-          {activeTab === 'avatars'
-            ? AVATARS.map((option) => (
-                <Pressable key={option.id} style={styles.gridSlot} onPress={() => handleSelect('avatars', option)}>
-                  <RockCard
-                    glowColor={selected.avatars === option.id ? Colors.cyan : undefined}
-                    style={selected.avatars === option.id ? styles.optionCardActive : styles.optionCard}
-                  >
-                    <View style={[styles.optionInner, option.locked && styles.optionInnerLocked]}>
-                      <PlayerAvatar
-                        emoji={option.locked ? '🔒' : option.emoji}
-                        size="medium"
-                        selected={selected.avatars === option.id}
-                      />
-                      <Text style={[styles.optionName, option.locked && styles.optionNameLocked]}>{option.name}</Text>
-                      {option.locked ? <LockBadge gemPrice={option.gemPrice} /> : null}
-                    </View>
-                  </RockCard>
-                </Pressable>
-              ))
-            : null}
+      <ScrollView contentContainerClassName="mx-auto w-full max-w-2xl gap-lg px-margin-mobile py-md" contentContainerStyle={{ paddingBottom: 140 }}>
+        <View className="w-full flex-row rounded-lg p-1" style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.4) }}>
+          {TABS.map((tab) => (
+            <Pressable key={tab.key} onPress={() => setActiveTab(tab.key)} className="flex-1 items-center rounded-md py-2" style={activeTab === tab.key ? { backgroundColor: Colors.cyan } : undefined}>
+              <Text className="font-button-label text-button-label uppercase" style={{ color: activeTab === tab.key ? Colors.bgPanel : Colors.textMuted }}>
+                {tab.label}
+              </Text>
+            </Pressable>
+          ))}
         </View>
 
-        <View style={styles.bottomSpacer} />
+        <View className="overflow-hidden rounded-xl" style={{ minHeight: 300, backgroundColor: withOpacity(Colors.bgPanel, 0.6), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}>
+          <View className="absolute top-0 z-10 w-full flex-row items-center justify-between p-sm" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.5), borderBottomWidth: 1, borderBottomColor: withOpacity(Colors.chromeDark, 0.3) }}>
+            <Text className="font-heading-md text-heading-md tracking-wide text-cyan">{(selectedName ?? '').toUpperCase()}</Text>
+            <View className="rounded px-2 py-1" style={{ backgroundColor: withOpacity(Colors.cyan, 0.2) }}>
+              <Text className="font-button-label text-caption text-cyan">EQUIPPED</Text>
+            </View>
+          </View>
+          <View className="flex-1 items-center justify-center px-4 pb-4 pt-12">
+            {activeTab === 'avatars' ? (
+              <PlayerAvatar emoji={AVATARS.find((a) => a.id === selected.avatars)?.emoji} size="large" selected />
+            ) : (
+              <View style={{ width: '100%', maxWidth: 260 }}>
+                {activeTab === 'boards' ? <ChessBoard theme={getBoardTheme(selected.boards)} /> : <ChessBoard pieceSprites={getPieceSprites(selected.pieces)} />}
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View className="gap-sm">
+          <Text className="font-section-header text-section-header uppercase text-text-muted">Available {activeTab}</Text>
+          <View className="flex-row flex-wrap gap-3">
+            {activeTab === 'boards'
+              ? BOARD_THEMES.map((option) => {
+                  const showLocked = option.locked && !isBoardOwned(option.id);
+                  const isSelected = selected.boards === option.id;
+                  return (
+                    <ForgeTile key={option.id} name={option.name} selected={isSelected} locked={showLocked} gemPrice={option.gemPrice} chipPrice={option.chipPrice} onPress={() => handleSelect('boards', option)}>
+                      <BoardSwatch light={option.squares.light[3]} dark={option.squares.dark[3]} />
+                    </ForgeTile>
+                  );
+                })
+              : null}
+
+            {activeTab === 'pieces'
+              ? PIECE_SETS.map((option) => {
+                  const showLocked = option.locked && !isPieceOwned(option.id);
+                  const isSelected = selected.pieces === option.id;
+                  return (
+                    <ForgeTile key={option.id} name={option.name} selected={isSelected} locked={showLocked} gemPrice={option.gemPrice} chipPrice={option.chipPrice} onPress={() => handleSelect('pieces', option)}>
+                      <PieceSwatch setId={option.id} />
+                    </ForgeTile>
+                  );
+                })
+              : null}
+
+            {activeTab === 'avatars'
+              ? AVATARS.map((option) => (
+                  <ForgeTile key={option.id} name={option.name} selected={selected.avatars === option.id} locked={option.locked} gemPrice={option.gemPrice} onPress={() => handleSelect('avatars', option)}>
+                    <View className="flex-1 items-center justify-center" style={{ backgroundColor: withOpacity(Colors.bgBase, 0.5) }}>
+                      <PlayerAvatar emoji={option.locked ? '🔒' : option.emoji} size="small" />
+                    </View>
+                  </ForgeTile>
+                ))
+              : null}
+          </View>
+        </View>
       </ScrollView>
 
-      <View style={[styles.equipBar, { paddingBottom: Spacing.lg + insets.bottom }]}>
+      <View className="absolute bottom-0 left-0 w-full items-center p-margin-mobile pb-8">
         <RockButton
           label={isMutating ? 'Equipping...' : `Equip ${selectedName ?? ''}`}
-          variant="primary"
-          icon={<MaterialCommunityIcons name="hammer" size={20} color={Colors.bgBase} />}
-          onPress={handleEquip}
+          icon={<AppIcon name="bolt" size={20} color={Colors.bgBase} />}
+          variant="cyan"
           disabled={isMutating}
+          onPress={handleEquip}
+          style={{ width: '100%', maxWidth: 380 }}
         />
       </View>
     </View>
   );
 }
 
+function ForgeTile({
+  name,
+  selected,
+  locked,
+  gemPrice,
+  chipPrice,
+  onPress,
+  children,
+}: {
+  name: string;
+  selected: boolean;
+  locked: boolean;
+  gemPrice?: number;
+  chipPrice?: number;
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Pressable onPress={onPress} style={{ width: '30%', aspectRatio: 1 }} className="overflow-hidden rounded-lg">
+      <View style={{ width: '100%', height: '100%', opacity: locked ? undefined : selected ? 1 : 0.6 }}>{children}</View>
+      <View style={{ position: 'absolute', inset: 0, borderWidth: selected ? 2 : 1, borderColor: selected ? Colors.cyan : withOpacity(Colors.chromeDark, 0.5), borderRadius: 8 }} />
+      {locked ? (
+        <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: withOpacity(Colors.bgBase, 0.6) }}>
+          <AppIcon name="lock" size={24} color={Colors.textMuted} />
+          <View className="mt-1 flex-row items-center rounded-full px-2 py-0.5" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.8), borderWidth: 1, borderColor: Colors.chromeDark }}>
+            <AppIcon name={gemPrice ? 'diamond' : 'toll'} size={12} color={gemPrice ? Colors.cyan : Colors.gold} />
+            <Text className="ml-1 font-caption text-caption text-text-primary">{(gemPrice ?? chipPrice ?? 0).toLocaleString()}</Text>
+          </View>
+        </View>
+      ) : null}
+      <View className="absolute bottom-0 w-full items-center py-1" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.9), borderTopWidth: selected ? 1 : 0, borderTopColor: withOpacity(Colors.cyan, 0.5) }}>
+        <Text className="font-caption text-caption" style={{ color: locked ? Colors.chromeDark : selected ? Colors.cyan : Colors.textMuted }}>
+          {name}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function BoardSwatch({ light, dark }: { light: string; dark: string }) {
   return (
-    <View style={styles.boardSwatch}>
+    <View className="flex-1 flex-row flex-wrap">
       {Array.from({ length: 4 }).map((_, i) => (
-        <View
-          key={i}
-          style={[
-            styles.boardSwatchCell,
-            { backgroundColor: (Math.floor(i / 2) + i) % 2 === 0 ? light : dark },
-          ]}
-        />
+        <View key={i} style={{ width: '50%', height: '50%', backgroundColor: (Math.floor(i / 2) + i) % 2 === 0 ? light : dark }} />
       ))}
     </View>
   );
@@ -289,186 +296,5 @@ function BoardSwatch({ light, dark }: { light: string; dark: string }) {
 
 function PieceSwatch({ setId }: { setId: string }) {
   const sprite = getPieceSprites(setId).wk;
-  return (
-    <View style={styles.pieceSwatch}>
-      {sprite ? <Image source={sprite} contentFit="contain" style={styles.pieceSwatchImage} /> : null}
-    </View>
-  );
+  return <View className="flex-1 items-center justify-center" style={{ backgroundColor: withOpacity(Colors.bgBase, 0.5) }}>{sprite ? <Image source={sprite} contentFit="contain" style={{ width: '70%', height: '70%' }} /> : null}</View>;
 }
-
-function LockBadge({ gemPrice, chipPrice }: { gemPrice?: number; chipPrice?: number }) {
-  return (
-    <View style={styles.lockBadgeStack}>
-      {gemPrice ? (
-        <View style={styles.lockBadge}>
-          <MaterialCommunityIcons name="diamond-stone" size={11} color={Colors.emberLight} />
-          <Text style={styles.lockBadgeText}>{gemPrice.toLocaleString()}</Text>
-        </View>
-      ) : null}
-      {chipPrice ? (
-        <View style={styles.lockBadge}>
-          <MaterialCommunityIcons name="poker-chip" size={11} color={Colors.emberLight} />
-          <Text style={styles.lockBadgeText}>{chipPrice.toLocaleString()}</Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.bgBase,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: withOpacity(Colors.bgPanel, 0.8),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.chromeDark, 0.4),
-  },
-  headerTitle: {
-    fontFamily: Fonts.display,
-    fontSize: 18,
-    color: Colors.textPrimary,
-    textTransform: 'uppercase',
-    flex: 1,
-    textAlign: 'center',
-  },
-  tabBar: {
-    flexDirection: 'row',
-    marginHorizontal: Spacing.lg,
-    backgroundColor: withOpacity(Colors.bgPanel, 0.7),
-    borderRadius: Radius.md,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.chromeDark, 0.3),
-    gap: 4,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-  },
-  tabButtonActive: {
-    backgroundColor: Colors.cyan,
-    boxShadow: `0px 0px 15px ${withOpacity(Colors.cyan, 0.4)}`,
-  },
-  tabLabel: {
-    fontFamily: Fonts.heading,
-    fontSize: 12,
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  tabLabelActive: {
-    color: Colors.bgBase,
-  },
-  scrollContent: {
-    padding: Spacing.lg,
-    paddingBottom: 30,
-  },
-  boardPreview: {
-    alignSelf: 'center',
-    width: 260,
-    marginBottom: Spacing.lg,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: Spacing.md,
-  },
-  gridSlot: {
-    width: '48%',
-  },
-  optionCard: {},
-  optionCardActive: {},
-  optionInner: {
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  optionInnerLocked: {
-    opacity: 0.6,
-  },
-  optionName: {
-    fontFamily: Fonts.heading,
-    fontSize: 12,
-    color: Colors.cyan,
-    textTransform: 'uppercase',
-    textAlign: 'center',
-  },
-  optionNameLocked: {
-    color: Colors.textMuted,
-  },
-  boardSwatch: {
-    width: 56,
-    height: 56,
-    borderRadius: Radius.sm,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.bgBase, 0.4),
-  },
-  boardSwatchCell: {
-    width: '50%',
-    height: '50%',
-  },
-  pieceSwatch: {
-    width: 56,
-    height: 56,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: withOpacity(Colors.bgBase, 0.5),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.chromeDark, 0.4),
-  },
-  pieceSwatchImage: {
-    width: '78%',
-    height: '78%',
-  },
-  lockBadgeStack: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  lockBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: withOpacity(Colors.bgBase, 0.5),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.emberLight, 0.5),
-  },
-  lockBadgeText: {
-    fontFamily: Fonts.heading,
-    fontSize: 10,
-    color: Colors.emberLight,
-  },
-  bottomSpacer: {
-    height: 20,
-  },
-  equipBar: {
-    padding: Spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: withOpacity(Colors.chromeDark, 0.3),
-    backgroundColor: withOpacity(Colors.bgPanel, 0.9),
-  },
-});

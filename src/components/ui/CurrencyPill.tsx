@@ -52,6 +52,7 @@ export function CurrencyPill({ type, value, onPressAdd }: CurrencyPillProps) {
   );
 }
 
+// #region Styles
 const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
@@ -84,3 +85,4 @@ const styles = StyleSheet.create({
     color: Colors.bgBase,
   },
 });
+// #endregion

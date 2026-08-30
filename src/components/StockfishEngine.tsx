@@ -142,6 +142,7 @@ export const StockfishEngine = forwardRef<StockfishEngineHandle, StockfishEngine
   );
 });
 
+// #region Styles
 const styles = StyleSheet.create({
   hiddenContainer: {
     position: 'absolute',
@@ -159,3 +160,4 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
 });
+// #endregion

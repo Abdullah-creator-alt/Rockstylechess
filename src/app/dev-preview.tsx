@@ -98,6 +98,7 @@ export default function DevPreviewScreen() {
   );
 }
 
+// #region Styles
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -147,3 +148,4 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
 });
+// #endregion

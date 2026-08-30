@@ -1,3 +1,5 @@
+import '../../global.css';
+
 import { Anton_400Regular } from '@expo-google-fonts/anton';
 import { Inter_400Regular } from '@expo-google-fonts/inter';
 import { Oswald_600SemiBold } from '@expo-google-fonts/oswald';

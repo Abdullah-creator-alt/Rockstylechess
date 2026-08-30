@@ -146,6 +146,7 @@ export default function PuzzleMatchScreen() {
   );
 }
 
+// #region Styles
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -253,3 +254,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+// #endregion

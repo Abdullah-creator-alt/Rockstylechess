@@ -18,8 +18,16 @@ export type { NavTab } from './BottomNav';
 
 export { EmberParticles } from './EmberParticles';
 
+export { ScreenBackdrop } from './ScreenBackdrop';
+
 export { ChessBoard } from './ChessBoard';
 
 export { ChatPanel } from './ChatPanel';
 
 export { ChatToast } from './ChatToast';
+
+export { AppIcon } from './AppIcon';
+
+export { GlowBox } from './GlowBox';
+
+export { ConfirmModal } from './ConfirmModal';

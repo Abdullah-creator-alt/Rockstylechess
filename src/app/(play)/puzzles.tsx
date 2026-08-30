@@ -1,11 +1,13 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { memo } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomNav, RockCard, SectionLabel } from '@/components/ui';
-import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
+import { SubPageHeader } from '@/components/layout';
+import { AppIcon, BottomNav, CurrencyPill, RockCard, ScreenBackdrop, SectionLabel } from '@/components/ui';
+import { ScreenArt } from '@/constants/screenArt';
+import { Colors, Spacing, withOpacity } from '@/constants/theme';
+import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { PUZZLES, type PuzzleEntry } from '@/lib/puzzleCatalog';
 
 // Same 200-point bands scripts/curate-puzzles.mjs curated by -- grouping the
@@ -51,21 +53,39 @@ const PuzzleRow = memo(function PuzzleRow({
   onPress: (puzzle: PuzzleEntry) => void;
 }) {
   return (
-    <Pressable onPress={() => onPress(puzzle)}>
-      <RockCard style={styles.puzzleRow}>
-        <View style={styles.puzzleRowInner}>
-          <View style={styles.ratingPill}>
-            <MaterialCommunityIcons name="puzzle" size={14} color={Colors.cyan} />
-            <Text style={styles.ratingPillText}>{puzzle.rating}</Text>
+    <Pressable onPress={() => onPress(puzzle)} style={{ marginTop: Spacing.sm }}>
+      <RockCard>
+        <View className="flex-row items-center gap-md">
+          <View
+            className="h-14 w-14 items-center justify-center rounded-md"
+            style={{ backgroundColor: withOpacity(Colors.cyan, 0.1), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.25) }}
+          >
+            <AppIcon name="extension" size={26} color={Colors.cyan} />
           </View>
-          <View style={styles.themeRow}>
-            {puzzle.themes.slice(0, 2).map((theme) => (
-              <View key={theme} style={styles.themeTag}>
-                <Text style={styles.themeTagText}>{theme}</Text>
-              </View>
-            ))}
+
+          <View className="flex-1 gap-xs">
+            <View
+              className="flex-row items-center gap-1 self-start rounded-full px-sm"
+              style={{ paddingVertical: 3, backgroundColor: withOpacity(Colors.cyan, 0.14), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.4) }}
+            >
+              <AppIcon name="extension" size={12} color={Colors.cyan} />
+              <Text className="font-heading-md text-cyan" style={{ fontSize: 12 }}>
+                {puzzle.rating}
+              </Text>
+            </View>
+
+            <View className="flex-row flex-wrap gap-xs">
+              {puzzle.themes.slice(0, 2).map((theme) => (
+                <View key={theme} className="rounded-full px-sm" style={{ paddingVertical: 3, backgroundColor: withOpacity(Colors.chrome, 0.1) }}>
+                  <Text className="font-body-sm text-text-muted" style={{ fontSize: 11, textTransform: 'capitalize' }}>
+                    {theme}
+                  </Text>
+                </View>
+              ))}
+            </View>
           </View>
-          <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textMuted} />
+
+          <AppIcon name="chevron_right" size={20} color={Colors.textMuted} />
         </View>
       </RockCard>
     </Pressable>
@@ -75,20 +95,16 @@ const PuzzleRow = memo(function PuzzleRow({
 export default function PuzzlesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { gems } = usePlayerProfile();
 
   function handlePuzzlePress(puzzle: PuzzleEntry) {
     router.push({ pathname: '/puzzle-match', params: { puzzleId: puzzle.id } });
   }
 
   return (
-    <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Puzzles</Text>
-        <View style={styles.backButton} />
-      </View>
+    <View className="flex-1 bg-bg-base">
+      <ScreenBackdrop source={ScreenArt.puzzlesBoard} opacity={0.2} />
+      <SubPageHeader title="Puzzles" trailing={<CurrencyPill type="gems" value={gems} />} />
 
       {/* SectionList (not ScrollView+map) -- ~250 puzzles as plain mapped
           RockCards meant ~4,000 native views mounting synchronously on
@@ -109,111 +125,32 @@ export default function PuzzlesScreen() {
         stickySectionHeadersEnabled={false}
       />
 
-      <View style={styles.navWrap}>
-        <BottomNav
-          activeTab="play"
-          onTabPress={(tab) => {
-            if (tab === 'ranks') router.push('/world-rankings');
-            else if (tab === 'profile') router.push('/iron-id');
-            else if (tab === 'shop') router.push('/shop');
-            else console.log('tab pressed', tab);
-          }}
-        />
-      </View>
+      <BottomNav
+        activeTab="play"
+        onTabPress={(tab) => {
+          if (tab === 'ranks') router.push('/world-rankings');
+          else if (tab === 'profile') router.push('/iron-id');
+          else if (tab === 'shop') router.push('/shop');
+          else console.log('tab pressed', tab);
+        }}
+      />
     </View>
   );
 }
 
+// #region Styles
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.bgBase,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: withOpacity(Colors.bgPanel, 0.8),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.chromeDark, 0.4),
-  },
-  headerTitle: {
-    fontFamily: Fonts.display,
-    fontSize: 15,
-    color: Colors.textPrimary,
-    textTransform: 'uppercase',
-    flex: 1,
-    textAlign: 'center',
-  },
   scrollContent: {
     padding: Spacing.lg,
     paddingBottom: 110,
   },
   // SectionList renders headers and rows as flat siblings (no per-section
   // wrapper to put a `gap` on) -- this margin is what separates one rating
-  // band from the next; puzzleRow's own marginTop handles spacing between
+  // band from the next; PuzzleRow's own marginTop handles spacing between
   // a header and its first row, and between consecutive rows.
   sectionHeader: {
     marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
-  puzzleRow: {
-    marginTop: Spacing.sm,
-  },
-  puzzleRowInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  ratingPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: withOpacity(Colors.cyan, 0.14),
-    borderWidth: 1,
-    borderColor: withOpacity(Colors.cyan, 0.4),
-  },
-  ratingPillText: {
-    fontFamily: Fonts.heading,
-    fontSize: 12,
-    color: Colors.cyan,
-  },
-  themeRow: {
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
-  },
-  themeTag: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: withOpacity(Colors.chrome, 0.1),
-  },
-  themeTagText: {
-    fontFamily: Fonts.body,
-    fontSize: 11,
-    color: Colors.textMuted,
-    textTransform: 'capitalize',
-  },
-  navWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
 });
+// #endregion
