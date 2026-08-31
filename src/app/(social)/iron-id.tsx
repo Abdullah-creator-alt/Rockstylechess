@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, BottomNav, CurrencyPill, PlayerAvatar, ProgressBar, RockButton, RockCard } from '@/components/ui';
-import { getAvatarEmoji } from '@/constants/avatars';
+import { getAvatarImage } from '@/constants/avatars';
 import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
 import { getMyMatches, getMyProfile, type MatchHistoryEntry, type PlayerProfile } from '@/lib/api';
@@ -146,15 +146,15 @@ export default function IronIdScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.cyan} />}
         >
-          <RockCard>
+          <RockCard variant="surface">
             <View className="items-center gap-sm">
-              <PlayerAvatar emoji={getAvatarEmoji(profile.avatarId)} size="large" level={profile.level} />
-              <Text className="font-display-hero text-cyan" style={{ fontSize: 22, textTransform: 'uppercase' }}>
+              <PlayerAvatar source={getAvatarImage(profile.avatarId)} size="large" level={profile.level} />
+              <Text className="font-heading-md text-heading-md uppercase tracking-wide text-cyan">
                 {profile.displayName ?? 'Player'}
               </Text>
-              <View className="flex-row items-center gap-1">
-                <MaterialCommunityIcons name="medal" size={16} color={Colors.cyan} />
-                <Text className="font-section-header text-section-header uppercase tracking-wide text-text-muted">{tierLabel(profile.rating)}</Text>
+              <View className="flex-row items-center gap-xs">
+                <AppIcon name="workspace_premium" size={18} color={Colors.ember} />
+                <Text className="font-heading-md text-body-base uppercase text-ember">{tierLabel(profile.rating)}</Text>
               </View>
               <View style={{ width: '70%', marginTop: 4 }}>
                 <ProgressBar progress={levelProgress.progress} height={6} label={`${levelProgress.xpIntoLevel.toLocaleString()} / ${levelProgress.xpForNextLevel.toLocaleString()} XP`} />
@@ -165,7 +165,7 @@ export default function IronIdScreen() {
           <View className="flex-row gap-sm">
             {SOCIAL_LINKS.map((link) => (
               <Pressable key={link.id} style={{ flex: 1 }} onPress={() => router.push(link.route)}>
-                <RockCard glowColor={link.accent}>
+                <RockCard variant="surface" glowColor={link.accent} contentPadding={12}>
                   <View className="items-center gap-1">
                     <AppIcon name={link.icon} size={24} color={link.accent} />
                     <Text className="font-section-header text-caption uppercase text-text-primary">{link.label}</Text>
@@ -176,7 +176,7 @@ export default function IronIdScreen() {
           </View>
 
           <View className="flex-row flex-wrap gap-gutter">
-            <RockCard style={{ width: '47%' }}>
+            <RockCard variant="surface" contentPadding={12} style={{ width: '47%' }}>
               <View className="items-center justify-center">
                 <AppIcon name="trending_up" size={22} color={Colors.cyan} />
                 <Text className="mt-xs font-heading-md text-heading-md" style={{ color: Colors.emberLight }}>
@@ -185,7 +185,7 @@ export default function IronIdScreen() {
                 <Text className="font-caption text-caption uppercase tracking-wide text-text-muted">Win Rate</Text>
               </View>
             </RockCard>
-            <RockCard style={{ width: '47%' }}>
+            <RockCard variant="surface" contentPadding={12} style={{ width: '47%' }}>
               <View className="items-center justify-center">
                 <AppIcon name="sports_esports" size={22} color={Colors.cyan} />
                 <Text className="mt-xs font-heading-md text-heading-md" style={{ color: Colors.emberLight }}>
@@ -194,7 +194,7 @@ export default function IronIdScreen() {
                 <Text className="font-caption text-caption uppercase tracking-wide text-text-muted">Win Streak</Text>
               </View>
             </RockCard>
-            <RockCard style={{ width: '100%' }}>
+            <RockCard variant="surface" style={{ width: '100%' }}>
               <View className="flex-row items-center justify-between">
                 <View>
                   <Text className="font-caption text-caption uppercase tracking-wide text-text-muted">Global Rating</Text>
@@ -215,14 +215,20 @@ export default function IronIdScreen() {
           </View>
 
           <View>
-            <Text className="mb-md font-display-hero text-cyan" style={{ fontSize: 20, textTransform: 'uppercase' }}>
+            <Text
+              className="mb-md pb-xs font-section-header text-section-header uppercase text-text-muted"
+              style={{ borderBottomWidth: 1, borderBottomColor: withOpacity(Colors.chromeDark, 0.3) }}
+            >
               Trophy Case
             </Text>
             <View className="flex-row gap-sm">
               {TROPHIES.map((trophy) => (
                 <View key={trophy.id} className="flex-1 items-center gap-sm rounded-lg p-md" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.5), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.2) }}>
-                  <View className="h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.bgBase, 0.4), boxShadow: `0px 0px 15px ${withOpacity(trophy.accent, 0.25)}` }}>
-                    <AppIcon name={trophy.icon} size={32} color={trophy.accent} />
+                  <View
+                    className="h-16 w-16 items-center justify-center rounded-full"
+                    style={{ backgroundColor: withOpacity(trophy.accent, 0.1), borderWidth: 0.5, borderColor: Colors.chromeDark, boxShadow: `0px 0px 18px ${withOpacity(trophy.accent, 0.3)}` }}
+                  >
+                    <AppIcon name={trophy.icon} size={28} color={trophy.accent} />
                   </View>
                   <Text className="text-center font-section-header text-caption text-text-primary">{trophy.label}</Text>
                 </View>
@@ -240,7 +246,10 @@ export default function IronIdScreen() {
           </View>
 
           <View>
-            <Text className="mb-md font-display-hero text-cyan" style={{ fontSize: 20, textTransform: 'uppercase' }}>
+            <Text
+              className="mb-md pb-xs font-section-header text-section-header uppercase text-text-muted"
+              style={{ borderBottomWidth: 1, borderBottomColor: withOpacity(Colors.chromeDark, 0.3) }}
+            >
               Match History
             </Text>
             {matches.length === 0 ? (
@@ -257,25 +266,25 @@ export default function IronIdScreen() {
                       })
                     }
                   >
-                    <RockCard>
+                    <RockCard variant="surface" contentPadding={10}>
                       <View className="flex-row items-center gap-md">
                         <View
-                          className="h-12 w-12 items-center justify-center rounded-lg"
+                          className="h-9 w-9 items-center justify-center rounded-full"
                           style={{
-                            backgroundColor: withOpacity(match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold, 0.12),
+                            backgroundColor: withOpacity(match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold, 0.2),
                             borderWidth: 1,
-                            borderColor: withOpacity(match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold, 0.3),
+                            borderColor: withOpacity(match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold, 0.5),
                           }}
                         >
-                          <Text className="font-display-hero" style={{ fontSize: 18, color: match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold }}>
+                          <Text className="font-button-label text-button-label" style={{ color: match.outcome === 'win' ? Colors.cyan : match.outcome === 'loss' ? Colors.crimson : Colors.gold }}>
                             {match.outcome === 'win' ? 'W' : match.outcome === 'loss' ? 'L' : 'D'}
                           </Text>
                         </View>
                         <View className="flex-1">
-                          <Text className="font-heading-md" style={{ fontSize: 13, color: Colors.textPrimary }}>
-                            VS. {match.opponentDisplayName.toUpperCase()}
+                          <Text className="font-body-base text-body-base" style={{ color: Colors.textPrimary }}>
+                            vs. {match.opponentDisplayName.toUpperCase()}
                           </Text>
-                          <Text className="font-body-sm" style={{ fontSize: 11, color: Colors.textMuted, marginTop: 2 }}>
+                          <Text className="font-caption text-caption" style={{ color: Colors.textMuted, marginTop: 2 }}>
                             {formatRelativeTime(match.playedAt)} • {RESULT_LABEL[match.resultType]}
                           </Text>
                         </View>

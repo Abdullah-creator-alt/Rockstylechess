@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router'
 import { Pressable, ScrollView, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { SubPageHeader } from '@/components/layout'
 import { AppIcon, BottomNav, CurrencyPill, ProgressBar, RockButton, RockCard, SectionLabel } from '@/components/ui'
@@ -44,13 +45,14 @@ const UPCOMING_EVENTS: UpcomingEvent[] = [
 
 export default function TournamentsScreen() {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const { chips } = usePlayerProfile()
 
   return (
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Championship Circuit" trailing={<CurrencyPill type="chips" value={chips} />} />
 
-      <ScrollView contentContainerClassName="gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerClassName="gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 110 + insets.bottom }} showsVerticalScrollIndicator={false}>
         <View className="flex-row items-end justify-between">
           <Text className="font-display-hero text-display-hero uppercase text-cyan" style={{ fontSize: 20 }}>
             Live Now
@@ -95,7 +97,7 @@ export default function TournamentsScreen() {
                 className="font-display-hero text-display-hero text-gold"
                 style={{ fontSize: 26, textShadowColor: withOpacity(Colors.gold, 0.4), textShadowRadius: 12, textShadowOffset: { width: 0, height: 0 } }}
               >
-                100,000,000 CHIPS
+                100,000 CHIPS
               </Text>
             </View>
 

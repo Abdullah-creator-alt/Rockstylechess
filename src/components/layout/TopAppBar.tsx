@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppIcon } from '@/components/ui/AppIcon';
 import { CurrencyPill } from '@/components/ui/CurrencyPill';
 import { PlayerAvatar } from '@/components/ui/PlayerAvatar';
-import { getAvatarEmoji } from '@/constants/avatars';
+import { getAvatarImage } from '@/constants/avatars';
 import { Colors } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
@@ -25,7 +25,7 @@ export function TopAppBar() {
       }}
     >
       <Pressable onPress={() => router.push('/iron-id')} className="flex-row items-center gap-sm">
-        <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} size="small" />
+        <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="small" />
         <View>
           <Text className="font-heading-md text-heading-md leading-none text-text-primary">
             {profile?.displayName ?? 'Guest'}
@@ -42,9 +42,6 @@ export function TopAppBar() {
         </Pressable>
         <Pressable onPress={() => router.push('/shop')}>
           <CurrencyPill type="gems" value={gems} />
-        </Pressable>
-        <Pressable onPress={() => router.push('/friends')}>
-          <AppIcon name="group" size={22} color={Colors.textPrimary} />
         </Pressable>
         <Pressable onPress={() => router.push('/backstage-alerts')}>
           <View>

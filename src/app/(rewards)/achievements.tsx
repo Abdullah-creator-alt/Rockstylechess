@@ -1,6 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Pressable, ScrollView, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { SubPageHeader } from '@/components/layout'
 import { CurrencyPill, ProgressBar, RockCard } from '@/components/ui'
@@ -29,13 +30,14 @@ const BADGES: Badge[] = [
 ]
 
 export default function AchievementsScreen() {
+  const insets = useSafeAreaInsets()
   const { gems } = usePlayerProfile()
 
   return (
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Hall of Fame" trailing={<CurrencyPill type="gems" value={gems} />} />
 
-      <ScrollView contentContainerClassName="gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerClassName="gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }} showsVerticalScrollIndicator={false}>
         <RockCard glowColor={Colors.gold}>
           <View className="flex-row flex-wrap items-center gap-lg">
             <View

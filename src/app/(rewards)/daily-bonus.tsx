@@ -3,8 +3,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, CurrencyPill, ProgressBar, RockButton } from '@/components/ui';
+import { AppIcon, CurrencyIcon, CurrencyPill, ProgressBar, RockButton } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
@@ -21,18 +22,17 @@ function dayState(day: number, cycleDay: number): DayState {
   return 'upcoming';
 }
 
-// Icon reflects what the day actually pays out -- a mixed chips+gems day
-// (Gift Box) gets a gift icon, a pure-gems day gets the gem icon, everything
-// else (including the old mock's always-diamond "current day" icon, which
-// was wrong whenever the current day's reward was chips) gets chips.
-function rewardIcon(reward: DailyBonusReward): 'redeem' | 'diamond' | 'toll' {
-  if (reward.chips > 0 && reward.gems > 0) return 'redeem';
-  if (reward.gems > 0) return 'diamond';
-  return 'toll';
+// What the day actually pays out -- a mixed chips+gems day (Gift Box) shows
+// a gift icon; otherwise the canonical chips / gems glyph (CurrencyIcon).
+function rewardKind(reward: DailyBonusReward): 'mixed' | 'gems' | 'chips' {
+  if (reward.chips > 0 && reward.gems > 0) return 'mixed';
+  if (reward.gems > 0) return 'gems';
+  return 'chips';
 }
 
 export default function DailyBonusScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { status: profileStatus, gems, refresh } = usePlayerProfile();
   const [bonusStatus, setBonusStatus] = useState<DailyBonusStatus | null>(null);
   const [claiming, setClaiming] = useState(false);
@@ -87,7 +87,10 @@ export default function DailyBonusScreen() {
       ) : !bonusStatus ? (
         <ActivityIndicator color={Colors.cyan} style={{ marginTop: 48 }} />
       ) : (
-        <ScrollView contentContainerClassName="mx-auto w-full max-w-md gap-xl px-margin-mobile py-xl">
+        <ScrollView
+          contentContainerClassName="mx-auto w-full max-w-md gap-xl px-margin-mobile py-xl"
+          contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}
+        >
           <View className="items-center">
             <Text className="mb-sm text-center font-display-hero text-display-hero uppercase text-text-primary">Daily Streak</Text>
             <Text className="text-center font-body-sm text-body-sm text-text-muted">{streak} day{streak === 1 ? '' : 's'} and counting. Don&apos;t miss a day!</Text>
@@ -116,7 +119,20 @@ export default function DailyBonusScreen() {
                       DAY {reward.day}
                     </Text>
                     <View className="relative mb-sm h-12 w-12 items-center justify-center">
-                      <AppIcon name={rewardIcon(reward)} size={isCurrent ? 44 : 36} color={isCurrent ? Colors.emberLight : isClaimed || claimedToday ? Colors.chromeDark : Colors.textMuted} />
+                      {(() => {
+                        const kind = rewardKind(reward);
+                        const iconColor = isCurrent
+                          ? Colors.emberLight
+                          : isClaimed || claimedToday
+                            ? Colors.chromeDark
+                            : Colors.textMuted;
+                        const iconSize = isCurrent ? 44 : 36;
+                        return kind === 'mixed' ? (
+                          <AppIcon name="redeem" size={iconSize} color={iconColor} />
+                        ) : (
+                          <CurrencyIcon type={kind} size={iconSize} color={iconColor} />
+                        );
+                      })()}
                       {isClaimed || claimedToday ? (
                         <View className="absolute -bottom-1 -right-1 h-6 w-6 items-center justify-center rounded-full bg-bg-base" style={{ borderWidth: 1, borderColor: Colors.cyan }}>
                           <AppIcon name="check" size={14} color={Colors.cyan} />

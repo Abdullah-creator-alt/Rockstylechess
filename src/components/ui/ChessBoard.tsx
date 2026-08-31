@@ -626,7 +626,7 @@ export function ChessBoard({
               <>
                 {dyingGhosts.map((ghost) => (
                   <DyingPieceGhost
-                    key={ghost.id}
+                    key={`ghost-${ghost.id}`}
                     id={ghost.id}
                     type={ghost.type}
                     square={ghost.square}
@@ -650,14 +650,14 @@ export function ChessBoard({
 
                 {checkSquare && checkEffectId > 0 ? (
                   <CheckPulse
-                    key={checkEffectId}
+                    key={`check-${checkEffectId}`}
                     checkSquare={checkSquare}
                     squareSize={squareSize}
                     squareSizeShared={squareSizeShared}
                   />
                 ) : null}
 
-                {checkmateEffectId > 0 ? <CheckmateFlourish key={checkmateEffectId} boardSize={boardSize} /> : null}
+                {checkmateEffectId > 0 ? <CheckmateFlourish key={`mate-${checkmateEffectId}`} boardSize={boardSize} /> : null}
               </>
             ) : null}
             </View>

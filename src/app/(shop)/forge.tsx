@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useState, type ReactNode } from 'react';
 
-import { AppIcon, ChessBoard, CurrencyPill, PlayerAvatar, RockButton } from '@/components/ui';
+import { AppIcon, ChessBoard, CurrencyIcon, CurrencyPill, PlayerAvatar, RockButton } from '@/components/ui';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { SubPageHeader } from '@/components/layout';
 import { AVATARS } from '@/constants/avatars';
@@ -29,6 +30,7 @@ const TABS: { key: ForgeCategory; label: string }[] = [
 ];
 
 export default function ForgeScreen() {
+  const insets = useSafeAreaInsets();
   const { profile, gems, refresh: refreshProfile } = usePlayerProfile();
   const [activeTab, setActiveTab] = useState<ForgeCategory>('boards');
   const [selected, setSelected] = useState<Record<ForgeCategory, string>>({
@@ -162,7 +164,7 @@ export default function ForgeScreen() {
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="The Forge" trailing={<CurrencyPill type="gems" value={gems} />} />
 
-      <ScrollView contentContainerClassName="mx-auto w-full max-w-2xl gap-lg px-margin-mobile py-md" contentContainerStyle={{ paddingBottom: 140 }}>
+      <ScrollView contentContainerClassName="mx-auto w-full max-w-2xl gap-lg px-margin-mobile py-md" contentContainerStyle={{ paddingBottom: 140 + insets.bottom }}>
         <View className="w-full flex-row rounded-lg p-1" style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.4) }}>
           {TABS.map((tab) => (
             <Pressable key={tab.key} onPress={() => setActiveTab(tab.key)} className="flex-1 items-center rounded-md py-2" style={activeTab === tab.key ? { backgroundColor: Colors.cyan } : undefined}>
@@ -182,7 +184,7 @@ export default function ForgeScreen() {
           </View>
           <View className="flex-1 items-center justify-center px-4 pb-4 pt-12">
             {activeTab === 'avatars' ? (
-              <PlayerAvatar emoji={AVATARS.find((a) => a.id === selected.avatars)?.emoji} size="large" selected />
+              <PlayerAvatar source={AVATARS.find((a) => a.id === selected.avatars)?.image} size="large" selected />
             ) : (
               <View style={{ width: '100%', maxWidth: 260 }}>
                 {activeTab === 'boards' ? <ChessBoard theme={getBoardTheme(selected.boards)} /> : <ChessBoard pieceSprites={getPieceSprites(selected.pieces)} />}
@@ -222,7 +224,11 @@ export default function ForgeScreen() {
               ? AVATARS.map((option) => (
                   <ForgeTile key={option.id} name={option.name} selected={selected.avatars === option.id} locked={option.locked} gemPrice={option.gemPrice} onPress={() => handleSelect('avatars', option)}>
                     <View className="flex-1 items-center justify-center" style={{ backgroundColor: withOpacity(Colors.bgBase, 0.5) }}>
-                      <PlayerAvatar emoji={option.locked ? '🔒' : option.emoji} size="small" />
+                      <PlayerAvatar
+                        source={option.locked ? undefined : option.image}
+                        emoji={option.locked ? '🔒' : undefined}
+                        size="small"
+                      />
                     </View>
                   </ForgeTile>
                 ))
@@ -231,7 +237,10 @@ export default function ForgeScreen() {
         </View>
       </ScrollView>
 
-      <View className="absolute bottom-0 left-0 w-full items-center p-margin-mobile pb-8">
+      <View
+        className="absolute bottom-0 left-0 w-full items-center p-margin-mobile"
+        style={{ paddingBottom: insets.bottom + 16 }}
+      >
         <RockButton
           label={isMutating ? 'Equipping...' : `Equip ${selectedName ?? ''}`}
           icon={<AppIcon name="bolt" size={20} color={Colors.bgBase} />}
@@ -270,7 +279,7 @@ function ForgeTile({
         <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: withOpacity(Colors.bgBase, 0.6) }}>
           <AppIcon name="lock" size={24} color={Colors.textMuted} />
           <View className="mt-1 flex-row items-center rounded-full px-2 py-0.5" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.8), borderWidth: 1, borderColor: Colors.chromeDark }}>
-            <AppIcon name={gemPrice ? 'diamond' : 'toll'} size={12} color={gemPrice ? Colors.cyan : Colors.gold} />
+            <CurrencyIcon type={gemPrice ? 'gems' : 'chips'} size={12} />
             <Text className="ml-1 font-caption text-caption text-text-primary">{(gemPrice ?? chipPrice ?? 0).toLocaleString()}</Text>
           </View>
         </View>

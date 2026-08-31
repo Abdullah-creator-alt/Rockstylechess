@@ -36,8 +36,8 @@ export const playerProfiles = pgTable('player_profiles', {
   wins: integer('wins').notNull().default(0),
   losses: integer('losses').notNull().default(0),
   draws: integer('draws').notNull().default(0),
-  // Matches sign-up.tsx's displayed "Welcome Bonus: 10M Chips".
-  chips: bigint('chips', { mode: 'number' }).notNull().default(10_000_000),
+  // Matches sign-up.tsx's displayed "Welcome Bonus: 10,000 Chips".
+  chips: bigint('chips', { mode: 'number' }).notNull().default(10_000),
   gems: bigint('gems', { mode: 'number' }).notNull().default(0),
   country: char('country', { length: 2 }),
   // Cosmetic catalogs (forge.tsx) stay client-side constants, same pattern

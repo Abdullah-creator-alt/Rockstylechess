@@ -5,37 +5,23 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, BottomNav, CurrencyPill, EmberParticles, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
-import { getAvatarEmoji } from '@/constants/avatars';
+import { AppIcon, BottomNav, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { TopAppBar } from '@/components/layout';
 import type { ICONS } from '@/constants/icons';
-import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
+import { VENUES, formatChips, getVenue, type Venue } from '@/constants/venues';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
-import { tierLabel } from '@/lib/tierLabel';
+import type { Duration } from '@/lib/onlineMatch';
 
-type Duration = '3m' | '5m' | '10m';
 const DURATIONS: Duration[] = ['3m', '5m', '10m'];
 
-interface VenueTile {
-  id: string;
-  name: string;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  locked: boolean;
-}
-
-const VENUES: VenueTile[] = [
-  { id: 'club', name: 'The Club', icon: 'glass-cocktail', locked: false },
-  { id: 'arena', name: 'The Arena', icon: 'stadium-variant', locked: false },
-  { id: 'stadium', name: 'Stadium', icon: 'castle', locked: true },
-];
-
-// Bento grid -- migrated 1:1 from new_ui (tabs)/index.tsx (icons, labels,
-// sub-labels, accent colors, routes). `glow: undefined` = no colored card
-// glow (new_ui's `glowColor="none"` for the ember tile).
+// Bento grid -- from new_ui (tabs)/index.tsx (icons, labels, sub-labels,
+// routes). Each tile carries the same colored glow so all four read
+// consistently (new_ui left the ember one flat).
 type HomeTile = {
   icon: keyof typeof ICONS;
   color: string;
-  glow: string | undefined;
+  glow: string;
   label: string;
   sub: string;
   route: '/setup' | '/tournaments' | '/bots' | '/puzzles';
@@ -44,23 +30,25 @@ type HomeTile = {
 const HOME_TILES: HomeTile[] = [
   { icon: 'swords', color: Colors.cyan, glow: Colors.cyan, label: 'Iron Duel', sub: '1v1 Ranked', route: '/setup' },
   { icon: 'emoji_events', color: Colors.gold, glow: Colors.gold, label: 'Tournaments', sub: 'High Stakes', route: '/tournaments' },
-  { icon: 'smart_toy', color: Colors.ember, glow: undefined, label: 'Bots', sub: 'Practice', route: '/bots' },
+  { icon: 'smart_toy', color: Colors.ember, glow: Colors.ember, label: 'Bots', sub: 'Practice', route: '/bots' },
   { icon: 'extension', color: Colors.cyan, glow: Colors.cyan, label: 'Puzzles', sub: 'Daily Grind', route: '/puzzles' },
 ];
 
 export default function HomeLobbyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { profile, chips, gems } = usePlayerProfile();
-  const [selectedVenue, setSelectedVenue] = useState('arena');
+  const { chips } = usePlayerProfile();
+  const [selectedVenueId, setSelectedVenueId] = useState('arena');
   const [duration, setDuration] = useState<Duration>('5m');
 
-  function handleVenuePress(venue: VenueTile) {
-    if (venue.locked) {
-      console.log('Venue locked', venue.name);
+  const selectedVenue = getVenue(selectedVenueId);
+
+  function handleVenuePress(venue: Venue) {
+    if (venue.buyIn > chips) {
+      console.log('Venue locked - insufficient chips', venue.name);
       return;
     }
-    setSelectedVenue(venue.id);
+    setSelectedVenueId(venue.id);
     console.log('Venue selected', venue.name);
   }
 
@@ -70,80 +58,38 @@ export default function HomeLobbyScreen() {
       <View pointerEvents="none" style={{ position: 'absolute', bottom: 60, left: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: withOpacity(Colors.ember, 0.06), boxShadow: `0px 0px 100px ${withOpacity(Colors.ember, 0.22)}` }} />
       <EmberParticles count={10} />
 
-      <View
-        className="flex-row items-center justify-between px-lg pb-md"
-        style={{ paddingTop: insets.top + 16, backgroundColor: withOpacity(Colors.bgPanel, 0.85), borderBottomWidth: 1, borderBottomColor: withOpacity(Colors.cyan, 0.15) }}
-      >
-        <View className="flex-1 flex-row items-center gap-sm">
-          <View style={{ position: 'relative' }}>
-            <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} level={profile?.level} size="small" />
-            <Pressable
-              className="items-center justify-center rounded-full"
-              style={{ position: 'absolute', bottom: -4, right: -4, width: 26, height: 26, backgroundColor: Colors.gold, borderWidth: 1.5, borderColor: Colors.bgBase, boxShadow: `0px 0px 6px ${withOpacity(Colors.gold, 0.6)}` }}
-              onPress={() => {
-                console.log('Forge entry point pressed');
-                router.push('/forge');
-              }}
-            >
-              <MaterialCommunityIcons name="hammer" size={14} color={Colors.bgBase} />
-            </Pressable>
-          </View>
-          <View>
-            <Text className="font-display-hero text-cyan" style={{ fontSize: 15, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              {profile?.displayName ?? 'Player'}
-            </Text>
-            <Text className="font-section-header" style={{ fontSize: 10, color: Colors.emberLight, textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 2 }}>
-              LVL {profile?.level ?? 1} {tierLabel(profile?.rating ?? 1200)}
-            </Text>
-          </View>
-        </View>
-
-        <View className="flex-row gap-sm">
-          <CurrencyPill
-            type="chips"
-            value={chips}
-            onPressAdd={() => {
-              console.log('Buy chips');
-              router.push('/shop');
-            }}
-          />
-          <CurrencyPill
-            type="gems"
-            value={gems}
-            onPressAdd={() => {
-              console.log('Buy gems');
-              router.push('/shop');
-            }}
-          />
-        </View>
-      </View>
+      <TopAppBar />
 
       <ScrollView className="flex-1" contentContainerClassName="gap-xl px-lg" contentContainerStyle={{ paddingTop: 20, paddingBottom: 130 + insets.bottom }} showsVerticalScrollIndicator={false}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-md" contentContainerStyle={{ paddingBottom: 4 }}>
+        {/* Venue picker -- icon + name only (the atmospheric photo lives on the
+            hero card below). Tapping a venue re-skins that card. Locked purely
+            by affordability, same rule as (play)/setup.tsx. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-sm" contentContainerStyle={{ paddingVertical: 2 }}>
           {VENUES.map((venue) => {
-            const isActive = !venue.locked && selectedVenue === venue.id;
+            const locked = venue.buyIn > chips;
+            const isActive = !locked && selectedVenueId === venue.id;
+            const tint = locked ? Colors.chromeMid : isActive ? Colors.cyan : Colors.textMuted;
             return (
               <Pressable
                 key={venue.id}
                 onPress={() => handleVenuePress(venue)}
                 className="items-center justify-center gap-1 rounded-lg"
                 style={{
-                  width: isActive ? 130 : 110,
-                  height: isActive ? 92 : 80,
-                  backgroundColor: isActive ? withOpacity(Colors.cyan, 0.14) : withOpacity(Colors.bgPanel, 0.7),
-                  borderWidth: isActive ? 2 : 1,
-                  borderColor: isActive ? Colors.cyan : withOpacity(Colors.ember, 0.18),
-                  boxShadow: isActive ? `0px 0px 20px ${withOpacity(Colors.cyan, 0.4)}` : undefined,
-                  opacity: venue.locked ? 0.6 : 1,
+                  width: 88,
+                  height: 72,
+                  backgroundColor: isActive ? withOpacity(Colors.cyan, 0.07) : withOpacity(Colors.bgPanel, 0.6),
+                  borderWidth: 1,
+                  borderColor: isActive ? withOpacity(Colors.cyan, 0.55) : withOpacity(Colors.chromeDark, 0.35),
+                  opacity: locked ? 0.45 : 1,
                 }}
               >
-                {venue.locked ? (
-                  <View style={{ position: 'absolute', top: 6, right: 6 }}>
-                    <MaterialCommunityIcons name="lock" size={18} color={Colors.chromeMid} />
+                {locked ? (
+                  <View style={{ position: 'absolute', top: 5, right: 5 }}>
+                    <MaterialCommunityIcons name="lock" size={13} color={Colors.chromeMid} />
                   </View>
                 ) : null}
-                <MaterialCommunityIcons name={venue.icon} size={isActive ? 28 : 22} color={venue.locked ? Colors.chromeMid : isActive ? Colors.cyan : Colors.textMuted} />
-                <Text className="font-heading-md uppercase" style={{ fontSize: isActive ? 13 : 11, color: venue.locked ? Colors.chromeMid : isActive ? Colors.cyan : Colors.textMuted }}>
+                <MaterialCommunityIcons name={venue.icon} size={22} color={tint} />
+                <Text className="font-heading-md uppercase" style={{ fontSize: 10, letterSpacing: 0.3, color: tint }} numberOfLines={1}>
                   {venue.name}
                 </Text>
               </Pressable>
@@ -151,24 +97,27 @@ export default function HomeLobbyScreen() {
           })}
         </ScrollView>
 
-        <RockCard variant="surface" glowColor={Colors.cyan} backgroundImage={ScreenArt.homeArenaHero} style={{ minHeight: 280 }}>
+        <RockCard variant="surface" glowColor={Colors.cyan} backgroundImage={selectedVenue.image}>
+          {/* Fixed inner height -> ~280px hero; justify-between pins the info
+              row to the top and the Play button to the bottom. */}
+          <View className="justify-between" style={{ minHeight: 248 }}>
           <View className="flex-row items-end justify-between gap-md">
             <View className="flex-shrink">
-              <Text className="font-display-hero text-text-primary" style={{ fontSize: 26, textTransform: 'uppercase', textShadowColor: withOpacity(Colors.bgBase, 0.8), textShadowRadius: 6, textShadowOffset: { width: 0, height: 2 } }}>
-                The Arena
+              <Text className="font-display-hero text-text-primary" style={{ fontSize: 26, textTransform: 'uppercase', textShadowColor: withOpacity(Colors.bgBase, 0.8), textShadowRadius: 6, textShadowOffset: { width: 0, height: 2 } }} numberOfLines={1}>
+                {selectedVenue.name}
               </Text>
               <View className="mt-sm flex-row items-center gap-md">
                 <View>
                   <Text className="font-heading-md text-caption uppercase tracking-wide text-text-muted">Buy-In</Text>
                   <Text className="font-display-hero" style={{ fontSize: 18, color: Colors.cyan }}>
-                    250K
+                    {formatChips(selectedVenue.buyIn)}
                   </Text>
                 </View>
                 <View style={{ width: 1, height: 28, backgroundColor: withOpacity(Colors.chromeDark, 0.5) }} />
                 <View>
                   <Text className="font-heading-md text-caption uppercase tracking-wide text-text-muted">Grand Prize</Text>
                   <Text className="font-display-hero" style={{ fontSize: 18, color: Colors.emberLight }}>
-                    500K
+                    {formatChips(selectedVenue.prize)}
                   </Text>
                 </View>
               </View>
@@ -203,37 +152,40 @@ export default function HomeLobbyScreen() {
               variant="primary"
               icon={<MaterialCommunityIcons name="play" size={20} color={Colors.bgBase} />}
               onPress={() => {
-                console.log('Play Now pressed', { selectedVenue, duration });
-                router.push('/setup');
+                router.push({ pathname: '/matchmaking', params: { venueTier: selectedVenue.id, duration } });
               }}
             />
           </View>
+          </View>
         </RockCard>
 
-        {/* Bento grid -- from new_ui (tabs)/index.tsx. Fixed tile height (not
-            aspect-ratio) so all four are identical regardless of screen width
-            or how many lines a label wraps to -- icon/label/sub stay at one
-            fixed size each, never shrink-to-fit. */}
-        <View className="flex-row flex-wrap gap-gutter">
+        {/* Bento grid -- 2x2 of wide, short tiles (aspectRatio 1.4). One fixed
+            26px gap on BOTH axes (row === column) so it reads as four tiles,
+            not two columns. flexBasis 40% + flexGrow lets each row's two tiles
+            stretch flush to the content edges (so the columns line up with the
+            hero card above) while the 26px gutters and the 1.4 ratio stay exact. */}
+        <View className="flex-row flex-wrap justify-center" style={{ gap: 26 }}>
           {HOME_TILES.map((tile) => (
-            <Pressable key={tile.label} onPress={() => router.push(tile.route)} style={{ width: '47%' }}>
-              <RockCard variant="surface" glowColor={tile.glow} style={{ height: 160 }}>
+            <Pressable
+              key={tile.label}
+              onPress={() => router.push(tile.route)}
+              style={{ flexBasis: '40%', flexGrow: 1, aspectRatio: 1.4 }}
+            >
+              <RockCard variant="surface" glowColor={tile.glow} contentPadding={12} fillHeight style={{ flex: 1 }}>
                 <View className="flex-1 items-center justify-center">
-                  <AppIcon name={tile.icon} size={36} color={tile.color} />
-                  {/* Fixed-height label slot -- keeps the icon and sub-label
-                      at the same y across all four tiles even when a label
-                      wraps to two lines. Tightened line height so a 2-line
-                      label fits without shrinking the 20px type. */}
-                  <View className="mt-sm items-center justify-center" style={{ height: 52 }}>
-                    <Text
-                      className="text-center font-heading-md text-heading-md text-text-primary"
-                      numberOfLines={2}
-                      style={{ lineHeight: 22 }}
-                    >
-                      {tile.label}
-                    </Text>
-                  </View>
-                  <Text className="text-center font-caption text-caption text-text-muted" numberOfLines={1}>
+                  <AppIcon name={tile.icon} size={24} color={tile.color} />
+                  <Text
+                    className="mt-1 text-center font-heading-md text-text-primary"
+                    numberOfLines={1}
+                    style={{ fontSize: 13 }}
+                  >
+                    {tile.label}
+                  </Text>
+                  <Text
+                    className="text-center font-caption text-text-muted"
+                    numberOfLines={1}
+                    style={{ fontSize: 9 }}
+                  >
                     {tile.sub}
                   </Text>
                 </View>

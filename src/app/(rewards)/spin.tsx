@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
@@ -24,6 +25,7 @@ function buildSegmentPath(startAngle: number, endAngle: number): string {
 
 export default function SpinScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { status: profileStatus, gems, refresh } = usePlayerProfile();
   const rotation = useSharedValue(0);
   const totalRotationRef = useRef(0);
@@ -117,7 +119,10 @@ export default function SpinScreen() {
       ) : canSpin === null ? (
         <ActivityIndicator color={Colors.cyan} style={{ marginTop: 48 }} />
       ) : (
-        <View className="flex-1 items-center justify-center gap-xl p-lg">
+        <View
+          className="flex-1 items-center justify-center gap-xl p-lg"
+          style={{ paddingBottom: insets.bottom + 16 }}
+        >
           <View style={{ width: WHEEL_SIZE, height: WHEEL_SIZE, alignItems: 'center', justifyContent: 'center' }}>
             <View style={{ position: 'absolute', top: -14, zIndex: 2 }}>
               <Svg width={32} height={40} viewBox="0 0 40 50">

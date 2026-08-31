@@ -1,11 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, ConfirmModal, CurrencyPill, EmberParticles, PlayerAvatar, RockCard } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
 import type { ICONS } from '@/constants/icons';
-import { getAvatarEmoji } from '@/constants/avatars';
+import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { loadMusicPreference, setMusicEnabled } from '@/lib/backgroundMusic';
@@ -69,6 +70,7 @@ function ToggleRow({ icon, title, subtitle, value, onValueChange, last }: { icon
 
 export default function ControlCoreScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [musicOn, setMusicOn] = useState(true);
   const [soundFxOn, setSoundFxOn] = useState(true);
   const [logoutVisible, setLogoutVisible] = useState(false);
@@ -112,13 +114,13 @@ export default function ControlCoreScreen() {
       <EmberParticles count={10} />
       <SubPageHeader title="Control Core" trailing={<CurrencyPill type="gems" value={gems} />} />
 
-      <ScrollView contentContainerClassName="gap-xl px-margin-mobile py-xl" contentContainerStyle={{ paddingBottom: 60 }}>
+      <ScrollView contentContainerClassName="gap-xl px-margin-mobile py-xl" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }}>
         <View className="gap-sm">
           <Text className="px-xs font-section-header text-section-header uppercase tracking-widest text-text-muted">Account Identity</Text>
-          <RockCard style={{ padding: 0 }}>
+          <RockCard variant="surface" contentPadding={0}>
             <View className="flex-row items-center justify-between p-md">
               <View className="flex-row items-center gap-md">
-                <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} size="medium" />
+                <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="medium" />
                 <View>
                   <Text className="font-heading-md text-heading-md text-text-primary">{profile?.displayName ?? 'Rockstar'}</Text>
                   <Text className="font-body-sm text-body-sm text-gold">Level {profile?.level ?? 1}</Text>
@@ -133,7 +135,7 @@ export default function ControlCoreScreen() {
 
         <View className="gap-sm">
           <Text className="px-xs font-section-header text-section-header uppercase tracking-widest text-text-muted">Audio Environment</Text>
-          <RockCard style={{ padding: 0 }}>
+          <RockCard variant="surface" contentPadding={0}>
             <ToggleRow icon="music_note" title="Mainstage Music" subtitle="Ambient stage themes" value={musicOn} onValueChange={handleMusicChange} />
             <ToggleRow icon="volume_up" title="Sound FX" subtitle="Piece moves & alerts" value={soundFxOn} onValueChange={handleSoundFxChange} last />
           </RockCard>
@@ -141,7 +143,7 @@ export default function ControlCoreScreen() {
 
         <View className="gap-sm">
           <Text className="px-xs font-section-header text-section-header uppercase tracking-widest text-text-muted">Game</Text>
-          <RockCard style={{ padding: 0 }}>
+          <RockCard variant="surface" contentPadding={0}>
             {gameRows.map((row, index) => (
               <SettingsRow key={row.id} icon={row.icon} title={row.label} subtitle={row.subtitle} trailing={row.trailing} last={index === gameRows.length - 1} onPress={row.action} />
             ))}
@@ -153,7 +155,7 @@ export default function ControlCoreScreen() {
           <Pressable
             onPress={() => setLogoutVisible(true)}
             className="flex-row items-center justify-center gap-sm rounded-full py-md"
-            style={{ backgroundColor: withOpacity(Colors.crimson, 0.8), borderWidth: 1, borderColor: withOpacity(Colors.crimson, 0.5), boxShadow: `0px 0px 15px ${withOpacity(Colors.crimson, 0.4)}` }}
+            style={{ backgroundColor: withOpacity(Colors.crimson, 0.8), borderWidth: 1, borderColor: withOpacity(Colors.crimson, 0.5), boxShadow: `0px 0px 12px ${withOpacity(Colors.crimson, 0.25)}` }}
           >
             <AppIcon name="logout" size={18} color={Colors.textPrimary} />
             <Text className="font-button-label text-button-label uppercase tracking-wide text-text-primary">Logout</Text>

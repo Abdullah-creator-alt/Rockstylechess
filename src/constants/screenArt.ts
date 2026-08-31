@@ -17,9 +17,12 @@ export const ScreenArt = {
   homeArenaHero: require('../../assets/icons/images/index-0.jpg'),
   dailyBonusChest: require('../../assets/icons/images/daily-bonus-0.jpg'),
 
-  // Venues (setup.tsx) — keyed to the venue ids in that screen
-  venueGarage: require('../../assets/icons/images/setup-0.jpg'),
-  venueClub: require('../../assets/icons/images/setup-1.jpg'),
+  // Venues — keyed to the venue ids in src/constants/venues.ts. Garage / Club
+  // / Stadium have dedicated art (assets/images/); Arena reuses homeArenaHero
+  // and Mainstage / World Tour fall back to this Stitch setup shot.
+  venueGarage: require('../../assets/images/garage.jpg'),
+  venueClub: require('../../assets/images/club.jpg'),
+  venueStadium: require('../../assets/images/stadium.jpg'),
   venueArena: require('../../assets/icons/images/setup-2.jpg'),
 
   // Screen backdrops

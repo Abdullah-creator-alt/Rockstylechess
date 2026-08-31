@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, EmberParticles, ProgressBar, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyIcon, EmberParticles, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
 
 interface ChipPack {
@@ -19,18 +19,18 @@ interface ChipPack {
 }
 
 const CHIP_PACKS: ChipPack[] = [
-  { id: 'starter', amount: '1,000,000', name: 'Starter Pack', price: '$1.99' },
-  { id: 'roadie-box', amount: '10,000,000', name: 'Roadie Box', price: '$9.99' },
+  { id: 'starter', amount: '1,000', name: 'Starter Pack', price: '$1.99' },
+  { id: 'roadie-box', amount: '10,000', name: 'Roadie Box', price: '$9.99' },
   {
     id: 'bonus-pack',
-    amount: '250,000,000',
+    amount: '250,000',
     name: '+ Bonus Pack',
     price: '$49.99',
     highlighted: true,
     badge: 'HOT',
     bonusNote: 'Includes Exclusive "Electric Legend" Piece Skin',
   },
-  { id: 'headliner-chest', amount: '50,000,000', name: 'Headliner Chest', price: '$24.99' },
+  { id: 'headliner-chest', amount: '50,000', name: 'Headliner Chest', price: '$24.99' },
   { id: 'stadium-vault', amount: 'Stadium Vault', name: 'Unlimited Energy', price: 'Claim', isClaim: true },
 ];
 
@@ -58,25 +58,27 @@ export default function RockShopScreen() {
   return (
     <View className="flex-1 bg-bg-base">
       <View
+        pointerEvents="none"
         className="absolute rounded-full"
         style={{
           top: -80,
           right: -60,
           width: 260,
           height: 260,
-          backgroundColor: withOpacity(Colors.cyan, 0.06),
-          boxShadow: `0px 0px 120px ${withOpacity(Colors.cyan, 0.25)}`,
+          backgroundColor: withOpacity(Colors.cyan, 0.04),
+          boxShadow: `0px 0px 90px ${withOpacity(Colors.cyan, 0.14)}`,
         }}
       />
       <View
+        pointerEvents="none"
         className="absolute rounded-full"
         style={{
           bottom: 60,
           left: -60,
           width: 220,
           height: 220,
-          backgroundColor: withOpacity(Colors.ember, 0.06),
-          boxShadow: `0px 0px 100px ${withOpacity(Colors.ember, 0.22)}`,
+          backgroundColor: withOpacity(Colors.ember, 0.04),
+          boxShadow: `0px 0px 80px ${withOpacity(Colors.ember, 0.12)}`,
         }}
       />
       <EmberParticles count={12} />
@@ -117,7 +119,7 @@ export default function RockShopScreen() {
           (boards/pieces/avatars) live in a separate screen (Forge), not a
           currency purchase, so this is a way in rather than a 4th tab here. */}
       <Pressable onPress={() => router.push('/forge')} className="mx-lg mt-md">
-        <RockCard glowColor={Colors.cyan}>
+        <RockCard glowColor={Colors.chromeDark} innerGlow={Colors.cyan}>
           <View className="flex-row items-center gap-md">
             <View
               className="items-center justify-center rounded-sm"
@@ -194,11 +196,11 @@ function ShopTabButton({ label, active, onPress }: { label: string; active: bool
     <Pressable
       onPress={onPress}
       className="flex-1 items-center rounded-sm py-3"
-      style={active ? { backgroundColor: Colors.cyan, boxShadow: `0px 0px 15px ${withOpacity(Colors.cyan, 0.4)}` } : undefined}
+      style={active ? { backgroundColor: withOpacity(Colors.cyan, 0.1) } : undefined}
     >
       <Text
         className="font-section-header text-caption uppercase tracking-wide"
-        style={{ color: active ? Colors.bgBase : Colors.textMuted }}
+        style={{ color: active ? Colors.cyan : Colors.textMuted }}
       >
         {label}
       </Text>
@@ -208,10 +210,11 @@ function ShopTabButton({ label, active, onPress }: { label: string; active: bool
 
 function VipBanner({ compact, onUpgrade }: { compact: boolean; onUpgrade: () => void }) {
   return (
-    <RockCard glowColor={Colors.gold} style={{ minHeight: compact ? 150 : 200, overflow: 'hidden' }}>
+    <RockCard glowColor={Colors.chromeDark} innerGlow={Colors.gold} style={{ minHeight: compact ? 150 : 200, overflow: 'hidden' }}>
       <View
+        pointerEvents="none"
         className="absolute items-center justify-center"
-        style={{ right: -20, top: -20, opacity: 0.12 }}
+        style={{ right: -20, top: -20, opacity: 0.1 }}
       >
         <AppIcon name="workspace_premium" size={140} color={Colors.gold} />
       </View>
@@ -232,12 +235,15 @@ function VipBanner({ compact, onUpgrade }: { compact: boolean; onUpgrade: () => 
 }
 
 function ChipPackCard({ pack }: { pack: ChipPack }) {
-  const iconName = pack.isClaim ? 'bolt' : 'monetization_on';
   const iconColor = pack.isClaim ? Colors.cyan : Colors.gold;
   const iconSize = pack.highlighted ? 88 : 56;
 
   return (
-    <RockCard glowColor={pack.highlighted ? Colors.gold : undefined} style={{ width: pack.highlighted ? '100%' : '48%', position: 'relative' }}>
+    <RockCard
+      glowColor={pack.highlighted ? Colors.chromeDark : undefined}
+      innerGlow={pack.highlighted ? Colors.gold : undefined}
+      style={{ width: pack.highlighted ? '100%' : '48%', position: 'relative' }}
+    >
       {pack.badge ? (
         <View
           className="absolute"
@@ -265,7 +271,11 @@ function ChipPackCard({ pack }: { pack: ChipPack }) {
             borderColor: withOpacity(iconColor, 0.3),
           }}
         >
-          <AppIcon name={iconName} size={iconSize * 0.5} color={iconColor} />
+          {pack.isClaim ? (
+            <AppIcon name="bolt" size={iconSize * 0.5} color={iconColor} />
+          ) : (
+            <CurrencyIcon type="chips" size={iconSize * 0.5} />
+          )}
         </View>
         <View className={pack.highlighted ? 'flex-1 gap-1' : 'w-full items-center gap-1'}>
           <Text
@@ -302,7 +312,7 @@ function GemPackCard({ pack }: { pack: GemPack }) {
         className="items-center justify-center rounded-md"
         style={{ width: 44, height: 44, backgroundColor: withOpacity(Colors.cyan, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.3) }}
       >
-        <AppIcon name="diamond" size={24} color={Colors.cyan} />
+        <CurrencyIcon type="gems" size={24} />
       </View>
       <Text className="mb-sm mt-1 font-heading-md text-caption text-text-primary" style={{ fontSize: 13 }}>
         {pack.amount}

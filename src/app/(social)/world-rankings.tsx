@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, BottomNav, CurrencyPill, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
-import { getAvatarEmoji } from '@/constants/avatars';
+import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { getLeaderboard, getMyProfile, getMyRank, type LeaderboardEntry, type PlayerProfile } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
@@ -100,10 +100,10 @@ export default function WorldRankingsScreen() {
         style={{ paddingTop: insets.top + 12, gap: 8 }}
       >
         <View className="flex-shrink flex-row items-center gap-sm">
-          <PlayerAvatar emoji={getAvatarEmoji(myProfile?.avatarId)} size="small" />
+          <PlayerAvatar source={getAvatarImage(myProfile?.avatarId)} size="small" />
           <Text
             className="font-display-hero uppercase text-cyan"
-            style={{ fontSize: 16, textShadowColor: withOpacity(Colors.cyan, 0.5), textShadowRadius: 8, textShadowOffset: { width: 0, height: 0 } }}
+            style={{ fontSize: 16, textShadowColor: withOpacity(Colors.cyan, 0.3), textShadowRadius: 5, textShadowOffset: { width: 0, height: 0 } }}
           >
             World Rankings
           </Text>
@@ -113,7 +113,7 @@ export default function WorldRankingsScreen() {
 
       <View
         className="mx-lg mb-md flex-row gap-1 rounded-md p-1"
-        style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.7), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.3) }}
+        style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.6), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.35) }}
       >
         {FILTER_TABS.map((tab) => {
           const active = activeFilter === tab.key;
@@ -122,7 +122,7 @@ export default function WorldRankingsScreen() {
               key={tab.key}
               onPress={() => setActiveFilter(tab.key)}
               className="flex-1 items-center rounded-sm py-2.5"
-              style={active ? { backgroundColor: withOpacity(Colors.cyan, 0.18), boxShadow: `0px 0px 10px ${withOpacity(Colors.cyan, 0.35)}` } : undefined}
+              style={active ? { backgroundColor: withOpacity(Colors.cyan, 0.1) } : undefined}
             >
               <Text
                 className="font-heading-md uppercase"
@@ -167,7 +167,7 @@ export default function WorldRankingsScreen() {
                         {rank === 1 ? <AppIcon name="workspace_premium" size={28} color={Colors.gold} /> : null}
 
                         <View>
-                          <PlayerAvatar emoji={getAvatarEmoji(entry.avatarId)} size={rank === 1 ? 'medium' : 'small'} />
+                          <PlayerAvatar source={getAvatarImage(entry.avatarId)} size={rank === 1 ? 'medium' : 'small'} />
                           <View
                             className="absolute -bottom-1 -right-1 items-center justify-center rounded-full"
                             style={{ width: rank === 1 ? 24 : 20, height: rank === 1 ? 24 : 20, backgroundColor: accent, borderWidth: 1.5, borderColor: Colors.bgBase }}
@@ -186,15 +186,15 @@ export default function WorldRankingsScreen() {
                         </Text>
 
                         <LinearGradient
-                          colors={[withOpacity(accent, 0.35), Colors.bgPanel]}
+                          colors={[withOpacity(accent, 0.22), Colors.bgPanel]}
                           style={{
                             width: '100%',
                             height: PODIUM_HEIGHT[rank],
                             borderTopLeftRadius: 8,
                             borderTopRightRadius: 8,
                             borderTopWidth: 1,
-                            borderTopColor: rank === 1 ? withOpacity(Colors.gold, 0.5) : withOpacity(Colors.chromeDark, 0.6),
-                            boxShadow: rank === 1 ? `0px 0px 24px ${withOpacity(Colors.gold, 0.4)}` : undefined,
+                            borderTopColor: rank === 1 ? withOpacity(Colors.gold, 0.4) : withOpacity(Colors.chromeDark, 0.5),
+                            boxShadow: rank === 1 ? `0px 0px 14px ${withOpacity(Colors.gold, 0.2)}` : undefined,
                           }}
                         />
                       </View>
@@ -215,7 +215,7 @@ export default function WorldRankingsScreen() {
                         <Text className="w-6 text-center font-display-hero text-text-muted" style={{ fontSize: 20 }}>
                           {index + 4}
                         </Text>
-                        <PlayerAvatar emoji={getAvatarEmoji(entry.avatarId)} size="small" />
+                        <PlayerAvatar source={getAvatarImage(entry.avatarId)} size="small" />
                         <View className="flex-1">
                           <Text className="font-heading-md text-text-primary" style={{ fontSize: 14 }} numberOfLines={1}>
                             {entry.displayName ?? 'Anonymous'}
@@ -238,12 +238,12 @@ export default function WorldRankingsScreen() {
               ) : null}
 
               {mineStatus === 'ready' && myProfile && myRank ? (
-                <RockCard glowColor={Colors.emberLight}>
+                <RockCard glowColor={Colors.chromeDark} innerGlow={Colors.emberLight}>
                   <View className="flex-row items-center gap-md">
                     <Text className="w-8 text-center font-display-hero" style={{ fontSize: 24, color: Colors.emberLight }}>
                       {myRank.rank}
                     </Text>
-                    <PlayerAvatar emoji={getAvatarEmoji(myProfile.avatarId)} size="medium" />
+                    <PlayerAvatar source={getAvatarImage(myProfile.avatarId)} size="medium" />
                     <View className="flex-1">
                       <Text className="font-heading-md text-cyan" style={{ fontSize: 14 }} numberOfLines={1}>
                         {myProfile.displayName ?? 'You'}

@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { ScreenArt } from '@/constants/screenArt';
@@ -15,6 +16,7 @@ import { reauthenticateSocket } from '@/lib/socket';
 
 export default function SignInScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { refresh: refreshPlayerProfile } = usePlayerProfile();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -55,6 +57,7 @@ export default function SignInScreen() {
         <ScrollView
           className="z-10"
           contentContainerClassName="mx-auto w-full max-w-md grow justify-center gap-xl p-margin-mobile"
+          contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }}
           keyboardShouldPersistTaps="handled"
         >
           <View className="items-center gap-sm">

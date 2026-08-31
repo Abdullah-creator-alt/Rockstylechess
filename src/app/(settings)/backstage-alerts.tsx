@@ -1,6 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SubPageHeader } from '@/components/layout';
 import { CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
@@ -73,6 +74,7 @@ const ACCENT_COLOR: Record<Accent, string> = {
 };
 
 export default function BackstageAlertsScreen() {
+  const insets = useSafeAreaInsets();
   const { gems } = usePlayerProfile();
   const [readIds, setReadIds] = useState<Set<string>>(
     new Set(NOTIFICATIONS.filter((n) => n.read).map((n) => n.id)),
@@ -91,7 +93,7 @@ export default function BackstageAlertsScreen() {
 
       <ScrollView
         contentContainerClassName="mx-auto w-full max-w-3xl gap-md px-lg py-xl"
-        contentContainerStyle={{ paddingBottom: 60 }}
+        contentContainerStyle={{ paddingBottom: 60 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         <View className="mb-lg flex-row items-end justify-between">

@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { Colors, Fonts, Gradients, withOpacity } from '@/constants/theme';
@@ -8,7 +8,10 @@ import { Colors, Fonts, Gradients, withOpacity } from '@/constants/theme';
 export type AvatarSize = 'tiny' | 'small' | 'medium' | 'large';
 
 interface PlayerAvatarProps {
+  /** A bundled avatar image (e.g. `getAvatarImage(avatarId)`). Wins over `imageUri`/`emoji`. */
+  source?: ImageSourcePropType;
   imageUri?: string;
+  /** Fallback glyph for non-avatar-set uses (bots, mock friends, "searching…" states). */
   emoji?: string;
   /** Omit to render the avatar with no level badge (e.g. character select). */
   level?: number;
@@ -35,6 +38,7 @@ const SIZE_MAP: Record<AvatarSize, { outer: number; ring: number; emoji: number;
 // "fire ring" is approximated with a diagonal multi-stop sweep plus a
 // matching colored glow rather than a literal 360° conic gradient.
 export function PlayerAvatar({
+  source,
   imageUri,
   emoji,
   level,
@@ -82,7 +86,9 @@ export function PlayerAvatar({
               },
             ]}
           >
-            {imageUri ? (
+            {source ? (
+              <Image source={source} resizeMode="cover" style={{ width: inner, height: inner, borderRadius: inner / 2 }} />
+            ) : imageUri ? (
               <Image source={{ uri: imageUri }} style={{ width: inner, height: inner, borderRadius: inner / 2 }} />
             ) : (
               <Text style={{ fontSize: emojiSize }}>{emoji ?? '♟️'}</Text>

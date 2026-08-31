@@ -1,54 +1,28 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Image, type ImageSource } from 'expo-image';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, RockButton, RockCard } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
-import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
+import { VENUES, formatChips, getVenue, type Venue } from '@/constants/venues';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import type { Duration } from '@/lib/onlineMatch';
 
 const DURATION_LABELS: Record<Duration, string> = { '3m': 'Blitz', '5m': 'Blitz', '10m': 'Rapid' };
 const DURATIONS: Duration[] = ['3m', '5m', '10m'];
 
-interface Venue {
-  id: string;
-  name: string;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  buyIn: number;
-  prize: number;
-  /** Atmospheric photo behind the venue-detail hero card. */
-  image: ImageSource | number;
-}
-
-// Only three venue photos exist; the higher tiers reuse the arena shot rather
-// than leaving the aspirational venues as bare gradient cards.
-const VENUES: Venue[] = [
-  { id: 'garage', name: 'The Garage', icon: 'garage', buyIn: 0, prize: 0, image: ScreenArt.venueGarage },
-  { id: 'club', name: 'The Club', icon: 'glass-cocktail', buyIn: 10_000, prize: 20_000, image: ScreenArt.venueClub },
-  { id: 'arena', name: 'The Arena', icon: 'stadium-variant', buyIn: 250_000, prize: 500_000, image: ScreenArt.venueArena },
-  { id: 'stadium', name: 'The Stadium', icon: 'castle', buyIn: 2_000_000, prize: 4_000_000, image: ScreenArt.venueArena },
-  { id: 'mainstage', name: 'Mainstage', icon: 'guitar-electric', buyIn: 25_000_000, prize: 50_000_000, image: ScreenArt.venueArena },
-  { id: 'world-tour', name: 'World Tour', icon: 'earth', buyIn: 100_000_000, prize: 200_000_000, image: ScreenArt.venueArena },
-];
-
-function formatChips(value: number): string {
-  if (value === 0) return 'FREE';
-  if (value >= 1_000_000) return `${value % 1_000_000 === 0 ? value / 1_000_000 : (value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${value % 1_000 === 0 ? value / 1_000 : (value / 1_000).toFixed(1)}K`;
-  return `${value}`;
-}
-
 export default function PlaySetupScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { chips } = usePlayerProfile();
   const [selectedVenueId, setSelectedVenueId] = useState('arena');
   const [duration, setDuration] = useState<Duration>('5m');
 
-  const selectedVenue = VENUES.find((v) => v.id === selectedVenueId) ?? VENUES[2];
+  const selectedVenue = getVenue(selectedVenueId);
 
   function handleVenuePress(venue: Venue) {
     if (venue.buyIn > chips) {
@@ -63,7 +37,7 @@ export default function PlaySetupScreen() {
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Match Setup" trailing={<CurrencyPill type="chips" value={chips} />} />
 
-      <ScrollView contentContainerClassName="mx-auto w-full max-w-4xl gap-xl px-margin-mobile pt-lg" contentContainerStyle={{ paddingBottom: 60 }}>
+      <ScrollView contentContainerClassName="mx-auto w-full max-w-4xl gap-xl px-margin-mobile pt-lg" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }}>
         <View className="gap-md">
           <Text className="font-section-header text-section-header uppercase tracking-widest text-text-muted">Venue &amp; Stakes</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-md pb-1">

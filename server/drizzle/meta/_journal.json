@@ -43,6 +43,13 @@
       "when": 1787770125114,
       "tag": "0005_moaning_vulcan",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788112640847,
+      "tag": "0006_windy_turbo",
+      "breakpoints": true
     }
   ]
 }

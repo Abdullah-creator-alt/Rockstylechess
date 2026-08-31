@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, ConfirmModal, CurrencyPill, PlayerAvatar } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
-import { getAvatarEmoji } from '@/constants/avatars';
+import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { deleteAccount } from '@/lib/api';
@@ -29,6 +30,7 @@ const LINKED_ACCOUNTS: LinkedAccount[] = [
 
 export default function AccountSecurityScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { profile, refresh: refreshPlayerProfile, gems } = usePlayerProfile();
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteVisible, setDeleteVisible] = useState(false);
@@ -62,10 +64,10 @@ export default function AccountSecurityScreen() {
   return (
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Account Security" trailing={<CurrencyPill type="gems" value={gems} />} />
-      <ScrollView contentContainerClassName="mx-auto w-full max-w-md gap-xl px-margin-mobile py-xl" contentContainerStyle={{ paddingBottom: 48 }}>
+      <ScrollView contentContainerClassName="mx-auto w-full max-w-md gap-xl px-margin-mobile py-xl" contentContainerStyle={{ paddingBottom: 48 + insets.bottom }}>
         <View className="overflow-hidden rounded-lg p-md" style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}>
           <View className="mx-md my-md flex-row items-center gap-lg">
-            <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} size="medium" />
+            <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="medium" />
             <View>
               <Text className="font-heading-md text-heading-md tracking-wide text-text-primary">{profile?.displayName ?? 'Rockstar'}</Text>
               <View className="mt-1 flex-row items-center gap-xs">

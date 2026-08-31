@@ -66,7 +66,7 @@ export default function DevPreviewScreen() {
 
         <SectionLabel label="Currency Pill" />
         <View style={styles.row}>
-          <CurrencyPill type="chips" value={12450} onPressAdd={() => {}} />
+          <CurrencyPill type="chips" value={12} onPressAdd={() => {}} />
           <CurrencyPill type="gems" value={326} />
         </View>
 

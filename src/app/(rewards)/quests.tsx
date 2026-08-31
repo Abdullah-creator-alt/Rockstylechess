@@ -2,6 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, CurrencyPill, RockButton } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
@@ -23,6 +24,7 @@ type QuestTab = 'daily' | 'weekly';
 
 export default function QuestsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { status: profileStatus, gems, refresh } = usePlayerProfile();
   const [activeTab, setActiveTab] = useState<QuestTab>('daily');
   const [quests, setQuests] = useState<QuestStatus[] | null>(null);
@@ -90,14 +92,14 @@ export default function QuestsScreen() {
         ) : !quests ? (
           <ActivityIndicator color={Colors.cyan} style={{ marginTop: 32 }} />
         ) : (
-          <ScrollView contentContainerClassName="gap-md px-margin-mobile" contentContainerStyle={{ paddingBottom: 60 }}>
+          <ScrollView contentContainerClassName="gap-md px-margin-mobile" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }}>
             {quests.map((quest) => (
               <QuestRow key={quest.id} quest={quest} accent={ACCENT_BY_QUEST_ID[quest.id] ?? Colors.cyan} claiming={claimingId === quest.id} onClaim={() => handleClaim(quest.id)} />
             ))}
           </ScrollView>
         )
       ) : (
-        <View className="flex-1 items-center justify-center px-xl" style={{ paddingBottom: 96 }}>
+        <View className="flex-1 items-center justify-center px-xl" style={{ paddingBottom: 96 + insets.bottom }}>
           <View className="mb-6 h-32 w-32 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.chromeDark, 0.2), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.2) }}>
             <AppIcon name="lock" size={64} color={Colors.textMuted} />
           </View>

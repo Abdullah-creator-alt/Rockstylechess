@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyIcon, CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { chargeForAnalysis } from '@/lib/api';
@@ -132,7 +132,7 @@ export default function ResultScreen() {
       <RockCard glowColor={glowColor} style={{ width: '100%', maxWidth: 360, alignItems: 'center' }}>
         <View className="flex-row items-center gap-sm">
           <View className="h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.chromeDark, 0.2), borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.4) }}>
-            <AppIcon name="monetization_on" size={26} color={Colors.gold} />
+            <CurrencyIcon type="chips" size={26} />
           </View>
           <Text className="font-display-hero" style={{ fontSize: 28, color: Colors.gold, textShadowColor: withOpacity(Colors.gold, 0.5), textShadowRadius: 10, textShadowOffset: { width: 0, height: 0 } }}>
             +{chipsWon.toLocaleString('en-US')}

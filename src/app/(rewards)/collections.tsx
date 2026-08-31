@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { Image, type ImageSource } from 'expo-image'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Pressable, ScrollView, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { SubPageHeader } from '@/components/layout'
 import { AppIcon, CurrencyPill, ProgressBar, RockCard } from '@/components/ui'
@@ -62,13 +63,14 @@ const CARD_SETS: CardSet[] = [
 ]
 
 export default function CollectionsScreen() {
+  const insets = useSafeAreaInsets()
   const { gems } = usePlayerProfile()
 
   return (
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Collections" trailing={<CurrencyPill type="gems" value={gems} />} />
 
-      <ScrollView contentContainerClassName="gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerClassName="gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }} showsVerticalScrollIndicator={false}>
         <RockCard glowColor={Colors.cyan}>
           <View className="gap-md">
             <View className="flex-row items-end justify-between">

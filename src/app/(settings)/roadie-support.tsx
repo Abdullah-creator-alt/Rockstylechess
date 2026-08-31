@@ -1,5 +1,6 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SubPageHeader } from '@/components/layout';
 import { CurrencyPill, RockButton, RockCard } from '@/components/ui';
@@ -22,6 +23,7 @@ const SUPPORT_CATEGORIES: SupportCategory[] = [
 ];
 
 export default function RoadieSupportScreen() {
+  const insets = useSafeAreaInsets();
   const { gems } = usePlayerProfile();
 
   return (
@@ -30,7 +32,7 @@ export default function RoadieSupportScreen() {
 
       <ScrollView
         contentContainerClassName="mx-auto w-full max-w-3xl gap-xl px-lg py-xl"
-        contentContainerStyle={{ paddingBottom: 60 }}
+        contentContainerStyle={{ paddingBottom: 60 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         <View className="items-center gap-sm">

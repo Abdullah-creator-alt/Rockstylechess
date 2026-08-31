@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, EmberParticles, RockButton } from '@/components/ui';
+import { AppIcon, CurrencyIcon, EmberParticles, RockButton } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
 
-const REWARD_CHIPS = 10_000_000;
+const REWARD_CHIPS = 10_000;
 const DURATION_MS = 2500;
 const FRAME_MS = 30;
 
@@ -80,7 +80,7 @@ export default function WelcomeRewardScreen() {
             }}
           >
             <View style={{ position: 'absolute', inset: 16, borderRadius: 80, borderWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(117,84,0,0.5)' }} />
-            <AppIcon name="monetization_on" size={80} color="#755400" />
+            <CurrencyIcon type="chips" size={80} color="#755400" />
           </LinearGradient>
         </View>
 

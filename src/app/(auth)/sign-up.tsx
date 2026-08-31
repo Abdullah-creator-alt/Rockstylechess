@@ -4,8 +4,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, EmberParticles, RockButton } from '@/components/ui';
+import { AppIcon, CurrencyIcon, EmberParticles, RockButton } from '@/components/ui';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
@@ -15,6 +16,7 @@ import { reauthenticateSocket } from '@/lib/socket';
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { refresh: refreshPlayerProfile } = usePlayerProfile();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,7 +55,12 @@ export default function SignUpScreen() {
       <EmberParticles count={12} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView className="z-10" contentContainerClassName="mx-auto w-full max-w-md grow justify-center px-margin-mobile py-xl" keyboardShouldPersistTaps="handled">
+        <ScrollView
+          className="z-10"
+          contentContainerClassName="mx-auto w-full max-w-md grow justify-center px-margin-mobile py-xl"
+          contentContainerStyle={{ paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }}
+          keyboardShouldPersistTaps="handled"
+        >
           <View className="mb-xl items-center pt-margin-desktop">
             <Text className="mb-sm text-center font-display-hero text-display-hero uppercase tracking-widest text-chrome">Join The Stage</Text>
             <Text className="text-center font-body-sm text-body-sm text-text-muted">Claim your spot in the ultimate high-roller arena.</Text>
@@ -93,11 +100,11 @@ export default function SignUpScreen() {
             }}
           >
             <View className="h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: Colors.bgPanel }}>
-              <AppIcon name="monetization_on" size={22} color={Colors.gold} />
+              <CurrencyIcon type="chips" size={22} />
             </View>
             <View>
               <Text className="font-section-header text-section-header uppercase tracking-widest text-gold">Welcome Bonus</Text>
-              <Text className="font-heading-md text-heading-md text-text-primary">10,000,000 CHIPS</Text>
+              <Text className="font-heading-md text-heading-md text-text-primary">10,000 CHIPS</Text>
               <Text className="font-caption text-caption text-text-muted">FOR NEW ROCKSTARS</Text>
             </View>
           </LinearGradient>

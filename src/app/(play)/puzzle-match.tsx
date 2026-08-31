@@ -7,17 +7,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChessBoard, EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getBoardTheme } from '@/constants/boardThemes';
-import { Colors, Fonts, Radius, Spacing, withOpacity } from '@/constants/theme';
+import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame } from '@/hooks/useChessGame';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { reportPuzzleSolvedForQuests } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import { PUZZLES } from '@/lib/puzzleCatalog';
+import { nextPuzzle, puzzleTags, puzzleTitle, themeLabel } from '@/lib/puzzleMeta';
+import { markPuzzleSolved } from '@/lib/puzzleProgress';
 
 export default function PuzzleMatchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { puzzleId } = useLocalSearchParams<{ puzzleId?: string }>();
+  const { puzzleId, tier, tacticId } = useLocalSearchParams<{
+    puzzleId?: string;
+    tier?: string;
+    tacticId?: string;
+  }>();
   const entry = PUZZLES.find((p) => p.id === puzzleId);
   const { profile } = usePlayerProfile();
   const boardTheme = getBoardTheme(profile?.equippedBoardId);
@@ -38,6 +44,8 @@ export default function PuzzleMatchScreen() {
   useEffect(() => {
     if (game.puzzleStatus !== 'solved' || reportedSolvedRef.current) return;
     reportedSolvedRef.current = true;
+    // Local, auth-independent -- guests get progress tracking too.
+    if (entry) void markPuzzleSolved(entry.id);
     (async () => {
       const token = await getAuthToken();
       if (!token) return;
@@ -47,7 +55,7 @@ export default function PuzzleMatchScreen() {
         console.log('Failed to report puzzle solve for quests', error);
       }
     })();
-  }, [game.puzzleStatus]);
+  }, [game.puzzleStatus, entry]);
 
   if (!entry) {
     return (
@@ -72,6 +80,15 @@ export default function PuzzleMatchScreen() {
   const statusColor =
     game.puzzleStatus === 'solved' ? Colors.gold : game.puzzleStatus === 'failed' ? Colors.crimson : Colors.cyan;
 
+  const handleNextPuzzle = () => {
+    const next = nextPuzzle(entry.id, { tier, tacticId });
+    if (next && next.id !== entry.id) {
+      router.replace({ pathname: '/puzzle-match', params: { puzzleId: next.id, tier, tacticId } });
+    } else {
+      router.back();
+    }
+  };
+
   return (
     <View style={styles.root}>
       <EmberParticles count={8} />
@@ -86,15 +103,16 @@ export default function PuzzleMatchScreen() {
 
       <View style={[styles.middle, { paddingBottom: insets.bottom + Spacing.lg }]}>
         <RockCard glowColor={statusColor} style={styles.infoCard}>
+          <Text style={styles.cardTitle}>{puzzleTitle(entry)}</Text>
           <View style={styles.infoRow}>
             <View style={styles.ratingPill}>
               <MaterialCommunityIcons name="puzzle" size={14} color={Colors.cyan} />
               <Text style={styles.ratingPillText}>{entry.rating}</Text>
             </View>
             <View style={styles.themeRow}>
-              {entry.themes.slice(0, 3).map((theme) => (
+              {puzzleTags(entry, 3).map((theme) => (
                 <View key={theme} style={styles.themeTag}>
-                  <Text style={styles.themeTagText}>{theme}</Text>
+                  <Text style={styles.themeTagText}>{themeLabel(theme)}</Text>
                 </View>
               ))}
             </View>
@@ -120,10 +138,10 @@ export default function PuzzleMatchScreen() {
           {game.puzzleStatus === 'solved' ? (
             <>
               <View style={styles.actionButton}>
-                <RockButton label="Back to Puzzles" variant="primary" onPress={() => router.back()} />
+                <RockButton label="Back to Puzzles" variant="secondary" onPress={() => router.back()} />
               </View>
               <View style={styles.actionButton}>
-                <RockButton label="Reset" variant="reward" onPress={game.resetPuzzle} />
+                <RockButton label="Next Puzzle" variant="primary" onPress={handleNextPuzzle} />
               </View>
             </>
           ) : (
@@ -199,6 +217,11 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     gap: Spacing.sm,
+  },
+  cardTitle: {
+    fontFamily: Fonts.heading,
+    fontSize: 18,
+    color: Colors.textPrimary,
   },
   infoRow: {
     flexDirection: 'row',

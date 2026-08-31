@@ -154,7 +154,7 @@ export default function MessagesScreen() {
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Messages" trailing={<CurrencyPill type="gems" value={gems} />} />
 
-      <ScrollView contentContainerClassName="gap-md px-lg py-xl" contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerClassName="gap-md px-lg py-xl" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }} showsVerticalScrollIndicator={false}>
         <SectionLabel label="Active Sessions" />
         <View className="gap-sm">
           {CONVERSATIONS.map((conversation) => (

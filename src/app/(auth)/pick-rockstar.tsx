@@ -77,7 +77,7 @@ export default function PickRockstarScreen() {
               <Pressable key={option.id} onPress={() => handleSelect(option)} className="items-center gap-xs" style={({ pressed }) => [{ width: '47%' }, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
                 <View className="items-center justify-center" style={{ width: 100, height: 100 }}>
                   <View style={{ opacity: option.locked ? 0.5 : 1 }}>
-                    <PlayerAvatar emoji={option.emoji} size="large" selected={isSelected} />
+                    <PlayerAvatar source={option.image} size="large" selected={isSelected} />
                   </View>
                   {option.locked ? (
                     <View className="items-center justify-center" style={{ position: 'absolute', top: 0, width: 100, height: 100, borderRadius: 50, backgroundColor: withOpacity(Colors.bgBase, 0.35) }}>

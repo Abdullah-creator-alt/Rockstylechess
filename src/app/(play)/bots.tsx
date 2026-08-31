@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, BottomNav, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
+import { AppIcon, BottomNav, CurrencyIcon, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
 import { Colors, withOpacity } from '@/constants/theme';
 import type { BotDifficulty } from '@/hooks/useChessGame';
@@ -19,10 +20,10 @@ interface Bot {
   difficulty: BotDifficulty;
 }
 
-// Avatars use emoji via PlayerAvatar, consistent with every other screen's
-// character-avatar convention -- not a fidelity drop, just our established
-// pattern (the Stitch source's photo URLs are for character portraits, which
-// we've abstracted to emoji app-wide since Prompt 2).
+// Bots render as an emoji glyph via PlayerAvatar's `emoji` prop -- they're
+// distinct roster characters, not entries in the selectable player-avatar
+// badge set (src/constants/avatars.ts), and `emoji` also rides along as the
+// `botEmoji` route param into /match.
 const BOTS: Bot[] = [
   { id: 'roadie-rick', name: 'Roadie Rick', emoji: '🧢', stars: 1, tier: 'Novice', locked: false, difficulty: 'easy' },
   { id: 'valkyrie-riff', name: 'Valkyrie Riff', emoji: '⚡', stars: 3, tier: 'Amateur', locked: false, difficulty: 'medium' },
@@ -32,8 +33,23 @@ const BOTS: Bot[] = [
   { id: 'king-axl', name: 'King Axl', emoji: '👑', stars: 5, tier: 'Grandmaster', locked: false, difficulty: 'stockfish-strong' },
 ];
 
+// Real engine-strength order (matches botEngine.ts's BotDifficulty union).
+const DIFFICULTY_RANK: Record<BotDifficulty, number> = {
+  easy: 0,
+  medium: 1,
+  'stockfish-basic': 2,
+  'stockfish-lite': 3,
+  'stockfish-strong': 4,
+};
+
+// Easiest first, then by star rating, so the ladder reads top-to-bottom.
+const SORTED_BOTS = [...BOTS].sort(
+  (a, b) => DIFFICULTY_RANK[a.difficulty] - DIFFICULTY_RANK[b.difficulty] || a.stars - b.stars,
+);
+
 export default function BotsGalleryScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { gems } = usePlayerProfile();
 
   function handleBotPress(bot: Bot) {
@@ -51,13 +67,17 @@ export default function BotsGalleryScreen() {
   return (
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Challenge the Legends" trailing={<CurrencyPill type="gems" value={gems} />} />
-      <ScrollView contentContainerClassName="mx-auto w-full max-w-4xl gap-md px-margin-mobile pb-xl pt-lg">
+      <ScrollView
+        contentContainerClassName="mx-auto w-full max-w-4xl gap-md px-margin-mobile pt-lg"
+        contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
+        showsVerticalScrollIndicator={false}
+      >
         <View className="mb-sm">
           <Text className="font-headline-lg text-headline-lg uppercase text-text-primary">Pick Your Opponent</Text>
           <Text className="mt-2 font-body-sm text-body-sm text-text-muted">Challenge bots of varying difficulties to earn XP.</Text>
         </View>
 
-        {BOTS.map((bot) => (
+        {SORTED_BOTS.map((bot) => (
           <RockCard key={bot.id} glowColor={bot.locked ? undefined : Colors.cyan}>
             <View className="flex-row items-center justify-between">
               <View className="flex-1 flex-row items-center gap-md">
@@ -73,7 +93,7 @@ export default function BotsGalleryScreen() {
                   </Text>
                   {bot.locked ? (
                     <View className="mt-1 flex-row items-center gap-1 self-start rounded-full px-sm" style={{ paddingVertical: 4, backgroundColor: withOpacity(Colors.bgBase, 0.5), borderWidth: 1, borderColor: withOpacity(Colors.emberLight, 0.5) }}>
-                      <AppIcon name="diamond" size={12} color={Colors.emberLight} />
+                      <CurrencyIcon type="gems" size={12} color={Colors.emberLight} />
                       <Text className="font-heading-md text-caption" style={{ color: Colors.emberLight }}>
                         {bot.gemPrice} Gems
                       </Text>

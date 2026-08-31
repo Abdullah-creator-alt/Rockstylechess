@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { AppIcon, EmberParticles, PlayerAvatar, RockButton } from '@/components/ui';
-import { getAvatarEmoji } from '@/constants/avatars';
+import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { getPlayerId } from '@/lib/playerId';
@@ -111,7 +111,7 @@ export default function MatchmakingScreen() {
 
       <View className="flex-row items-center gap-xl">
         <View className="items-center gap-sm">
-          <PlayerAvatar emoji={getAvatarEmoji(profile?.avatarId)} size="large" />
+          <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="large" />
           <Text className="font-heading-md text-caption uppercase text-text-primary">{profile?.displayName ?? 'AXL_CHESS'}</Text>
         </View>
 

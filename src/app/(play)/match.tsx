@@ -2,7 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -15,7 +15,7 @@ import Animated, {
 import { ChatPanel, ChatToast, ChessBoard, ConfirmModal, EmberParticles, PlayerAvatar } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
-import { getAvatarEmoji } from '@/constants/avatars';
+import { getAvatarImage } from '@/constants/avatars';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
@@ -95,8 +95,10 @@ export default function MatchScreen() {
       : undefined;
   const opponentDisplayName =
     mode === 'online' ? opponentName || 'OPPONENT' : mode === 'bot' ? botName || 'STORM_KING' : 'LOCAL PLAYER';
-  const opponentEmoji =
-    mode === 'bot' ? botEmoji || '🤖' : mode === 'online' ? getAvatarEmoji(opponentAvatarId) : '🤘';
+  // Online opponents get their picked avatar badge; bots keep their roster
+  // emoji, and a same-device "local" opponent falls back to the rock hand.
+  const opponentAvatarSource = mode === 'online' ? getAvatarImage(opponentAvatarId) : undefined;
+  const opponentAvatarEmoji = mode === 'bot' ? botEmoji || '🤖' : mode === 'online' ? undefined : '🤘';
   const navigatedRef = useRef(false);
   const stockfishRef = useRef<StockfishEngineHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -274,7 +276,8 @@ export default function MatchScreen() {
       <View className="flex-1 justify-between px-md pb-sm">
         <PlayerRow
           name={opponentDisplayName}
-          emoji={opponentEmoji}
+          avatarSource={opponentAvatarSource}
+          avatarEmoji={opponentAvatarEmoji}
           rank="GRANDMASTER (2150)"
           remainingMs={clock.remainingMs.b}
           accent={Colors.crimson}
@@ -298,7 +301,7 @@ export default function MatchScreen() {
 
         <PlayerRow
           name={profile?.displayName ?? 'AXL_CHESS'}
-          emoji={getAvatarEmoji(profile?.avatarId)}
+          avatarSource={getAvatarImage(profile?.avatarId)}
           rank="PRO (2145)"
           remainingMs={clock.remainingMs.w}
           accent={Colors.cyan}
@@ -361,7 +364,8 @@ export default function MatchScreen() {
 
 function PlayerRow({
   name,
-  emoji,
+  avatarSource,
+  avatarEmoji,
   rank,
   remainingMs,
   accent,
@@ -369,7 +373,8 @@ function PlayerRow({
   captured = [],
 }: {
   name: string;
-  emoji: string;
+  avatarSource?: ImageSourcePropType;
+  avatarEmoji?: string;
   rank: string;
   remainingMs: number;
   accent: string;
@@ -379,7 +384,7 @@ function PlayerRow({
   return (
     <View className="flex-row items-center justify-between gap-sm px-sm py-xs">
       <View className="flex-shrink flex-row items-center gap-sm">
-        <PlayerAvatar emoji={emoji} size="small" />
+        <PlayerAvatar source={avatarSource} emoji={avatarEmoji} size="small" />
         <View className="flex-shrink">
           <Text className="font-display-hero uppercase text-text-primary" style={{ fontSize: 14 }} numberOfLines={1}>
             {name}

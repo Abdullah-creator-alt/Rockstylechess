@@ -2,6 +2,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { SubPageHeader } from '@/components/layout'
 import { AppIcon, CurrencyPill, PlayerAvatar, RockButton, RockCard } from '@/components/ui'
@@ -36,6 +37,7 @@ type FriendsTab = 'all' | 'recent'
 
 export default function FriendsScreen() {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const { gems } = usePlayerProfile()
   const [activeTab, setActiveTab] = useState<FriendsTab>('all')
 
@@ -43,7 +45,7 @@ export default function FriendsScreen() {
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Friends" trailing={<CurrencyPill type="gems" value={gems} />} />
 
-      <ScrollView contentContainerClassName="gap-lg px-lg py-xl" contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerClassName="gap-lg px-lg py-xl" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }} showsVerticalScrollIndicator={false}>
         {/* Entry point into the private-room ("play a friend") flow -- from
             new_ui's friends.tsx; Home's bento grid no longer carries it. */}
         <RockButton

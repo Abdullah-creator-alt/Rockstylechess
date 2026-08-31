@@ -6,6 +6,8 @@ export { RockCard } from './RockCard';
 export { CurrencyPill } from './CurrencyPill';
 export type { CurrencyType } from './CurrencyPill';
 
+export { CurrencyIcon } from './CurrencyIcon';
+
 export { PlayerAvatar } from './PlayerAvatar';
 export type { AvatarSize } from './PlayerAvatar';
 

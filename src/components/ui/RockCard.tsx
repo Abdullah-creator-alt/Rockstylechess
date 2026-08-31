@@ -20,11 +20,37 @@ interface RockCardProps {
    * radius 8, and none of the extra light layers.
    */
   variant?: 'depth' | 'surface';
+  /** Override the content inset (default `Spacing.lg` = 16). */
+  contentPadding?: number;
+  /**
+   * `'depth'` only. Tints just the soft top inner-glow layer this color,
+   * leaving the border and outer shadow on whatever `glowColor` gives — for a
+   * faint accent that doesn't announce itself the way a full `glowColor` does.
+   */
+  innerGlow?: string;
+  /** Make the content area fill the card's height (for a card given an
+   *  explicit height / aspectRatio, so its children can centre). */
+  fillHeight?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
-export function RockCard({ children, glowColor, backgroundImage, variant = 'depth', style }: RockCardProps) {
+export function RockCard({
+  children,
+  glowColor,
+  backgroundImage,
+  variant = 'depth',
+  contentPadding,
+  fillHeight = false,
+  innerGlow,
+  style,
+}: RockCardProps) {
+  const contentStyle: StyleProp<ViewStyle> = [
+    styles.content,
+    contentPadding !== undefined && { padding: contentPadding },
+    fillHeight && styles.contentFill,
+  ];
   const glow = glowColor ?? Colors.gold;
+  const innerGlowColor = innerGlow ?? glow;
 
   const photoLayers = backgroundImage ? (
     <>
@@ -73,7 +99,7 @@ export function RockCard({ children, glowColor, backgroundImage, variant = 'dept
           style={StyleSheet.absoluteFillObject}
         />
         {photoLayers}
-        <View style={styles.content}>{children}</View>
+        <View style={contentStyle}>{children}</View>
       </View>
     );
   }
@@ -108,7 +134,7 @@ export function RockCard({ children, glowColor, backgroundImage, variant = 'dept
       {/* Soft accent glow near the top -- independent of the photo scrim. */}
       <LinearGradient
         pointerEvents="none"
-        colors={[withOpacity(glow, 0.16), withOpacity(glow, 0)]}
+        colors={[withOpacity(innerGlowColor, 0.16), withOpacity(innerGlowColor, 0)]}
         style={styles.innerGlow}
       />
 
@@ -122,7 +148,7 @@ export function RockCard({ children, glowColor, backgroundImage, variant = 'dept
         style={styles.topHighlightLine}
       />
 
-      <View style={styles.content}>{children}</View>
+      <View style={contentStyle}>{children}</View>
     </View>
   );
 }
@@ -162,11 +188,10 @@ const styles = StyleSheet.create({
     height: 1,
   },
   content: {
-    // flex:1 is a no-op when the card's height is content-driven (the common
-    // case) and lets the content fill the card when it has an explicit
-    // height/aspectRatio (e.g. the square Home bento tiles).
-    flex: 1,
     padding: Spacing.lg,
+  },
+  contentFill: {
+    flex: 1,
   },
 });
 // #endregion

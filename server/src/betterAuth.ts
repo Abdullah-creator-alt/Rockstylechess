@@ -34,7 +34,7 @@ function isLocalDatabase(): boolean {
 // purchases can be smoke-tested without grinding or manually editing the
 // local DB. Never applies unless isLocalDatabase() is also true.
 const TEST_ACCOUNT_DOMAIN = /@rockstyle\.test$/i;
-const TEST_ACCOUNT_CHIPS = 100_000_000;
+const TEST_ACCOUNT_CHIPS = 100_000;
 const TEST_ACCOUNT_GEMS = 100_000;
 
 export const auth = betterAuth({
@@ -76,7 +76,7 @@ export const auth = betterAuth({
       create: {
         // Replaces the old POST /auth/signup handler's
         // `db.insert(playerProfiles)` call -- same defaults (1200 rating,
-        // 10M chips) come from playerProfiles's own column defaults, except
+        // 10,000 chips) come from playerProfiles's own column defaults, except
         // for local-dev @rockstyle.test test accounts (see
         // TEST_ACCOUNT_DOMAIN above).
         after: async (user) => {
