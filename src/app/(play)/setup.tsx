@@ -6,26 +6,24 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CurrencyPill, RockButton, RockCard } from '@/components/ui';
+import { BoardAssetPrewarm } from '@/components/ui/BoardAssetPrewarm';
 import { SubPageHeader } from '@/components/layout';
 import { Colors, withOpacity } from '@/constants/theme';
-import { VENUES, formatChips, getVenue, type Venue } from '@/constants/venues';
+import { VENUES, formatChips, getVenue, isVenueLocked, type Venue } from '@/constants/venues';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
-import type { Duration } from '@/lib/onlineMatch';
-
-const DURATION_LABELS: Record<Duration, string> = { '3m': 'Blitz', '5m': 'Blitz', '10m': 'Rapid' };
-const DURATIONS: Duration[] = ['3m', '5m', '10m'];
+import { DURATIONS, DURATION_LABELS, type Duration } from '@/lib/onlineMatch';
 
 export default function PlaySetupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { chips } = usePlayerProfile();
+  const { chips, profile } = usePlayerProfile();
   const [selectedVenueId, setSelectedVenueId] = useState('arena');
   const [duration, setDuration] = useState<Duration>('5m');
 
   const selectedVenue = getVenue(selectedVenueId);
 
   function handleVenuePress(venue: Venue) {
-    if (venue.buyIn > chips) {
+    if (isVenueLocked(venue, chips)) {
       console.log('Venue locked - insufficient chips', venue.name);
       return;
     }
@@ -35,6 +33,7 @@ export default function PlaySetupScreen() {
 
   return (
     <View className="flex-1 bg-bg-base">
+      <BoardAssetPrewarm pieceId={profile?.equippedPieceId} />
       <SubPageHeader title="Match Setup" trailing={<CurrencyPill type="chips" value={chips} />} />
 
       <ScrollView contentContainerClassName="mx-auto w-full max-w-4xl gap-xl px-margin-mobile pt-lg" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }}>
@@ -42,7 +41,7 @@ export default function PlaySetupScreen() {
           <Text className="font-section-header text-section-header uppercase tracking-widest text-text-muted">Venue &amp; Stakes</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-md pb-1">
             {VENUES.map((venue) => {
-              const locked = venue.buyIn > chips;
+              const locked = isVenueLocked(venue, chips);
               const isActive = !locked && selectedVenueId === venue.id;
               return (
                 <Pressable

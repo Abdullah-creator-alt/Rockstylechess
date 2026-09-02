@@ -5,6 +5,7 @@ import { bearer } from 'better-auth/plugins';
 
 import { allowedTrustedOrigins } from './allowedOrigins.js';
 import { db } from './db/client.js';
+import { generateFriendCode } from './db/friends.js';
 import { account, playerProfiles, session, users, verification } from './db/schema/index.js';
 
 const BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET;
@@ -83,6 +84,10 @@ export const auth = betterAuth({
           const isTestAccount = isLocalDatabase() && TEST_ACCOUNT_DOMAIN.test(user.email);
           await db.insert(playerProfiles).values({
             userId: user.id,
+            // The short code another player types in to friend this account
+            // (see db/friends.ts). Generated once, here, so it exists for
+            // every account from creation.
+            friendCode: await generateFriendCode(),
             ...(isTestAccount ? { chips: TEST_ACCOUNT_CHIPS, gems: TEST_ACCOUNT_GEMS } : {}),
           });
         },

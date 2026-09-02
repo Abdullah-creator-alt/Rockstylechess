@@ -146,14 +146,7 @@ export default function PickRockstarScreen() {
         </View>
       </ScrollView>
 
-      <BottomNav
-        activeTab="play"
-        onTabPress={(tab) => {
-          if (tab === 'ranks') router.push('/world-rankings');
-          else if (tab === 'profile') router.push('/iron-id');
-          else console.log('tab', tab);
-        }}
-      />
+      <BottomNav activeTab="play" />
     </View>
   );
 }

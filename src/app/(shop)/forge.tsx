@@ -1,9 +1,10 @@
 import { Image } from 'expo-image';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useState, type ReactNode } from 'react';
 
-import { AppIcon, ChessBoard, CurrencyIcon, CurrencyPill, PlayerAvatar, RockButton } from '@/components/ui';
+import { AppIcon, ChessBoard, CurrencyIcon, PlayerAvatar, RockButton } from '@/components/ui';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { SubPageHeader } from '@/components/layout';
 import { AVATARS } from '@/constants/avatars';
@@ -31,8 +32,13 @@ const TABS: { key: ForgeCategory; label: string }[] = [
 
 export default function ForgeScreen() {
   const insets = useSafeAreaInsets();
-  const { profile, gems, refresh: refreshProfile } = usePlayerProfile();
+  const { profile, gems, chips, refresh: refreshProfile } = usePlayerProfile();
   const [activeTab, setActiveTab] = useState<ForgeCategory>('boards');
+  // Locked board/piece the player tapped to buy -- drives the unlock modal.
+  const [unlockTarget, setUnlockTarget] = useState<{
+    category: 'boards' | 'pieces';
+    option: BoardTheme | PieceSet;
+  } | null>(null);
   const [selected, setSelected] = useState<Record<ForgeCategory, string>>({
     boards: 'classic-chrome',
     pieces: 'classic-pieces',
@@ -100,11 +106,7 @@ export default function ForgeScreen() {
 
   function handleLockedTap(category: 'boards' | 'pieces', option: BoardTheme | PieceSet) {
     if (isMutating) return;
-    Alert.alert(`Unlock ${option.name}`, 'Choose how to pay:', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: `${(option.gemPrice ?? 0).toLocaleString()} Gems`, onPress: () => confirmPurchase(category, option, 'gems') },
-      { text: `${(option.chipPrice ?? 0).toLocaleString()} Chips`, onPress: () => confirmPurchase(category, option, 'chips') },
-    ]);
+    setUnlockTarget({ category, option });
   }
 
   async function confirmPurchase(category: 'boards' | 'pieces', option: BoardTheme | PieceSet, currency: 'gems' | 'chips') {
@@ -162,7 +164,29 @@ export default function ForgeScreen() {
 
   return (
     <View className="flex-1 bg-bg-base">
-      <SubPageHeader title="The Forge" trailing={<CurrencyPill type="gems" value={gems} />} />
+      <SubPageHeader
+        title="The Forge"
+        trailing={
+          <View
+            className="flex-row items-center gap-2 rounded-full px-3 py-1"
+            style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.85), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}
+          >
+            <View className="flex-row items-center gap-1">
+              <CurrencyIcon type="chips" size={13} />
+              <Text className="font-heading-md text-text-primary" style={{ fontSize: 12 }}>
+                {chips.toLocaleString('en-US')}
+              </Text>
+            </View>
+            <View style={{ width: 1, height: 12, backgroundColor: withOpacity(Colors.chromeDark, 0.5) }} />
+            <View className="flex-row items-center gap-1">
+              <CurrencyIcon type="gems" size={13} />
+              <Text className="font-heading-md text-text-primary" style={{ fontSize: 12 }}>
+                {gems.toLocaleString('en-US')}
+              </Text>
+            </View>
+          </View>
+        }
+      />
 
       <ScrollView contentContainerClassName="mx-auto w-full max-w-2xl gap-lg px-margin-mobile py-md" contentContainerStyle={{ paddingBottom: 140 + insets.bottom }}>
         <View className="w-full flex-row rounded-lg p-1" style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.4) }}>
@@ -250,7 +274,115 @@ export default function ForgeScreen() {
           style={{ width: '100%', maxWidth: 380 }}
         />
       </View>
+
+      <UnlockModal
+        target={unlockTarget}
+        gems={gems}
+        chips={chips}
+        onCancel={() => setUnlockTarget(null)}
+        onPay={(currency) => {
+          if (!unlockTarget) return;
+          const target = unlockTarget;
+          setUnlockTarget(null);
+          void confirmPurchase(target.category, target.option, currency);
+        }}
+      />
     </View>
+  );
+}
+
+// Mirrors ConfirmModal's card recipe (dimmed backdrop, centered panel, cyan
+// accent, spring-in), but with two "pay" buttons instead of one Confirm --
+// forge cosmetics can be bought with either gems or chips.
+function UnlockModal({
+  target,
+  gems,
+  chips,
+  onCancel,
+  onPay,
+}: {
+  target: { category: 'boards' | 'pieces'; option: BoardTheme | PieceSet } | null;
+  gems: number;
+  chips: number;
+  onCancel: () => void;
+  onPay: (currency: 'gems' | 'chips') => void;
+}) {
+  const visible = target !== null;
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = withTiming(visible ? 1 : 0, { duration: 180, easing: Easing.out(Easing.quad) });
+  }, [visible, progress]);
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.92 + progress.value * 0.08 }],
+  }));
+
+  const gemPrice = target?.option.gemPrice ?? 0;
+  const chipPrice = target?.option.chipPrice ?? 0;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
+      <Pressable
+        onPress={onCancel}
+        style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, backgroundColor: withOpacity(Colors.bgBase, 0.8) }}
+      >
+        <Pressable onPress={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 340 }}>
+          <Animated.View style={cardStyle}>
+            <View
+              style={{
+                alignItems: 'center',
+                borderRadius: 20,
+                overflow: 'hidden',
+                borderWidth: 1,
+                borderColor: withOpacity(Colors.cyan, 0.3),
+                backgroundColor: Colors.bgPanel,
+                padding: 16,
+                boxShadow: `0px 10px 25px ${withOpacity(Colors.cyan, 0.3)}`,
+              }}
+            >
+              <View
+                style={{
+                  marginBottom: 12,
+                  height: 56,
+                  width: 56,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 28,
+                  backgroundColor: withOpacity(Colors.cyan, 0.1),
+                  borderWidth: 1,
+                  borderColor: withOpacity(Colors.cyan, 0.3),
+                }}
+              >
+                <AppIcon name="lock" size={26} color={Colors.cyan} />
+              </View>
+              <Text style={{ marginBottom: 4, textAlign: 'center', fontSize: 18, fontWeight: '600', color: Colors.textPrimary }}>
+                Unlock {target?.option.name ?? ''}?
+              </Text>
+              <Text style={{ marginBottom: 16, textAlign: 'center', fontSize: 14, color: Colors.textMuted }}>
+                Add this {target?.category === 'boards' ? 'board' : 'piece set'} to your collection.
+              </Text>
+              <View style={{ width: '100%', gap: 8 }}>
+                <RockButton
+                  label={`${gemPrice.toLocaleString()} Gems`}
+                  variant="cyan"
+                  icon={<CurrencyIcon type="gems" size={16} color={Colors.bgBase} />}
+                  disabled={gems < gemPrice}
+                  onPress={() => onPay('gems')}
+                />
+                <RockButton
+                  label={`${chipPrice.toLocaleString()} Chips`}
+                  variant="gold"
+                  icon={<CurrencyIcon type="chips" size={16} color={Colors.bgBase} />}
+                  disabled={chips < chipPrice}
+                  onPress={() => onPay('chips')}
+                />
+                <RockButton label="Cancel" variant="secondary" onPress={onCancel} />
+              </View>
+            </View>
+          </Animated.View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -277,10 +409,23 @@ function ForgeTile({
       <View style={{ position: 'absolute', inset: 0, borderWidth: selected ? 2 : 1, borderColor: selected ? Colors.cyan : withOpacity(Colors.chromeDark, 0.5), borderRadius: 8 }} />
       {locked ? (
         <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: withOpacity(Colors.bgBase, 0.6) }}>
-          <AppIcon name="lock" size={24} color={Colors.textMuted} />
-          <View className="mt-1 flex-row items-center rounded-full px-2 py-0.5" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.8), borderWidth: 1, borderColor: Colors.chromeDark }}>
-            <CurrencyIcon type={gemPrice ? 'gems' : 'chips'} size={12} />
-            <Text className="ml-1 font-caption text-caption text-text-primary">{(gemPrice ?? chipPrice ?? 0).toLocaleString()}</Text>
+          <AppIcon name="lock" size={22} color={Colors.textMuted} />
+          <View
+            className="mt-1 items-center gap-0.5 rounded-md px-1.5 py-1"
+            style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.85), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.8) }}
+          >
+            {gemPrice ? (
+              <View className="flex-row items-center gap-0.5">
+                <CurrencyIcon type="gems" size={10} />
+                <Text className="font-caption text-text-primary" style={{ fontSize: 9 }}>{gemPrice.toLocaleString()}</Text>
+              </View>
+            ) : null}
+            {chipPrice ? (
+              <View className="flex-row items-center gap-0.5">
+                <CurrencyIcon type="chips" size={10} />
+                <Text className="font-caption text-text-primary" style={{ fontSize: 9 }}>{chipPrice.toLocaleString()}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       ) : null}

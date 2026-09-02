@@ -26,6 +26,11 @@ export const playerProfiles = pgTable('player_profiles', {
     .references(() => users.id, { onDelete: 'cascade' }),
   displayName: varchar('display_name', { length: 40 }),
   avatarId: varchar('avatar_id', { length: 40 }),
+  // Short human-typed code another player enters to send a friend request
+  // (see db/friends.ts). Set on account creation by betterAuth.ts's
+  // user-create hook; nullable only so the 0007 migration can backfill
+  // pre-existing rows before the unique index is enforced.
+  friendCode: varchar('friend_code', { length: 12 }).unique(),
   level: integer('level').notNull().default(1),
   xp: integer('xp').notNull().default(0),
   // Standard chess-app baseline for a brand new account -- unrelated to the

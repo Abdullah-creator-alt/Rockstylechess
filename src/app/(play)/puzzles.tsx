@@ -336,15 +336,7 @@ export default function PuzzlesScreen() {
         />
       )}
 
-      <BottomNav
-        activeTab="play"
-        onTabPress={(tab) => {
-          if (tab === 'ranks') router.push('/world-rankings');
-          else if (tab === 'profile') router.push('/iron-id');
-          else if (tab === 'shop') router.push('/shop');
-          else console.log('tab pressed', tab);
-        }}
-      />
+      <BottomNav activeTab="play" />
     </View>
   );
 }

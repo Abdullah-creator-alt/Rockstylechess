@@ -9,11 +9,9 @@ import { AppIcon, BottomNav, EmberParticles, RockButton, RockCard } from '@/comp
 import { TopAppBar } from '@/components/layout';
 import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
-import { VENUES, formatChips, getVenue, type Venue } from '@/constants/venues';
+import { VENUES, formatChips, getVenue, isVenueLocked, type Venue } from '@/constants/venues';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
-import type { Duration } from '@/lib/onlineMatch';
-
-const DURATIONS: Duration[] = ['3m', '5m', '10m'];
+import { DURATIONS, type Duration } from '@/lib/onlineMatch';
 
 // Bento grid -- from new_ui (tabs)/index.tsx (icons, labels, sub-labels,
 // routes). Each tile carries the same colored glow so all four read
@@ -44,7 +42,7 @@ export default function HomeLobbyScreen() {
   const selectedVenue = getVenue(selectedVenueId);
 
   function handleVenuePress(venue: Venue) {
-    if (venue.buyIn > chips) {
+    if (isVenueLocked(venue, chips)) {
       console.log('Venue locked - insufficient chips', venue.name);
       return;
     }
@@ -66,7 +64,7 @@ export default function HomeLobbyScreen() {
             by affordability, same rule as (play)/setup.tsx. */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-sm" contentContainerStyle={{ paddingVertical: 2 }}>
           {VENUES.map((venue) => {
-            const locked = venue.buyIn > chips;
+            const locked = isVenueLocked(venue, chips);
             const isActive = !locked && selectedVenueId === venue.id;
             const tint = locked ? Colors.chromeMid : isActive ? Colors.cyan : Colors.textMuted;
             return (
@@ -194,17 +192,21 @@ export default function HomeLobbyScreen() {
           ))}
         </View>
 
-        {/* Daily rewards -- migrated 1:1 from new_ui (tabs)/index.tsx */}
+        {/* Daily rewards -- surface cards with a faint icon-colored inner glow
+            so they read as part of the same family as the bento tiles above. */}
         <View className="gap-sm">
           <Text className="pl-xs font-section-header text-section-header uppercase tracking-widest text-text-muted">
             Daily Rewards
           </Text>
 
           <Pressable onPress={() => router.push('/daily-bonus')}>
-            <RockCard variant="surface">
+            <RockCard variant="surface" glowColor={Colors.gold} contentPadding={12}>
               <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-md">
-                  <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.chrome, 0.1) }}>
+                <View className="flex-1 flex-row items-center gap-md">
+                  <View
+                    className="h-10 w-10 items-center justify-center rounded-md"
+                    style={{ backgroundColor: withOpacity(Colors.gold, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.3) }}
+                  >
                     <AppIcon name="calendar_today" size={20} color={Colors.gold} />
                   </View>
                   <View>
@@ -214,7 +216,7 @@ export default function HomeLobbyScreen() {
                 </View>
                 <View className="h-4 w-24 overflow-hidden rounded-full" style={{ backgroundColor: withOpacity(Colors.chrome, 0.1) }}>
                   <LinearGradient
-                    colors={[Colors.cyan, Colors.chrome]}
+                    colors={[Colors.gold, Colors.emberLight]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={{ width: '80%', height: '100%' }}
@@ -224,10 +226,13 @@ export default function HomeLobbyScreen() {
             </RockCard>
           </Pressable>
 
-          <RockCard variant="surface">
+          <RockCard variant="surface" glowColor={Colors.ember} contentPadding={12}>
             <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-md">
-                <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.chrome, 0.1) }}>
+              <View className="flex-1 flex-row items-center gap-md">
+                <View
+                  className="h-10 w-10 items-center justify-center rounded-md"
+                  style={{ backgroundColor: withOpacity(Colors.ember, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.ember, 0.3) }}
+                >
                   <AppIcon name="casino" size={20} color={Colors.ember} />
                 </View>
                 <View>
@@ -238,24 +243,16 @@ export default function HomeLobbyScreen() {
               <Pressable
                 onPress={() => router.push('/spin')}
                 className="rounded-full px-md py-xs"
-                style={{ backgroundColor: withOpacity(Colors.chrome, 0.1), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}
+                style={{ backgroundColor: withOpacity(Colors.ember, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.ember, 0.4) }}
               >
-                <Text className="font-button-label text-button-label uppercase text-text-primary">Spin</Text>
+                <Text className="font-button-label text-button-label uppercase" style={{ color: Colors.emberLight }}>Spin</Text>
               </Pressable>
             </View>
           </RockCard>
         </View>
       </ScrollView>
 
-      <BottomNav
-        activeTab="home"
-        onTabPress={(tab) => {
-          if (tab === 'ranks') router.push('/world-rankings');
-          else if (tab === 'profile') router.push('/iron-id');
-          else if (tab === 'shop') router.push('/shop');
-          else console.log('tab pressed', tab);
-        }}
-      />
+      <BottomNav activeTab="home" />
     </View>
   );
 }

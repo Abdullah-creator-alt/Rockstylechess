@@ -20,12 +20,15 @@ files without adding `/play` to the URL/deep-link path.
   reconnects) so a network blip while still queued doesn't strand the player.
   Leaving the screen emits `queue:leave`.
 - `match.tsx` — the chess board itself, built from `the_match_pro_stage_production_ready`.
-  Reads `mode`/`difficulty` route params (bot matches) or `mode=online` +
-  `matchId`/`color`/`fen`/`opponentName` (real multiplayer, passed by
-  `matchmaking.tsx` once the server pairs an opponent) and passes them into
-  `useChessGame`, which routes online moves through `src/lib/socket.ts` instead
-  of applying them locally. Mounts `StockfishEngine` when `difficulty` is one of
-  the two Stockfish tiers.
+  Reads `mode`/`difficulty` (+ optional `duration`/`venueTier`) route params for
+  bot matches, or `mode=online` + `matchId`/`color`/`fen`/`opponentName` +
+  server-provided `clockW`/`clockB` (real multiplayer, passed by `matchmaking.tsx`
+  once the server pairs an opponent) and passes them into `useChessGame`, which
+  routes online moves through `src/lib/socket.ts` instead of applying them
+  locally. Mounts `StockfishEngine` when `difficulty` is one of the two Stockfish
+  tiers. Bot/local clock time = `DURATION_MS[duration]` (from `src/lib/onlineMatch.ts`)
+  when a `duration` param is present, else `DEFAULT_CLOCK_MS` (5 min). `venueTier`
+  is carried in the params but has no visual effect yet.
 - `result-placeholder.tsx` — stub destination for Resign until the real Win/Loss
   screen is built.
 - `bots.tsx` — AI opponent gallery, built from `bots_pro_stage_animated`. Each
@@ -33,8 +36,13 @@ files without adding `/play` to the URL/deep-link path.
   Roadie Rick=easy (1-ply heuristic), Valkyrie Riff/Old School Roy=medium
   (heuristic minimax, iteratively deepened up to 3-ply), Metal Head=
   stockfish-basic (~1600 Elo), The Reaper=stockfish-lite (~2000 Elo), King
-  Axl=stockfish-strong (~2800 Elo) — forwarded to `/match`
-  as a route param.
+  Axl=stockfish-strong (~2800 Elo) — forwarded to `/match` as a route param.
+  A "Match Options" row below the intro opens `MatchOptionsModal`
+  (`src/components/ui/MatchOptionsModal.tsx`) to pick a **time control**
+  (3m/5m/10m — drives the match clock) and a **venue** (recorded + passed as
+  `venueTier`, no match effect yet); the row also shows the current
+  `duration · venue` selection. Both ride along on the `/match` push; session
+  state only, resets to `5m` / `arena` on each visit.
 - `tournaments.tsx` — built from `tournaments_pro_stage_animated`.
 - `puzzles.tsx` — puzzle training hub over `src/lib/puzzleCatalog.ts` (~250
   puzzles curated by `scripts/curate-puzzles.mjs` from the Lichess CC0 DB, no

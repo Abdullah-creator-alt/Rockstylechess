@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -63,6 +63,19 @@ const DEFAULT_PIECE_SPRITES: PieceSpriteMap = getPieceSprites('classic-pieces');
 function squareAt(rowIndex: number, colIndex: number): string {
   return `${FILES[colIndex]}${8 - rowIndex}`;
 }
+
+// The 64 square ids, built once -- the 8x8 render map indexes this instead of
+// rebuilding `"e4"` strings on every board render.
+const SQUARE_IDS: string[][] = Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => squareAt(r, c)));
+
+// Static frame-gradient inputs, hoisted so the board's render doesn't
+// reallocate these array/object literals every time it re-renders.
+const FRAME_COLORS = [Colors.chrome, Colors.chromeMid, Colors.chrome, Colors.chromeDark, Colors.chromeMid] as const;
+const FRAME_LOCATIONS = [0, 0.22, 0.5, 0.82, 1] as const;
+const FRAME_START = { x: 0.1, y: 0 } as const;
+const FRAME_END = { x: 0.9, y: 1 } as const;
+const BEVEL_COLORS = [withOpacity(Colors.chrome, 0.95), withOpacity(Colors.chrome, 0), withOpacity(Colors.bgBase, 0.35)] as const;
+const BEVEL_LOCATIONS = [0, 0.35, 1] as const;
 
 function squareToRowCol(square: string): [row: number, col: number] {
   const col = FILES.indexOf(square[0]);
@@ -295,7 +308,7 @@ interface ChessBoardProps {
   pieceSprites?: PieceSpriteMap;
 }
 
-export function ChessBoard({
+export const ChessBoard = memo(function ChessBoard({
   style,
   board = STARTING_BOARD,
   selectedSquare = null,
@@ -380,7 +393,7 @@ export function ChessBoard({
   // gesture worklet is what avoids a one-frame flash back to the origin
   // square -- the same class of Android-timing issue the old ghost-swap
   // drag system had to account for.
-  function bakeDraggedPosition(): number {
+  const bakeDraggedPosition = useCallback((): number => {
     const draggedId = draggingIdSV.value;
     if (draggedId !== -1) {
       const pos = positionsRef.current.get(draggedId);
@@ -393,17 +406,20 @@ export function ChessBoard({
       draggingIdSV.value = -1;
     }
     return draggedId;
-  }
+  }, [draggingIdSV, dragX, dragY, squareSize]);
 
-  function settleDraggedPieceHome(id: number) {
-    if (id === -1) return;
-    const pos = positionsRef.current.get(id);
-    const piece = livePiecesRef.current.find((p) => p.id === id);
-    if (!pos || !piece) return;
-    const [r, c] = squareToRowCol(piece.square);
-    pos.row.value = withSpring(r, DRAG_SETTLE_SPRING);
-    pos.col.value = withSpring(c, DRAG_SETTLE_SPRING);
-  }
+  const settleDraggedPieceHome = useCallback(
+    (id: number) => {
+      if (id === -1) return;
+      const pos = positionsRef.current.get(id);
+      const piece = livePiecesRef.current.find((p) => p.id === id);
+      if (!pos || !piece) return;
+      const [r, c] = squareToRowCol(piece.square);
+      pos.row.value = withSpring(r, DRAG_SETTLE_SPRING);
+      pos.col.value = withSpring(c, DRAG_SETTLE_SPRING);
+    },
+    [],
+  );
 
   const handleGhostDone = useCallback((id: number) => {
     setDyingGhosts((prev) => prev.filter((g) => g.id !== id));
@@ -503,37 +519,49 @@ export function ChessBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board, lastMove, animateLastMove, lastMoveSound, checkSquare]);
 
-  function handleGridLayout(event: LayoutChangeEvent) {
+  const handleGridLayout = useCallback((event: LayoutChangeEvent) => {
     setGridSize(Math.min(event.nativeEvent.layout.width, event.nativeEvent.layout.height));
-  }
+  }, []);
 
-  function handleTapSquare(square: string) {
-    onSquarePress?.(square);
-  }
+  // Stable identities so the 64 memo(Square)s -- and the 3 Gesture objects each
+  // builds -- don't rebuild on every ChessBoard render (they change only when
+  // `onSquarePress` itself does, i.e. on a square selection).
+  const handleTapSquare = useCallback(
+    (square: string) => {
+      onSquarePress?.(square);
+    },
+    [onSquarePress],
+  );
 
-  function handleGrab(square: string) {
-    dragX.value = 0;
-    dragY.value = 0;
-    const livePiece = livePiecesRef.current.find((p) => p.square === square);
-    if (livePiece) draggingIdSV.value = livePiece.id;
-    onSquarePress?.(square);
-  }
+  const handleGrab = useCallback(
+    (square: string) => {
+      dragX.value = 0;
+      dragY.value = 0;
+      const livePiece = livePiecesRef.current.find((p) => p.square === square);
+      if (livePiece) draggingIdSV.value = livePiece.id;
+      onSquarePress?.(square);
+    },
+    [onSquarePress, dragX, dragY, draggingIdSV],
+  );
 
-  function handleDrop(fromSquare: string, deltaRow: number, deltaCol: number) {
-    const [fromRow, fromCol] = squareToRowCol(fromSquare);
-    const targetRow = Math.min(7, Math.max(0, fromRow + deltaRow));
-    const targetCol = Math.min(7, Math.max(0, fromCol + deltaCol));
-    const targetSquare = squareAt(targetRow, targetCol);
-    if (targetSquare !== fromSquare) {
-      // A real attempt (legal or not) -- the reconciliation effect above
-      // resolves where this piece's drag ends up, once refresh() lands.
-      onSquarePress?.(targetSquare);
-      return;
-    }
-    // Dropped back where it started -- no state change is coming, so there's
-    // nothing to wait on; resolve the drag right here.
-    settleDraggedPieceHome(bakeDraggedPosition());
-  }
+  const handleDrop = useCallback(
+    (fromSquare: string, deltaRow: number, deltaCol: number) => {
+      const [fromRow, fromCol] = squareToRowCol(fromSquare);
+      const targetRow = Math.min(7, Math.max(0, fromRow + deltaRow));
+      const targetCol = Math.min(7, Math.max(0, fromCol + deltaCol));
+      const targetSquare = squareAt(targetRow, targetCol);
+      if (targetSquare !== fromSquare) {
+        // A real attempt (legal or not) -- the reconciliation effect above
+        // resolves where this piece's drag ends up, once refresh() lands.
+        onSquarePress?.(targetSquare);
+        return;
+      }
+      // Dropped back where it started -- no state change is coming, so there's
+      // nothing to wait on; resolve the drag right here.
+      settleDraggedPieceHome(bakeDraggedPosition());
+    },
+    [onSquarePress, settleDraggedPieceHome, bakeDraggedPosition],
+  );
 
   return (
     <View style={[styles.boardWrap, style]}>
@@ -544,24 +572,18 @@ export function ChessBoard({
           // Brushed-metal frame: the extra mid stops give it a bright top-left
           // edge and a rolled-off bottom-right, so it reads as a machined bezel
           // rather than a flat two-tone band.
-          colors={[
-            Colors.chrome,
-            Colors.chromeMid,
-            Colors.chrome,
-            Colors.chromeDark,
-            Colors.chromeMid,
-          ]}
-          locations={[0, 0.22, 0.5, 0.82, 1]}
-          start={{ x: 0.1, y: 0 }}
-          end={{ x: 0.9, y: 1 }}
+          colors={FRAME_COLORS}
+          locations={FRAME_LOCATIONS}
+          start={FRAME_START}
+          end={FRAME_END}
           style={styles.boardFrame}
         >
           {/* Bevel: a bright inner highlight down the top edge and a dark
               recess at the bottom, so the playfield looks inset into the frame. */}
           <LinearGradient
             pointerEvents="none"
-            colors={[withOpacity(Colors.chrome, 0.95), withOpacity(Colors.chrome, 0), withOpacity(Colors.bgBase, 0.35)]}
-            locations={[0, 0.35, 1]}
+            colors={BEVEL_COLORS}
+            locations={BEVEL_LOCATIONS}
             style={styles.frameBevel}
           />
 
@@ -579,7 +601,7 @@ export function ChessBoard({
               {board.map((rowPieces, rowIndex) => (
                 <View key={rowIndex} style={styles.boardRow}>
                   {rowPieces.map((piece, colIndex) => {
-                    const square = squareAt(rowIndex, colIndex);
+                    const square = SQUARE_IDS[rowIndex][colIndex];
                     const isLight = (rowIndex + colIndex) % 2 === 0;
                     const isWhitePiece = piece !== '' && piece === piece.toUpperCase();
                     const canDrag =
@@ -666,7 +688,7 @@ export function ChessBoard({
       </View>
     </View>
   );
-}
+});
 
 // Cross-platform outer glow. React Native's colored `boxShadow` is unreliable
 // on Android, so the cyan halo in the reference is built as three concentric
@@ -753,32 +775,38 @@ const Square = memo(function Square({
 }: SquareProps) {
   const labelColor = isLight ? withOpacity(Colors.boardEdge, 0.75) : withOpacity(Colors.chrome, 0.65);
 
-  const tap = Gesture.Tap()
-    .enabled(interactive)
-    .onEnd((_event, success) => {
-      if (success) runOnJS(onTapSquare)(square);
-    });
+  // Rebuilt only when one of these actually changes (canDrag flips as a piece
+  // moves on/off the square, squareSize on a board resize) -- not on every
+  // ChessBoard render, which used to churn ~192 Gesture objects a second while
+  // the clock ticked.
+  const composedGesture = useMemo(() => {
+    const tap = Gesture.Tap()
+      .enabled(interactive)
+      .onEnd((_event, success) => {
+        if (success) runOnJS(onTapSquare)(square);
+      });
 
-  const pan = Gesture.Pan()
-    .enabled(canDrag)
-    .minDistance(4)
-    .onStart(() => {
-      runOnJS(onGrab)(square);
-    })
-    .onUpdate((event) => {
-      dragX.value = event.translationX;
-      dragY.value = event.translationY;
-    })
-    .onEnd((event) => {
-      const deltaCol = Math.round(event.translationX / squareSize);
-      const deltaRow = Math.round(event.translationY / squareSize);
-      // Deliberately doesn't reset dragX/dragY/draggingIdSV here -- see
-      // bakeDraggedPosition's comment for why that handoff happens on the JS
-      // thread instead, synchronous with whatever state update follows.
-      runOnJS(onDrop)(square, deltaRow, deltaCol);
-    });
+    const pan = Gesture.Pan()
+      .enabled(canDrag)
+      .minDistance(4)
+      .onStart(() => {
+        runOnJS(onGrab)(square);
+      })
+      .onUpdate((event) => {
+        dragX.value = event.translationX;
+        dragY.value = event.translationY;
+      })
+      .onEnd((event) => {
+        const deltaCol = Math.round(event.translationX / squareSize);
+        const deltaRow = Math.round(event.translationY / squareSize);
+        // Deliberately doesn't reset dragX/dragY/draggingIdSV here -- see
+        // bakeDraggedPosition's comment for why that handoff happens on the JS
+        // thread instead, synchronous with whatever state update follows.
+        runOnJS(onDrop)(square, deltaRow, deltaCol);
+      });
 
-  const composedGesture = Gesture.Race(pan, tap);
+    return Gesture.Race(pan, tap);
+  }, [interactive, canDrag, squareSize, square, dragX, dragY, onTapSquare, onGrab, onDrop]);
 
   return (
     <GestureDetector gesture={composedGesture}>

@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
@@ -55,6 +55,7 @@ export default function GameRoomScreen() {
           fen: payload.fen,
           opponentName: payload.opponent.displayName,
           opponentAvatarId: payload.opponent.avatarId ?? undefined,
+          opponentUserId: payload.opponent.userId ?? undefined,
           clockW: String(payload.clocks.w),
           clockB: String(payload.clocks.b),
           incrementMs: String(payload.incrementMs),
@@ -109,6 +110,11 @@ export default function GameRoomScreen() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  async function handlePasteCode() {
+    const text = await Clipboard.getStringAsync();
+    if (text) setJoinCode(text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
+  }
+
   async function handleJoin() {
     if (joinCode.trim().length === 0) return;
     setJoining(true);
@@ -127,74 +133,147 @@ export default function GameRoomScreen() {
       <EmberParticles count={8} />
       <SubPageHeader title="Game Room" trailing={<CurrencyPill type="gems" value={gems} />} />
 
-      <View className="mt-xl w-full flex-row self-center rounded-xl p-1" style={{ maxWidth: 380, backgroundColor: withOpacity(Colors.bgPanel, 0.5), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.3) }}>
-        <Pressable onPress={() => setTab('create')} className="flex-1 items-center rounded-lg py-sm" style={tab === 'create' ? { backgroundColor: withOpacity(Colors.cyan, 0.1), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.2) } : undefined}>
-          <Text className="font-section-header text-section-header uppercase tracking-widest" style={{ color: tab === 'create' ? Colors.cyan : Colors.textMuted }}>
-            Create
-          </Text>
-        </Pressable>
-        <Pressable onPress={() => setTab('join')} className="flex-1 items-center rounded-lg py-sm" style={tab === 'join' ? { backgroundColor: withOpacity(Colors.cyan, 0.1), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.2) } : undefined}>
-          <Text className="font-section-header text-section-header uppercase tracking-widest" style={{ color: tab === 'join' ? Colors.cyan : Colors.textMuted }}>
-            Join
-          </Text>
-        </Pressable>
-      </View>
+      <ScrollView
+        contentContainerClassName="mx-auto w-full max-w-lg items-center gap-xl px-margin-mobile pt-xl"
+        contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View
+          className="w-full max-w-sm flex-row rounded-xl p-1"
+          style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.5), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.3) }}
+        >
+          {(['create', 'join'] as const).map((t) => {
+            const active = tab === t;
+            return (
+              <Pressable
+                key={t}
+                onPress={() => setTab(t)}
+                className="flex-1 items-center rounded-lg py-sm"
+                style={active ? { backgroundColor: withOpacity(Colors.cyan, 0.1), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.2) } : undefined}
+              >
+                <Text
+                  className="font-heading-md text-section-header uppercase tracking-widest"
+                  style={{ color: active ? Colors.cyan : Colors.textMuted }}
+                >
+                  {t === 'create' ? 'Create' : 'Join'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
-      <View className="flex-1 items-center gap-lg px-xl" style={{ paddingTop: 24, paddingBottom: insets.bottom + 24 }}>
         {tab === 'create' ? (
           createState === 'waiting' && code ? (
-            <>
-              <Text className="text-center font-body-base text-body-base text-text-muted">Share this code with a friend</Text>
-              <GlowBox color="ember" style={{ width: '100%', maxWidth: 380 }}>
-                <View className="items-center rounded-xl p-lg" style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}>
-                  <Text
-                    className="font-display-hero"
-                    style={{ fontSize: 36, letterSpacing: 8, color: Colors.emberLight, textShadowColor: withOpacity(Colors.emberLight, 0.5), textShadowRadius: 12, textShadowOffset: { width: 0, height: 0 } }}
+            <View className="w-full items-center gap-lg">
+              <View className="w-full items-center gap-sm">
+                <Text className="font-section-header text-section-header uppercase text-text-muted" style={{ letterSpacing: 2 }}>
+                  Private Room Code
+                </Text>
+                <GlowBox color="cyan" intensity="sm" style={{ width: '100%', maxWidth: 360 }}>
+                  <View
+                    className="w-full flex-row items-center justify-between rounded-xl p-lg"
+                    style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}
                   >
-                    {code}
-                  </Text>
-                </View>
-              </GlowBox>
-              <Pressable className="flex-row items-center gap-1 rounded-lg px-md py-sm" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.7), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.3) }} onPress={handleCopyCode}>
-                <AppIcon name={copied ? 'check' : 'content_copy'} size={18} color={Colors.cyan} />
-                <Text className="font-section-header text-caption uppercase text-cyan">{copied ? 'Copied!' : 'Copy Code'}</Text>
-              </Pressable>
+                    <View>
+                      <Text className="mb-xs font-section-header uppercase text-text-muted" style={{ fontSize: 10, letterSpacing: 2 }}>
+                        Active Code
+                      </Text>
+                      <Text className="font-headline-lg text-cyan" style={{ fontSize: 28, letterSpacing: 6 }}>
+                        {code}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={handleCopyCode}
+                      className="items-center justify-center rounded-lg p-md"
+                      style={{ backgroundColor: withOpacity(Colors.bgBase, 0.5), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.3) }}
+                    >
+                      <AppIcon name={copied ? 'check' : 'content_copy'} size={20} color={Colors.cyan} />
+                    </Pressable>
+                  </View>
+                </GlowBox>
+                <Text className="text-center font-body-sm text-body-sm" style={{ color: copied ? Colors.cyan : Colors.textMuted }}>
+                  {copied ? 'Copied to clipboard' : 'Share this code with a friend to start.'}
+                </Text>
+              </View>
 
-              <Animated.View className="mt-md items-center gap-sm" style={pulseStyle}>
+              <Animated.View className="items-center gap-sm" style={pulseStyle}>
                 <PlayerAvatar emoji="❓" size="medium" />
-                <Text className="font-body-sm text-body-sm text-text-muted">Waiting for opponent...</Text>
+                <Text className="font-body-sm text-body-sm text-text-muted">Waiting for opponent…</Text>
               </Animated.View>
-
-              <View className="mt-sm w-full">
-                <RockButton label="Cancel" variant="danger" onPress={handleCancelWaiting} />
-              </View>
-            </>
+            </View>
           ) : (
-            <>
-              <Text className="text-center font-body-base text-body-base text-text-muted">Create a room and invite a friend with a 6-character code.</Text>
-              <View className="mt-sm w-full">
-                <RockButton label={createState === 'creating' ? 'Creating...' : 'Create Room'} variant="primary" disabled={createState === 'creating'} onPress={handleCreate} />
+            <View className="w-full items-center gap-md">
+              <View
+                className="h-16 w-16 items-center justify-center rounded-full"
+                style={{ backgroundColor: withOpacity(Colors.cyan, 0.1), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.3) }}
+              >
+                <AppIcon name="meeting_room" size={30} color={Colors.cyan} />
               </View>
-            </>
+              <Text className="text-center font-body-base text-body-base text-text-muted" style={{ maxWidth: 300 }}>
+                Create a room and invite a friend with a 6-character code.
+              </Text>
+            </View>
           )
         ) : (
-          <>
-            <Text className="text-center font-body-base text-body-base text-text-muted">Enter the 6-character code your friend shared.</Text>
-            <TextInput
-              value={joinCode}
-              onChangeText={(text) => setJoinCode(text.toUpperCase().slice(0, 6))}
-              placeholder="ABCDEF"
-              placeholderTextColor={Colors.textMuted}
-              autoCapitalize="characters"
-              maxLength={6}
-              className="w-full rounded-lg font-display-hero text-cyan"
-              style={{ height: 64, borderWidth: 1.5, borderColor: withOpacity(Colors.chromeDark, 0.4), backgroundColor: withOpacity(Colors.bgBase, 0.5), fontSize: 26, letterSpacing: 8, textAlign: 'center' }}
+          <View className="w-full items-center gap-sm">
+            <Text className="font-section-header text-section-header uppercase text-text-muted" style={{ letterSpacing: 2 }}>
+              Enter Private Room Code
+            </Text>
+            <GlowBox color="cyan" intensity="sm" style={{ width: '100%', maxWidth: 360 }}>
+              <View
+                className="w-full rounded-xl p-lg"
+                style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}
+              >
+                <TextInput
+                  value={joinCode}
+                  onChangeText={(text) => setJoinCode(text.toUpperCase().slice(0, 6))}
+                  placeholder="_ _ _ _ _ _"
+                  placeholderTextColor={withOpacity(Colors.cyan, 0.25)}
+                  autoCapitalize="characters"
+                  maxLength={6}
+                  className="text-center font-headline-lg uppercase text-cyan"
+                  style={{ fontSize: 26, letterSpacing: 8 }}
+                />
+              </View>
+            </GlowBox>
+            <Pressable onPress={handlePasteCode} className="mt-xs flex-row items-center gap-xs">
+              <AppIcon name="content_paste" size={16} color={withOpacity(Colors.cyan, 0.7)} />
+              <Text className="font-button-label text-caption uppercase tracking-widest" style={{ color: withOpacity(Colors.cyan, 0.7) }}>
+                Paste from Clipboard
+              </Text>
+            </Pressable>
+            {joinError ? <Text className="mt-xs text-center font-body-sm text-body-sm text-crimson">{joinError}</Text> : null}
+          </View>
+        )}
+      </ScrollView>
+
+      <View
+        className="absolute bottom-0 left-0 w-full items-center p-margin-mobile"
+        style={{ paddingBottom: insets.bottom + 16 }}
+      >
+        {tab === 'create' ? (
+          createState === 'waiting' ? (
+            <RockButton label="Cancel Room" variant="danger" onPress={handleCancelWaiting} style={{ width: '100%', maxWidth: 380 }} />
+          ) : (
+            <RockButton
+              label={createState === 'creating' ? 'Creating…' : 'Create Room'}
+              variant="primary"
+              icon={<AppIcon name="add_circle" size={18} color={Colors.textPrimary} />}
+              disabled={createState === 'creating'}
+              onPress={handleCreate}
+              style={{ width: '100%', maxWidth: 380 }}
             />
-            {joinError ? <Text className="text-center font-body-sm text-body-sm text-crimson">{joinError}</Text> : null}
-            <View className="mt-sm w-full">
-              <RockButton label={joining ? 'Joining...' : 'Join Room'} variant="primary" disabled={joining || joinCode.length === 0} onPress={handleJoin} />
-            </View>
-          </>
+          )
+        ) : (
+          <RockButton
+            label={joining ? 'Joining…' : 'Join Room'}
+            variant="cyan"
+            icon={<AppIcon name="arrow_forward" size={18} color={Colors.bgBase} />}
+            disabled={joining || joinCode.length === 0}
+            onPress={handleJoin}
+            style={{ width: '100%', maxWidth: 380 }}
+          />
         )}
       </View>
     </View>

@@ -1,4 +1,5 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
@@ -8,6 +9,7 @@ import { AppIcon, BottomNav, CurrencyPill, PlayerAvatar, ProgressBar, RockButton
 import { getAvatarImage } from '@/constants/avatars';
 import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
+import { useFriends } from '@/hooks/useFriends';
 import { getMyMatches, getMyProfile, type MatchHistoryEntry, type PlayerProfile } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import { getLevelProgress } from '@/lib/leveling';
@@ -74,6 +76,15 @@ export default function IronIdScreen() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [matches, setMatches] = useState<MatchHistoryEntry[]>([]);
   const [matchesExpanded, setMatchesExpanded] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const { pendingCount, unreadTotal } = useFriends();
+
+  async function handleCopyFriendCode() {
+    if (!profile?.friendCode) return;
+    await Clipboard.setStringAsync(profile.friendCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  }
 
   const load = useCallback(async (matchLimit: number) => {
     const token = await getAuthToken();
@@ -162,17 +173,56 @@ export default function IronIdScreen() {
             </View>
           </RockCard>
 
+          {profile.friendCode ? (
+            <RockCard variant="surface" contentPadding={12}>
+              <View className="flex-row items-center justify-between">
+                <View>
+                  <Text className="font-section-header uppercase" style={{ fontSize: 10, letterSpacing: 2, color: Colors.textMuted }}>
+                    Friend Code
+                  </Text>
+                  <Text className="mt-0.5 font-headline-lg text-cyan" style={{ fontSize: 20, letterSpacing: 3 }}>
+                    {profile.friendCode}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={handleCopyFriendCode}
+                  hitSlop={8}
+                  className="flex-row items-center gap-1 rounded-md px-2.5 py-1.5"
+                  style={{ backgroundColor: withOpacity(Colors.cyan, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.35) }}
+                >
+                  <AppIcon name={codeCopied ? 'check' : 'content_copy'} size={14} color={Colors.cyan} />
+                  <Text className="font-section-header uppercase" style={{ fontSize: 10, color: Colors.cyan }}>
+                    {codeCopied ? 'Copied' : 'Copy'}
+                  </Text>
+                </Pressable>
+              </View>
+            </RockCard>
+          ) : null}
+
           <View className="flex-row gap-sm">
-            {SOCIAL_LINKS.map((link) => (
-              <Pressable key={link.id} style={{ flex: 1 }} onPress={() => router.push(link.route)}>
-                <RockCard variant="surface" glowColor={link.accent} contentPadding={12}>
-                  <View className="items-center gap-1">
-                    <AppIcon name={link.icon} size={24} color={link.accent} />
-                    <Text className="font-section-header text-caption uppercase text-text-primary">{link.label}</Text>
-                  </View>
-                </RockCard>
-              </Pressable>
-            ))}
+            {SOCIAL_LINKS.map((link) => {
+              const badge = link.id === 'friends' ? pendingCount : link.id === 'messages' ? unreadTotal : 0;
+              return (
+                <Pressable key={link.id} style={{ flex: 1 }} onPress={() => router.push(link.route)}>
+                  <RockCard variant="surface" glowColor={link.accent} contentPadding={12}>
+                    <View className="items-center gap-1">
+                      <AppIcon name={link.icon} size={24} color={link.accent} />
+                      <Text className="font-section-header text-caption uppercase text-text-primary">{link.label}</Text>
+                    </View>
+                  </RockCard>
+                  {badge > 0 ? (
+                    <View
+                      className="absolute items-center justify-center rounded-full px-1"
+                      style={{ top: -4, right: -4, minWidth: 18, height: 18, backgroundColor: Colors.emberLight, borderWidth: 1.5, borderColor: Colors.bgBase }}
+                    >
+                      <Text className="font-section-header" style={{ fontSize: 9, color: Colors.bgBase }}>
+                        {badge > 9 ? '9+' : badge}
+                      </Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
           </View>
 
           <View className="flex-row flex-wrap gap-gutter">
@@ -313,15 +363,7 @@ export default function IronIdScreen() {
         </ScrollView>
       ) : null}
 
-      <BottomNav
-        activeTab="profile"
-        onTabPress={(tab) => {
-          if (tab === 'home') router.push('/home');
-          else if (tab === 'ranks') router.push('/world-rankings');
-          else if (tab === 'shop') router.push('/shop');
-          else console.log('tab pressed', tab);
-        }}
-      />
+      <BottomNav activeTab="profile" />
     </View>
   );
 }

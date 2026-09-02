@@ -12,6 +12,7 @@ import { useChessGame } from '@/hooks/useChessGame';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { reportPuzzleSolvedForQuests } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
+import { goUp } from '@/lib/navigation';
 import { PUZZLES } from '@/lib/puzzleCatalog';
 import { nextPuzzle, puzzleTags, puzzleTitle, themeLabel } from '@/lib/puzzleMeta';
 import { markPuzzleSolved } from '@/lib/puzzleProgress';
@@ -62,7 +63,7 @@ export default function PuzzleMatchScreen() {
       <View style={[styles.root, styles.notFoundRoot]}>
         <Text style={styles.notFoundText}>Puzzle not found</Text>
         <View style={styles.notFoundButton}>
-          <RockButton label="Back to Puzzles" variant="primary" onPress={() => router.back()} />
+          <RockButton label="Back to Puzzles" variant="primary" onPress={() => goUp('/puzzle-match')} />
         </View>
       </View>
     );
@@ -85,7 +86,7 @@ export default function PuzzleMatchScreen() {
     if (next && next.id !== entry.id) {
       router.replace({ pathname: '/puzzle-match', params: { puzzleId: next.id, tier, tacticId } });
     } else {
-      router.back();
+      goUp('/puzzle-match');
     }
   };
 
@@ -94,7 +95,7 @@ export default function PuzzleMatchScreen() {
       <EmberParticles count={8} />
 
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <Pressable onPress={() => goUp('/puzzle-match')} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Puzzle</Text>
@@ -138,7 +139,7 @@ export default function PuzzleMatchScreen() {
           {game.puzzleStatus === 'solved' ? (
             <>
               <View style={styles.actionButton}>
-                <RockButton label="Back to Puzzles" variant="secondary" onPress={() => router.back()} />
+                <RockButton label="Back to Puzzles" variant="secondary" onPress={() => goUp('/puzzle-match')} />
               </View>
               <View style={styles.actionButton}>
                 <RockButton label="Next Puzzle" variant="primary" onPress={handleNextPuzzle} />

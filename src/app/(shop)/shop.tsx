@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, CurrencyIcon, EmberParticles, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
+import { goUp } from '@/lib/navigation';
 
 interface ChipPack {
   id: string;
@@ -88,7 +89,7 @@ export default function RockShopScreen() {
         style={{ paddingTop: insets.top + Spacing.sm }}
       >
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => goUp('/shop')}
           className="items-center justify-center rounded-full"
           style={{ width: 42, height: 42, backgroundColor: withOpacity(Colors.bgPanel, 0.8), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.4) }}
         >

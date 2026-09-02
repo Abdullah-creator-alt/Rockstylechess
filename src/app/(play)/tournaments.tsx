@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -44,7 +43,6 @@ const UPCOMING_EVENTS: UpcomingEvent[] = [
 ]
 
 export default function TournamentsScreen() {
-  const router = useRouter()
   const insets = useSafeAreaInsets()
   const { chips } = usePlayerProfile()
 
@@ -174,15 +172,7 @@ export default function TournamentsScreen() {
         </View>
       </ScrollView>
 
-      <BottomNav
-        activeTab="play"
-        onTabPress={(tab) => {
-          if (tab === 'ranks') router.push('/world-rankings')
-          else if (tab === 'profile') router.push('/iron-id')
-          else if (tab === 'shop') router.push('/shop')
-          else console.log('tab pressed', tab)
-        }}
-      />
+      <BottomNav activeTab="play" />
     </View>
   )
 }

@@ -59,6 +59,10 @@ function accuracyVerdict(accuracy: number): string {
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
+// Approx height of one move-list row (paddingVertical 6 + ~19px line + 1px
+// divider) -- used to keep the active move in view as the replay advances.
+const MOVE_ROW_HEIGHT = 32;
+
 interface MoveListRow {
   moveNumber: number;
   white: { ply: number; san: string; quality: MoveQuality | null } | null;
@@ -140,6 +144,14 @@ export default function ReplayScreen() {
   const analysisMode = mode === 'analysis';
   const analysisEngineRef = useRef<StockfishEngineHandle>(null);
   const analysis = useGameAnalysis(pgn, analysisEngineRef);
+
+  // Keep the active move visible in the (independently scrolling) move list as
+  // the replay advances -- prev/next/play all move `plyIndex`.
+  const moveListRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    const rowIndex = replay.plyIndex === 0 ? 0 : Math.floor((replay.plyIndex - 1) / 2);
+    moveListRef.current?.scrollTo({ y: Math.max(0, (rowIndex - 2) * MOVE_ROW_HEIGHT), animated: true });
+  }, [replay.plyIndex]);
 
   useEffect(() => {
     if (analysisMode && pgn && analysis.status === 'idle') {
@@ -355,7 +367,13 @@ export default function ReplayScreen() {
                   </Text>
                 </View>
                 <View style={{ maxHeight: 200 }}>
-                  <ScrollView showsVerticalScrollIndicator={false}>
+                  <ScrollView
+                    ref={moveListRef}
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator
+                    indicatorStyle="white"
+                    contentContainerStyle={{ paddingBottom: 4 }}
+                  >
                     {moveRows.map((row) => (
                       <View
                         key={row.moveNumber}

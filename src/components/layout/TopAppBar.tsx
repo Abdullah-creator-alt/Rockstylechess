@@ -24,7 +24,7 @@ export function TopAppBar() {
         borderBottomColor: Colors.chromeDark + '4D',
       }}
     >
-      <Pressable onPress={() => router.push('/iron-id')} className="flex-row items-center gap-sm">
+      <Pressable onPress={() => router.dismissTo('/iron-id')} className="flex-row items-center gap-sm">
         <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="small" />
         <View>
           <Text className="font-heading-md text-heading-md leading-none text-text-primary">
@@ -37,10 +37,10 @@ export function TopAppBar() {
       </Pressable>
 
       <View className="flex-row items-center gap-md">
-        <Pressable onPress={() => router.push('/shop')}>
+        <Pressable onPress={() => router.dismissTo('/shop')}>
           <CurrencyPill type="chips" value={chips} />
         </Pressable>
-        <Pressable onPress={() => router.push('/shop')}>
+        <Pressable onPress={() => router.dismissTo('/shop')}>
           <CurrencyPill type="gems" value={gems} />
         </Pressable>
         <Pressable onPress={() => router.push('/backstage-alerts')}>

@@ -5,9 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { AppIcon, EmberParticles, PlayerAvatar, RockButton } from '@/components/ui';
+import { BoardAssetPrewarm } from '@/components/ui/BoardAssetPrewarm';
 import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { goUp } from '@/lib/navigation';
 import { getPlayerId } from '@/lib/playerId';
 import { ensureAuthenticated, getSocket } from '@/lib/socket';
 import { isDuration, isVenueTier, type QueueMatchedPayload } from '@/lib/onlineMatch';
@@ -52,6 +54,7 @@ export default function MatchmakingScreen() {
           fen: payload.fen,
           opponentName: payload.opponent.displayName,
           opponentAvatarId: payload.opponent.avatarId ?? undefined,
+          opponentUserId: payload.opponent.userId ?? undefined,
           clockW: String(payload.clocks.w),
           clockB: String(payload.clocks.b),
           incrementMs: String(payload.incrementMs),
@@ -100,6 +103,7 @@ export default function MatchmakingScreen() {
 
   return (
     <View className="flex-1 items-center justify-center gap-xl bg-bg-base px-xl" style={{ paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }}>
+      <BoardAssetPrewarm pieceId={profile?.equippedPieceId} />
       <EmberParticles count={8} />
 
       <Text
@@ -138,7 +142,7 @@ export default function MatchmakingScreen() {
         variant="danger"
         onPress={() => {
           getSocket().emit('queue:leave');
-          router.back();
+          goUp('/matchmaking');
         }}
       />
     </View>

@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FriendRow } from '@/components/friends/FriendRow';
 import { AppIcon, BottomNav, CurrencyPill, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
+import { useFriends } from '@/hooks/useFriends';
 import { getLeaderboard, getMyProfile, getMyRank, type LeaderboardEntry, type PlayerProfile } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 
@@ -34,8 +36,20 @@ type MineStatus = 'loading' | 'ready' | 'error' | 'guest';
 export default function WorldRankingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const friends = useFriends();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('global');
   const [refreshing, setRefreshing] = useState(false);
+  const [addState, setAddState] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
+
+  async function handleAddFromRanking(userId: string) {
+    setAddState((prev) => ({ ...prev, [userId]: 'sending' }));
+    try {
+      await friends.addFriend({ userId });
+      setAddState((prev) => ({ ...prev, [userId]: 'sent' }));
+    } catch {
+      setAddState((prev) => ({ ...prev, [userId]: 'error' }));
+    }
+  }
 
   const [listStatus, setListStatus] = useState<LoadStatus>('loading');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -135,7 +149,43 @@ export default function WorldRankingsScreen() {
         })}
       </View>
 
-      {activeFilter !== 'global' ? (
+      {activeFilter === 'friends' ? (
+        friends.status === 'guest' ? (
+          <View className="flex-1 items-center justify-center gap-md px-xl">
+            <Text className="text-center font-body-base text-body-base text-text-muted">Sign in to see your friends&apos; rankings.</Text>
+            <RockButton label="Sign In" variant="primary" onPress={() => router.push('/sign-in')} />
+          </View>
+        ) : friends.friends.length === 0 ? (
+          <View className="flex-1 items-center justify-center gap-sm px-xl">
+            <Text className="text-center font-body-sm text-text-muted" style={{ fontSize: 12 }}>
+              No friends yet. Add some on the Friends screen to see how you stack up.
+            </Text>
+            <RockButton label="Go to Friends" variant="secondary" onPress={() => router.push('/friends')} />
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={{ padding: 16, paddingTop: 0, paddingBottom: 120 + insets.bottom, gap: 8 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {[...friends.friends]
+              .sort((a, b) => b.rating - a.rating)
+              .map((f, index) => (
+                <FriendRow
+                  key={f.userId}
+                  displayName={f.displayName}
+                  avatarId={f.avatarId}
+                  rating={f.rating}
+                  presence={friends.presenceOf(f.userId)}
+                  right={
+                    <Text className="font-heading-md text-cyan" style={{ fontSize: 15 }}>
+                      #{index + 1}
+                    </Text>
+                  }
+                />
+              ))}
+          </ScrollView>
+        )
+      ) : activeFilter !== 'global' ? (
         <View className="flex-1 items-center justify-center gap-sm">
           <Text className="font-heading-md uppercase text-text-muted" style={{ fontSize: 13, letterSpacing: 2 }}>
             Coming Soon
@@ -225,9 +275,32 @@ export default function WorldRankingsScreen() {
                           </Text>
                         </View>
                       </View>
-                      <Text className="font-heading-md text-cyan" style={{ fontSize: 14 }}>
-                        {entry.rating}
-                      </Text>
+                      <View className="flex-row items-center gap-sm">
+                        <Text className="font-heading-md text-cyan" style={{ fontSize: 14 }}>
+                          {entry.rating}
+                        </Text>
+                        {friends.status === 'ready' &&
+                        entry.userId !== myProfile?.userId &&
+                        !friends.isFriend(entry.userId) &&
+                        !friends.hasOutgoingTo(entry.userId) &&
+                        addState[entry.userId] !== 'sent' ? (
+                          <Pressable
+                            onPress={() => void handleAddFromRanking(entry.userId)}
+                            disabled={addState[entry.userId] === 'sending'}
+                            hitSlop={8}
+                            className="h-8 w-8 items-center justify-center rounded-md"
+                            style={{ backgroundColor: withOpacity(Colors.cyan, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.35) }}
+                          >
+                            <AppIcon
+                              name={addState[entry.userId] === 'error' ? 'close' : 'person_add'}
+                              size={15}
+                              color={addState[entry.userId] === 'error' ? Colors.crimson : Colors.cyan}
+                            />
+                          </Pressable>
+                        ) : addState[entry.userId] === 'sent' || friends.hasOutgoingTo(entry.userId) ? (
+                          <AppIcon name="check" size={15} color={withOpacity(Colors.cyan, 0.7)} />
+                        ) : null}
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -276,15 +349,7 @@ export default function WorldRankingsScreen() {
         </ScrollView>
       )}
 
-      <BottomNav
-        activeTab="ranks"
-        onTabPress={(tab) => {
-          if (tab === 'home') router.push('/home');
-          else if (tab === 'profile') router.push('/iron-id');
-          else if (tab === 'shop') router.push('/shop');
-          else console.log('tab pressed', tab);
-        }}
-      />
+      <BottomNav activeTab="ranks" />
     </View>
   );
 }

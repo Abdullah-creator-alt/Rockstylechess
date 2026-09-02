@@ -23,19 +23,27 @@ export interface Venue {
   image: number;
 }
 
-// Garage / Club / Stadium have dedicated art; Arena uses the home hero shot;
-// Mainstage / World Tour reuse the Setup arena photo until dedicated art exists.
+// Every venue has dedicated art except Mainstage, which reuses the Arena
+// photo until dedicated art exists.
 export const VENUES: Venue[] = [
   { id: 'garage', name: 'The Garage', icon: 'garage', buyIn: 0, prize: 0, image: ScreenArt.venueGarage },
   { id: 'club', name: 'The Club', icon: 'glass-cocktail', buyIn: 10, prize: 20, image: ScreenArt.venueClub },
-  { id: 'arena', name: 'The Arena', icon: 'stadium-variant', buyIn: 250, prize: 500, image: ScreenArt.homeArenaHero },
+  { id: 'arena', name: 'The Arena', icon: 'stadium-variant', buyIn: 250, prize: 500, image: ScreenArt.venueArena },
   { id: 'stadium', name: 'The Stadium', icon: 'castle', buyIn: 2_000, prize: 4_000, image: ScreenArt.venueStadium },
   { id: 'mainstage', name: 'Mainstage', icon: 'guitar-electric', buyIn: 25_000, prize: 50_000, image: ScreenArt.venueArena },
-  { id: 'world-tour', name: 'World Tour', icon: 'earth', buyIn: 100_000, prize: 200_000, image: ScreenArt.venueArena },
+  { id: 'world-tour', name: 'World Tour', icon: 'earth', buyIn: 100_000, prize: 200_000, image: ScreenArt.venueWorldTour },
 ];
 
 export function getVenue(id: string | null | undefined): Venue {
   return VENUES.find((v) => v.id === (id as VenueTier)) ?? VENUES[2]; // default: The Arena
+}
+
+// Temporary: every venue is selectable regardless of the player's balance.
+// Set to false to re-gate the higher tiers behind `venue.buyIn <= chips`.
+export const UNLOCK_ALL_VENUES = true;
+
+export function isVenueLocked(venue: Venue, chips: number): boolean {
+  return !UNLOCK_ALL_VENUES && venue.buyIn > chips;
 }
 
 /** Compact chip amount for a stakes label: `FREE` / `250` / `2K` / `100K` / `1.5M`. */

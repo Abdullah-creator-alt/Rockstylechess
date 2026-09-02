@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +6,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSeq
 import { ChessBoard, PlayerAvatar, ScreenBackdrop } from '@/components/ui';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
+import { goUp } from '@/lib/navigation';
 
 const CHAT_TICKER =
   'User_99: Incredible sacrifice!  •  ChessWiz: Hikaru is in trouble now.  •  Grandmaster_Fan: Wait for the engine evaluation!  •  ';
@@ -20,7 +20,6 @@ interface FloatingReaction {
 }
 
 export default function FrontRowScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
 
@@ -38,7 +37,7 @@ export default function FrontRowScreen() {
     <View className="flex-1 bg-bg-base">
       <ScreenBackdrop source={ScreenArt.frontRowCrowd} opacity={0.3} topScrim={0.4} />
       <View className="flex-row items-center justify-between px-lg pb-sm" style={{ paddingTop: insets.top + 16 }}>
-        <Pressable onPress={() => router.back()} className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.8), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.4) }}>
+        <Pressable onPress={() => goUp('/front-row')} className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.8), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.4) }}>
           <ChevronLeft />
         </Pressable>
         <Text className="flex-1 text-center font-display-hero text-text-primary" style={{ fontSize: 16, textTransform: 'uppercase' }}>

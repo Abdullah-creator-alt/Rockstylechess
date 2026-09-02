@@ -1,10 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, BackHandler, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, CurrencyIcon, CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
+import { useFriends } from '@/hooks/useFriends';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { chargeForAnalysis } from '@/lib/api';
 import { ANALYSIS_COST } from '@/lib/analysisCost';
@@ -27,6 +28,7 @@ const REASON_LABEL: Record<string, string> = {
   checkmate: 'by Checkmate',
   stalemate: 'by Stalemate',
   draw: 'by Draw',
+  agreement: 'by Agreement',
   resignation: 'by Resignation',
   timeout: 'by Timeout',
 };
@@ -62,7 +64,15 @@ export default function ResultScreen() {
     outcome: outcomeParam,
     reason,
     chipsGranted: chipsGrantedParam,
-  } = useLocalSearchParams<{ outcome?: string; reason?: string; chipsGranted?: string }>();
+    opponentUserId,
+    opponentName,
+  } = useLocalSearchParams<{
+    outcome?: string;
+    reason?: string;
+    chipsGranted?: string;
+    opponentUserId?: string;
+    opponentName?: string;
+  }>();
   const outcome: Outcome = outcomeParam === 'loss' || outcomeParam === 'draw' ? outcomeParam : 'win';
   const isVictory = outcome === 'win';
   const isDraw = outcome === 'draw';
@@ -72,6 +82,39 @@ export default function ResultScreen() {
   // it and we don't want that clear to also blank the button mid-transition.
   const [localReplay] = useState(() => getPendingLocalReplay());
   const { chips: currentChips, refresh: refreshPlayerProfile } = usePlayerProfile();
+  const friends = useFriends();
+
+  // The match is gone from the stack (match.tsx used router.replace to get
+  // here), so there's nothing valid to go "back" to -- hardware back goes
+  // straight Home, same as the Home button.
+  useEffect(() => {
+    const onBack = () => {
+      clearPendingLocalReplay();
+      router.replace('/home');
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [router]);
+  const [addFriendState, setAddFriendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
+  const canAddOpponent =
+    !!opponentUserId &&
+    friends.status === 'ready' &&
+    !friends.isFriend(opponentUserId) &&
+    !friends.hasOutgoingTo(opponentUserId) &&
+    addFriendState !== 'sent';
+
+  async function handleAddOpponent() {
+    if (!opponentUserId) return;
+    setAddFriendState('sending');
+    try {
+      await friends.addFriend({ userId: opponentUserId });
+      setAddFriendState('sent');
+    } catch {
+      setAddFriendState('error');
+    }
+  }
 
   async function handleAnalyzePress() {
     const token = await getAuthToken();
@@ -173,6 +216,20 @@ export default function ResultScreen() {
               <Text className="font-body-sm text-caption uppercase tracking-wide text-text-muted">Costs</Text>
               <CurrencyPill type="chips" value={ANALYSIS_COST.chips} />
             </View>
+          </View>
+        ) : null}
+        {canAddOpponent ? (
+          <RockButton
+            label={addFriendState === 'sending' ? 'Sending…' : addFriendState === 'error' ? 'Try Again' : `Add ${opponentName ?? 'Opponent'}`}
+            variant="secondary"
+            icon={<AppIcon name="person_add" size={18} color={Colors.textPrimary} />}
+            disabled={addFriendState === 'sending'}
+            onPress={handleAddOpponent}
+          />
+        ) : addFriendState === 'sent' || (opponentUserId && friends.hasOutgoingTo(opponentUserId)) ? (
+          <View className="flex-row items-center justify-center gap-xs">
+            <AppIcon name="check" size={16} color={withOpacity(Colors.cyan, 0.8)} />
+            <Text className="font-body-sm text-caption uppercase tracking-wide text-text-muted">Friend request sent</Text>
           </View>
         ) : null}
         <RockButton

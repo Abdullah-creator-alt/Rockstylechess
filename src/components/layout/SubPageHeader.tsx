@@ -1,10 +1,11 @@
-import { useRouter } from 'expo-router';
+import { usePathname } from 'expo-router';
 import type { ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/ui/AppIcon';
 import { Colors } from '@/constants/theme';
+import { goUp } from '@/lib/navigation';
 
 interface SubPageHeaderProps {
   title: string;
@@ -14,7 +15,7 @@ interface SubPageHeaderProps {
 
 /** Circular back button + centered title + optional trailing slot, shared across sub-pages. */
 export function SubPageHeader({ title, trailing, onBack }: SubPageHeaderProps) {
-  const router = useRouter();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
 
   const handleBack = () => {
@@ -22,20 +23,14 @@ export function SubPageHeader({ title, trailing, onBack }: SubPageHeaderProps) {
       onBack();
       return;
     }
-    // router.back() throws a GO_BACK navigation warning if this screen is
-    // the first entry in the stack (e.g. reloaded/deep-linked straight into
-    // a sub-page instead of arriving via a push from Home) -- fall back to
-    // Home instead of leaving the back button dead in that case.
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/home');
-    }
+    // "Back" means "up one level toward the main menu", not "pop whatever the
+    // last screen happened to be" -- see src/lib/navigation.ts.
+    goUp(pathname);
   };
 
   return (
     <View
-      className="w-full flex-row items-center justify-between bg-bg-panel px-margin-mobile py-sm"
+      className="w-full flex-row items-center bg-bg-panel px-margin-mobile py-sm"
       style={{
         paddingTop: insets.top + 8,
         borderBottomWidth: 1,
@@ -50,17 +45,26 @@ export function SubPageHeader({ title, trailing, onBack }: SubPageHeaderProps) {
         <AppIcon name="arrow_back" size={22} color={Colors.textPrimary} />
       </Pressable>
 
-      <Text
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.6}
-        className="mx-sm flex-1 text-center font-headline-lg uppercase text-text-primary"
-        style={{ fontSize: 22, letterSpacing: 1 }}
-      >
-        {title}
-      </Text>
-
+      <View className="flex-1" />
       {trailing ?? <View style={{ width: 40 }} />}
+
+      {/* Absolutely centred so an asymmetric trailing slot (e.g. two currency
+          pills) can't shove the title off-centre. Sits behind the buttons;
+          `left`/`right` keep it clear of the back button. */}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', left: 60, right: 60, top: insets.top + 8, bottom: 8, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+          className="text-center font-headline-lg uppercase text-text-primary"
+          style={{ fontSize: 22, letterSpacing: 1 }}
+        >
+          {title}
+        </Text>
+      </View>
     </View>
   );
 }

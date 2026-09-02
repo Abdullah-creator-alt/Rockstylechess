@@ -165,15 +165,7 @@ export default function PlayScreen() {
         </View>
       </ScrollView>
 
-      <BottomNav
-        activeTab="play"
-        onTabPress={(tab) => {
-          if (tab === 'home') router.push('/home');
-          else if (tab === 'ranks') router.push('/world-rankings');
-          else if (tab === 'shop') router.push('/shop');
-          else if (tab === 'profile') router.push('/iron-id');
-        }}
-      />
+      <BottomNav activeTab="play" />
     </View>
   );
 }
