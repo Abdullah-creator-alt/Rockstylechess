@@ -22,6 +22,8 @@ export { EmberParticles } from './EmberParticles';
 
 export { ScreenBackdrop } from './ScreenBackdrop';
 
+export { VenueBackdrop } from './VenueBackdrop';
+
 export { ChessBoard } from './ChessBoard';
 
 export { ChatPanel } from './ChatPanel';

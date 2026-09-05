@@ -83,6 +83,20 @@ function squareToRowCol(square: string): [row: number, col: number] {
   return [row, col];
 }
 
+// Canonical (row 0 = rank 8, col 0 = file a) <-> on-screen "display" coords.
+// When the local player controls Black the board renders rotated 180deg, so
+// every canonical row/col maps to `7 - itself`. Self-inverse: display -> canonical
+// is the same call. Canonical space stays the single source of truth for every
+// square string, `board` index, and `LivePiece.square`; only the shared-value
+// positions and the visual grid order are kept in display space.
+function flipIndex(v: number, flipped: boolean): number {
+  return flipped ? 7 - v : v;
+}
+function displayRowCol(square: string, flipped: boolean): [row: number, col: number] {
+  const [r, c] = squareToRowCol(square);
+  return [flipIndex(r, flipped), flipIndex(c, flipped)];
+}
+
 /**
  * A piece with a stable identity that persists across moves. This, not the
  * `board` grid, is what PieceLayer renders: each entry is hosted by exactly
@@ -306,6 +320,16 @@ interface ChessBoardProps {
   theme?: ChessBoardTheme;
   /** Piece sprite set (12 images keyed 'wk'..'bp'). Defaults to the classic set. */
   pieceSprites?: PieceSpriteMap;
+  /**
+   * Render the board rotated 180deg -- pass `true` when the local player
+   * controls the Black pieces so their own pieces sit at the bottom. Pieces
+   * and coordinate labels stay upright (this is a coordinate transform, not a
+   * `rotate`). FIXED for the component's lifetime: `/match` remounts per game
+   * and a player's color never changes mid-game, so already-seeded piece
+   * positions are not re-derived if this changes at runtime. Defaults to
+   * `false` -- every non-match caller keeps the White-at-bottom view.
+   */
+  flipped?: boolean;
 }
 
 export const ChessBoard = memo(function ChessBoard({
@@ -321,6 +345,7 @@ export const ChessBoard = memo(function ChessBoard({
   onSquarePress,
   theme = DEFAULT_BOARD_THEME,
   pieceSprites = DEFAULT_PIECE_SPRITES,
+  flipped = false,
 }: ChessBoardProps) {
   const [gridSize, setGridSize] = useState(0);
   const dragX = useSharedValue(0);
@@ -373,7 +398,7 @@ export const ChessBoard = memo(function ChessBoard({
   const positionsRef = useRef<Map<number, PiecePosition>>(new Map());
   for (const piece of livePieces) {
     if (!positionsRef.current.has(piece.id)) {
-      const [row, col] = squareToRowCol(piece.square);
+      const [row, col] = displayRowCol(piece.square, flipped);
       positionsRef.current.set(piece.id, { row: makeMutable(row), col: makeMutable(col), scale: makeMutable(1) });
     }
   }
@@ -414,11 +439,11 @@ export const ChessBoard = memo(function ChessBoard({
       const pos = positionsRef.current.get(id);
       const piece = livePiecesRef.current.find((p) => p.id === id);
       if (!pos || !piece) return;
-      const [r, c] = squareToRowCol(piece.square);
+      const [r, c] = displayRowCol(piece.square, flipped);
       pos.row.value = withSpring(r, DRAG_SETTLE_SPRING);
       pos.col.value = withSpring(c, DRAG_SETTLE_SPRING);
     },
-    [],
+    [flipped],
   );
 
   const handleGhostDone = useCallback((id: number) => {
@@ -470,14 +495,14 @@ export const ChessBoard = memo(function ChessBoard({
     for (const piece of outcome.pieces) {
       const prevPiece = livePiecesRef.current.find((p) => p.id === piece.id);
       if (!positionsRef.current.has(piece.id)) {
-        const [r, c] = squareToRowCol(piece.square);
+        const [r, c] = displayRowCol(piece.square, flipped);
         positionsRef.current.set(piece.id, { row: makeMutable(r), col: makeMutable(c), scale: makeMutable(1) });
         continue; // brand new piece, already placed at its current square
       }
       if (prevPiece && prevPiece.square === piece.square && prevPiece.type === piece.type) continue; // unchanged
 
       const pos = positionsRef.current.get(piece.id)!;
-      const [r, c] = squareToRowCol(piece.square);
+      const [r, c] = displayRowCol(piece.square, flipped);
 
       if (!animated) {
         pos.row.value = r;
@@ -517,7 +542,7 @@ export const ChessBoard = memo(function ChessBoard({
     // reconciliation on every resize would be wasted work; it already reads
     // the live value via closure each time the effect actually runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board, lastMove, animateLastMove, lastMoveSound, checkSquare]);
+  }, [board, lastMove, animateLastMove, lastMoveSound, checkSquare, flipped]);
 
   const handleGridLayout = useCallback((event: LayoutChangeEvent) => {
     setGridSize(Math.min(event.nativeEvent.layout.width, event.nativeEvent.layout.height));
@@ -546,10 +571,14 @@ export const ChessBoard = memo(function ChessBoard({
 
   const handleDrop = useCallback(
     (fromSquare: string, deltaRow: number, deltaCol: number) => {
+      // deltaRow/deltaCol come from the pan gesture in screen space; the dragged
+      // piece is tracked in display space, so screen-right is always +col and
+      // screen-down always +row regardless of `flipped`. Do the arithmetic in
+      // display space (clamp on-board there) then map back to a canonical square.
       const [fromRow, fromCol] = squareToRowCol(fromSquare);
-      const targetRow = Math.min(7, Math.max(0, fromRow + deltaRow));
-      const targetCol = Math.min(7, Math.max(0, fromCol + deltaCol));
-      const targetSquare = squareAt(targetRow, targetCol);
+      const targetDispRow = Math.min(7, Math.max(0, flipIndex(fromRow, flipped) + deltaRow));
+      const targetDispCol = Math.min(7, Math.max(0, flipIndex(fromCol, flipped) + deltaCol));
+      const targetSquare = squareAt(flipIndex(targetDispRow, flipped), flipIndex(targetDispCol, flipped));
       if (targetSquare !== fromSquare) {
         // A real attempt (legal or not) -- the reconciliation effect above
         // resolves where this piece's drag ends up, once refresh() lands.
@@ -560,7 +589,7 @@ export const ChessBoard = memo(function ChessBoard({
       // nothing to wait on; resolve the drag right here.
       settleDraggedPieceHome(bakeDraggedPosition());
     },
-    [onSquarePress, settleDraggedPieceHome, bakeDraggedPosition],
+    [onSquarePress, settleDraggedPieceHome, bakeDraggedPosition, flipped],
   );
 
   return (
@@ -597,9 +626,13 @@ export const ChessBoard = memo(function ChessBoard({
                 grid's coordinate space -- the leftover pixels from flooring sit
                 outside this box, against the frame. */}
             <View style={boardSize > 0 ? { width: boardSize, height: boardSize } : undefined}>
-            <View style={styles.boardGrid}>
+            {/* `board` is iterated in canonical order (rank 8 first, file a
+                first) so `square`/`isLight`/labels stay canonical; when flipped,
+                the visual order is reversed with flexDirection so pieces and
+                labels stay upright (a `rotate` would flip them). */}
+            <View style={[styles.boardGrid, flipped && styles.boardGridFlipped]}>
               {board.map((rowPieces, rowIndex) => (
-                <View key={rowIndex} style={styles.boardRow}>
+                <View key={rowIndex} style={[styles.boardRow, flipped && styles.boardRowFlipped]}>
                   {rowPieces.map((piece, colIndex) => {
                     const square = SQUARE_IDS[rowIndex][colIndex];
                     const isLight = (rowIndex + colIndex) % 2 === 0;
@@ -612,7 +645,10 @@ export const ChessBoard = memo(function ChessBoard({
                         key={colIndex}
                         square={square}
                         squareColor={
-                          (isLight ? theme.squares.light : theme.squares.dark)[rowIndex]
+                          // Screen-fixed: the per-rank tones were sampled with a
+                          // top-of-screen light (matching the frame bevel/glow),
+                          // so they must not rotate under the pieces.
+                          (isLight ? theme.squares.light : theme.squares.dark)[flipIndex(rowIndex, flipped)]
                         }
                         isLight={isLight}
                         isSelected={square === selectedSquare}
@@ -620,9 +656,9 @@ export const ChessBoard = memo(function ChessBoard({
                         isCapture={legalTargets.includes(square) && piece !== ''}
                         isCheck={square === checkSquare}
                         isLastMove={lastMove !== null && (square === lastMove.from || square === lastMove.to)}
-                        showRankLabel={colIndex === 0}
+                        showRankLabel={colIndex === (flipped ? 7 : 0)}
                         rankLabel={8 - rowIndex}
-                        showFileLabel={rowIndex === 7}
+                        showFileLabel={rowIndex === (flipped ? 0 : 7)}
                         fileLabel={FILES[colIndex]}
                         squareSize={squareSize}
                         interactive={interactive}
@@ -652,6 +688,7 @@ export const ChessBoard = memo(function ChessBoard({
                     id={ghost.id}
                     type={ghost.type}
                     square={ghost.square}
+                    flipped={flipped}
                     squareSize={squareSize}
                     squareSizeShared={squareSizeShared}
                     pieceSprites={pieceSprites}
@@ -674,6 +711,7 @@ export const ChessBoard = memo(function ChessBoard({
                   <CheckPulse
                     key={`check-${checkEffectId}`}
                     checkSquare={checkSquare}
+                    flipped={flipped}
                     squareSize={squareSize}
                     squareSizeShared={squareSizeShared}
                   />
@@ -958,6 +996,7 @@ const DyingPieceGhost = memo(function DyingPieceGhost({
   id,
   type,
   square,
+  flipped,
   squareSize,
   squareSizeShared,
   pieceSprites,
@@ -966,13 +1005,14 @@ const DyingPieceGhost = memo(function DyingPieceGhost({
   id: number;
   type: string;
   square: string;
+  flipped: boolean;
   squareSize: number;
   squareSizeShared: SharedValue<number>;
   pieceSprites: PieceSpriteMap;
   onDone: (id: number) => void;
 }) {
   const progress = useSharedValue(0);
-  const [row, col] = squareToRowCol(square);
+  const [row, col] = displayRowCol(square, flipped);
 
   useEffect(() => {
     progress.value = withTiming(1, { duration: CAPTURE_OUT_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
@@ -1010,15 +1050,17 @@ const DyingPieceGhost = memo(function DyingPieceGhost({
 // "check is still active". Brackets the check sound cue's ~2.3s length.
 function CheckPulse({
   checkSquare,
+  flipped,
   squareSize,
   squareSizeShared,
 }: {
   checkSquare: string;
+  flipped: boolean;
   squareSize: number;
   squareSizeShared: SharedValue<number>;
 }) {
   const progress = useSharedValue(0);
-  const [row, col] = squareToRowCol(checkSquare);
+  const [row, col] = displayRowCol(checkSquare, flipped);
 
   useEffect(() => {
     const halfCycle = CHECK_PULSE_DURATION_MS / 4;
@@ -1247,6 +1289,15 @@ const styles = StyleSheet.create({
   },
   boardRow: {
     flexDirection: 'row',
+  },
+  // Board rotated 180deg for the Black player: canonical iteration order is
+  // unchanged (so square ids / labels stay canonical), only the visual stacking
+  // is reversed -- which keeps pieces and coordinate labels upright.
+  boardGridFlipped: {
+    flexDirection: 'column-reverse',
+  },
+  boardRowFlipped: {
+    flexDirection: 'row-reverse',
   },
   square: {
     alignItems: 'center',

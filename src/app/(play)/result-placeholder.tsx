@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Alert, BackHandler, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, CurrencyIcon, CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyIcon, CurrencyPill, EmberParticles, RockButton, RockCard, VenueBackdrop } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
 import { useFriends } from '@/hooks/useFriends';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
@@ -12,6 +12,7 @@ import { ANALYSIS_COST } from '@/lib/analysisCost';
 import { getAuthToken } from '@/lib/authStorage';
 import { clearPendingLocalReplay, getPendingLocalReplay } from '@/lib/localMatchReplayStore';
 import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
+import { isVenueTier } from '@/lib/onlineMatch';
 
 type Outcome = 'win' | 'loss' | 'draw';
 
@@ -66,13 +67,16 @@ export default function ResultScreen() {
     chipsGranted: chipsGrantedParam,
     opponentUserId,
     opponentName,
+    venueTier: venueTierParam,
   } = useLocalSearchParams<{
     outcome?: string;
     reason?: string;
     chipsGranted?: string;
     opponentUserId?: string;
     opponentName?: string;
+    venueTier?: string;
   }>();
+  const venueTier = isVenueTier(venueTierParam) ? venueTierParam : 'garage';
   const outcome: Outcome = outcomeParam === 'loss' || outcomeParam === 'draw' ? outcomeParam : 'win';
   const isVictory = outcome === 'win';
   const isDraw = outcome === 'draw';
@@ -163,6 +167,7 @@ export default function ResultScreen() {
 
   return (
     <View className="flex-1 items-center justify-center gap-xl bg-bg-base px-xl" style={{ paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }}>
+      <VenueBackdrop venueTier={venueTier} />
       <EmberParticles count={10} />
 
       <View className="items-center gap-1">

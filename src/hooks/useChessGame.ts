@@ -89,7 +89,13 @@ interface UseChessGameOptions {
   difficulty?: BotDifficulty;
   /** Bridges to the mounted StockfishEngine; required for the two Stockfish difficulties. */
   requestEngineMove?: RequestEngineMove;
-  /** Bot always plays black; human is white. Only relevant when mode === 'bot'. */
+  /**
+   * Which color the bot plays -- the human takes the other side. Only relevant
+   * when mode === 'bot'. Defaults to 'b' (human is White, the historical
+   * behaviour); the bots screen's "Play As" pick flips it.
+   */
+  botColor?: 'w' | 'b';
+  /** Fires exactly once per game, whatever ends it (mate/draw/resign/forfeit/timeout). */
   onGameOver?: (result: ChessGameResult) => void;
   /** Match id, which color this device plays, and the starting FEN handed
    * back by the server's queue:matched event. Required when mode === 'online'. */
@@ -171,6 +177,7 @@ export function useChessGame({
   mode,
   difficulty = 'easy',
   requestEngineMove,
+  botColor = 'b',
   onGameOver,
   online,
   puzzle,
@@ -279,6 +286,11 @@ export function useChessGame({
     // the opponent's moves arrive exclusively via the server (see the online
     // effect below), never through local taps.
     if (mode === 'online' && online && chess.turn() !== online.playerColor) return;
+    // Bot: the human only controls the non-bot color, and never while it's the
+    // bot's turn (including the pre-move "thinking" delay before the bot effect
+    // applies its move). Local pass-and-play stays ungated -- two humans share
+    // the one device.
+    if (mode === 'bot' && chess.turn() === botColor) return;
     // Puzzle: scripted opponent replies (even indices) are auto-played by
     // the effect below, never through local taps.
     if (mode === 'puzzle' && puzzle && !isSolverTurnInPuzzle) return;
@@ -448,7 +460,7 @@ export function useChessGame({
   useEffect(() => {
     if (mode !== 'bot') return;
     const chess = chessRef.current;
-    if (chess.isGameOver() || chess.turn() !== 'b') return;
+    if (chess.isGameOver() || chess.turn() !== botColor) return;
 
     // The Stockfish tiers resolve asynchronously (a round trip through the
     // WebView), unlike easy/medium's synchronous lookups -- so the move can
@@ -478,7 +490,7 @@ export function useChessGame({
       clearTimeout(timeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, difficulty, snapshot]);
+  }, [mode, difficulty, botColor, snapshot]);
 
   useEffect(() => {
     if (mode !== 'puzzle' || !puzzle) return;

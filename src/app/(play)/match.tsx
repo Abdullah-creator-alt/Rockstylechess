@@ -12,13 +12,14 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { ChatPanel, ChatToast, ChessBoard, ConfirmModal, PlayerAvatar } from '@/components/ui';
+import { ChatPanel, ChatToast, ChessBoard, ConfirmModal, PlayerAvatar, VenueBackdrop } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getAvatarImage } from '@/constants/avatars';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
+import { getVenue, getVenueIntensity } from '@/constants/venues';
 import { useChessClock, type ClockTimes } from '@/hooks/useChessClock';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
 import { useMatchChat } from '@/hooks/useMatchChat';
@@ -29,7 +30,7 @@ import { getSocket } from '@/lib/socket';
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 import { setPendingLocalReplay, type LocalMatchReplay } from '@/lib/localMatchReplayStore';
 import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
-import { DURATION_MS, isDuration } from '@/lib/onlineMatch';
+import { DURATION_MS, isDuration, isVenueTier } from '@/lib/onlineMatch';
 
 
 // Bot/local always default to this (matches setup.tsx's own default duration
@@ -45,18 +46,6 @@ const CAPTURED_GLYPHS: Record<string, string> = {
   p: '♟', n: '♞', b: '♝', r: '♜', q: '♛',
 };
 
-// Pure withOpacity() bundles, computed once at module load rather than
-// reallocated on every render of the match screen.
-const MENU_BUTTON_STYLE = {
-  backgroundColor: withOpacity(Colors.bgPanel, 0.6),
-  borderWidth: 1,
-  borderColor: withOpacity(Colors.chromeDark, 0.4),
-} as const;
-const ACTION_BAR_STYLE = {
-  backgroundColor: withOpacity(Colors.bgPanel, 0.96),
-  borderTopWidth: 1,
-  borderTopColor: withOpacity(Colors.chromeDark, 0.5),
-} as const;
 const CAPTURED_TRAY_STYLE = {
   paddingVertical: 2,
   backgroundColor: withOpacity(Colors.chromeDark, 0.35),
@@ -64,9 +53,10 @@ const CAPTURED_TRAY_STYLE = {
 } as const;
 
 // Navigation params: bots.tsx passes mode=bot + difficulty (which of the
-// four bot engines to use); matchmaking.tsx passes mode=online + matchId/
-// color/fen/opponentName once the server has paired a real opponent; the
-// PvP/"Iron Duel" flow otherwise defaults to local pass-and-play.
+// four bot engines to use) + color (the "Play As" pick); matchmaking.tsx
+// passes mode=online + matchId/color/fen/opponentName once the server has
+// paired a real opponent; the PvP/"Iron Duel" flow otherwise defaults to
+// local pass-and-play. `color=b` also flips the board (see flipBoard below).
 export default function MatchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -85,6 +75,7 @@ export default function MatchScreen() {
     clockB: clockBParam,
     incrementMs: incrementMsParam,
     duration: durationParam,
+    venueTier: venueTierParam,
   } = useLocalSearchParams<{
     mode?: string;
     difficulty?: string;
@@ -100,9 +91,12 @@ export default function MatchScreen() {
     clockB?: string;
     incrementMs?: string;
     // bot/local only -- picked on the bots screen's Match Options. Online's
-    // clock comes from the server (clockW/clockB) instead. `venueTier` also
-    // rides in the params (set by the bots screen) but is unused for now.
+    // clock comes from the server (clockW/clockB) instead.
     duration?: string;
+    // Set by bots.tsx (Match Options) or matchmaking.tsx once matched; falls
+    // back to Garage when absent (local pass-and-play, private room, friend
+    // challenge -- none of those flows carry a venue today).
+    venueTier?: string;
   }>();
   const mode: GameMode = modeParam === 'bot' ? 'bot' : modeParam === 'online' ? 'online' : 'local';
   const difficulty: BotDifficulty =
@@ -114,7 +108,15 @@ export default function MatchScreen() {
       : 'easy';
   const isStockfishTier =
     difficulty === 'stockfish-basic' || difficulty === 'stockfish-lite' || difficulty === 'stockfish-strong';
+  // Which color this device plays. Online: the server's coin-flip, delivered as
+  // the `color` param. Bot: the "Play As" pick from the bots screen (also the
+  // `color` param). Local pass-and-play: no param -> White. Fixed for the life
+  // of this screen (it remounts per game).
   const playerColor: 'w' | 'b' = colorParam === 'b' ? 'b' : 'w';
+  const opponentColor: 'w' | 'b' = playerColor === 'w' ? 'b' : 'w';
+  // Render the board from Black's side when this device has Black, so the
+  // player's own pieces are at the bottom (online + bot).
+  const flipBoard = playerColor === 'b';
   const online = useMemo(
     () =>
       mode === 'online' && matchId && fenParam
@@ -135,6 +137,28 @@ export default function MatchScreen() {
   const { profile, refresh: refreshPlayerProfile } = usePlayerProfile();
   const boardTheme = getBoardTheme(profile?.equippedBoardId);
   const pieceSprites = getPieceSprites(profile?.equippedPieceId);
+  // Atmosphere only -- never feeds boardTheme/pieceSprites above, which stay
+  // driven purely by the player's equipped Forge cosmetic regardless of venue.
+  const venueTier = isVenueTier(venueTierParam) ? venueTierParam : 'garage';
+  const venue = getVenue(venueTier);
+  const venueIntensity = getVenueIntensity(venueTier);
+  const menuButtonStyle = useMemo(
+    () => ({
+      backgroundColor: withOpacity(Colors.bgPanel, 0.6),
+      borderWidth: 1,
+      borderColor: withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.6),
+    }),
+    [venue.accentColor, venueIntensity.glowOpacity],
+  );
+  const actionBarStyle = useMemo(
+    () => ({
+      backgroundColor: withOpacity(Colors.bgPanel, 0.96),
+      borderTopWidth: 1,
+      borderTopColor: withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.6),
+      boxShadow: `0px -2px ${venueIntensity.glowRadius}px ${withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.5)}`,
+    }),
+    [venue.accentColor, venueIntensity.glowOpacity, venueIntensity.glowRadius],
+  );
 
   const requestEngineMove = useCallback((fen: string, config: StockfishConfig): Promise<EngineMove | null> => {
     if (!stockfishRef.current) return Promise.resolve(null);
@@ -236,6 +260,7 @@ export default function MatchScreen() {
           outcome,
           reason,
           chipsGranted: String(chipsGranted),
+          venueTier,
           // Lets the result screen offer "Add Friend" for a signed-in online
           // opponent you just played.
           ...(mode === 'online' && opponentUserId
@@ -258,6 +283,8 @@ export default function MatchScreen() {
     mode,
     difficulty,
     requestEngineMove,
+    // Bot mode only: the human picked a side, so the bot takes the other one.
+    botColor: opponentColor,
     online,
     onGameOver: handleGameOver,
     onClockSync,
@@ -343,12 +370,13 @@ export default function MatchScreen() {
   const drawIncoming = game.drawOfferFrom !== null && game.drawOfferFrom !== playerColor && !game.isGameOver;
   const headerPad = useMemo(() => ({ paddingTop: insets.top + Spacing.sm }), [insets.top]);
   const actionBarPad = useMemo(
-    () => ({ ...ACTION_BAR_STYLE, paddingBottom: insets.bottom + 10 }),
-    [insets.bottom],
+    () => ({ ...actionBarStyle, paddingBottom: insets.bottom + 10 }),
+    [actionBarStyle, insets.bottom],
   );
 
   return (
     <View style={styles.root}>
+      <VenueBackdrop venueTier={venueTier} />
       <StockfishEngine ref={stockfishRef} enabled={isStockfishTier} />
       <Image
         source={ScreenArt.frontRowCrowd}
@@ -358,13 +386,31 @@ export default function MatchScreen() {
       />
 
       <View className="flex-row items-center justify-between px-lg pb-sm" style={headerPad}>
-        <Text className="font-display-hero text-cyan" style={styles.wordmark}>
-          RockStyle Chess
-        </Text>
+        <View className="flex-row items-center" style={{ gap: Spacing.sm }}>
+          <Text className="font-display-hero text-cyan" style={styles.wordmark}>
+            RockStyle Chess
+          </Text>
+          <View
+            className="flex-row items-center rounded-full px-sm"
+            style={{
+              gap: 4,
+              paddingVertical: 3,
+              borderWidth: 1,
+              backgroundColor: withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.15),
+              borderColor: withOpacity(venue.accentColor, venueIntensity.glowOpacity),
+              boxShadow: `0px 0px ${venueIntensity.glowRadius}px ${withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.5)}`,
+            }}
+          >
+            <MaterialCommunityIcons name={venue.icon} size={11} color={venue.accentColor} />
+            <Text className="font-heading" style={{ fontSize: 9, color: venue.accentColor }}>
+              {venue.name.toUpperCase()}
+            </Text>
+          </View>
+        </View>
         <Pressable
           onPress={openResign}
           className="h-10 w-10 items-center justify-center rounded-full"
-          style={MENU_BUTTON_STYLE}
+          style={menuButtonStyle}
         >
           <MaterialCommunityIcons name="dots-vertical" size={20} color={Colors.textPrimary} />
         </Pressable>
@@ -377,11 +423,11 @@ export default function MatchScreen() {
           avatarEmoji={opponentAvatarEmoji}
           rank="GRANDMASTER (2150)"
           getRemaining={clock.getRemaining}
-          color="b"
+          color={opponentColor}
           accent={Colors.crimson}
-          pulsing={game.turn === 'b'}
+          pulsing={game.turn === opponentColor}
           running={!game.isGameOver}
-          captured={game.capturedByBlack}
+          captured={opponentColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
         />
 
         <ChessBoard
@@ -391,6 +437,7 @@ export default function MatchScreen() {
           checkSquare={game.checkSquare}
           lastMove={game.lastMove}
           turn={game.turn}
+          flipped={flipBoard}
           animateLastMove={animateOpponentMove}
           lastMoveSound={game.lastMoveSound}
           onSquarePress={handleBoardSquarePress}
@@ -403,11 +450,11 @@ export default function MatchScreen() {
           avatarSource={getAvatarImage(profile?.avatarId)}
           rank="PRO (2145)"
           getRemaining={clock.getRemaining}
-          color="w"
+          color={playerColor}
           accent={Colors.cyan}
-          pulsing={game.turn === 'w'}
+          pulsing={game.turn === playerColor}
           running={!game.isGameOver}
-          captured={game.capturedByWhite}
+          captured={playerColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
         />
       </View>
 

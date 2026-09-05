@@ -9,20 +9,32 @@ import { DURATIONS, DURATION_LABELS, type Duration } from '@/lib/onlineMatch';
 
 interface MatchOptionsModalProps {
   visible: boolean;
+  color: 'w' | 'b';
   duration: Duration;
   venueId: string;
+  onColor: (c: 'w' | 'b') => void;
   onDuration: (d: Duration) => void;
   onVenue: (id: string) => void;
   onClose: () => void;
 }
 
 /**
- * Bots-screen "Match Options" popup: pick a time control (drives the match
- * clock via DURATION_MS) and a venue (recorded + passed through as a route
- * param only -- no match visuals change yet). Backdrop recipe mirrors
- * ConfirmModal.
+ * Bots-screen "Match Options" popup: pick a side ("Play As" -- drives which
+ * color the bot plays and flips the board when Black), a time control (drives
+ * the match clock via DURATION_MS), and a venue (recorded + passed through as a
+ * route param, which match.tsx resolves into its VenueBackdrop atmosphere +
+ * HUD accent -- see (play)/README.md). Backdrop recipe mirrors ConfirmModal.
  */
-export function MatchOptionsModal({ visible, duration, venueId, onDuration, onVenue, onClose }: MatchOptionsModalProps) {
+export function MatchOptionsModal({
+  visible,
+  color,
+  duration,
+  venueId,
+  onColor,
+  onDuration,
+  onVenue,
+  onClose,
+}: MatchOptionsModalProps) {
   const { chips } = usePlayerProfile();
 
   return (
@@ -51,6 +63,41 @@ export function MatchOptionsModal({ visible, duration, venueId, onDuration, onVe
             <Text className="text-center font-display-hero uppercase text-text-primary" style={{ fontSize: 18, letterSpacing: 1 }}>
               Match Options
             </Text>
+
+            <View className="gap-sm">
+              <Text className="font-section-header text-section-header uppercase tracking-widest text-text-muted">
+                Play As
+              </Text>
+              <View className="flex-row gap-sm">
+                {(['w', 'b'] as const).map((c) => {
+                  const active = color === c;
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => onColor(c)}
+                      className="flex-1 flex-row items-center justify-center gap-2 rounded-lg py-md"
+                      style={{
+                        backgroundColor: active ? withOpacity(Colors.cyan, 0.12) : withOpacity(Colors.bgBase, 0.5),
+                        borderWidth: 1,
+                        borderColor: active ? Colors.cyan : withOpacity(Colors.chromeDark, 0.4),
+                      }}
+                    >
+                      <MaterialCommunityIcons
+                        name="chess-king"
+                        size={16}
+                        color={c === 'w' ? Colors.textPrimary : Colors.chromeMid}
+                      />
+                      <Text
+                        className="font-button-label text-button-label"
+                        style={{ color: active ? Colors.cyan : Colors.textPrimary }}
+                      >
+                        {c === 'w' ? 'White' : 'Black'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
 
             <View className="gap-sm">
               <Text className="font-section-header text-section-header uppercase tracking-widest text-text-muted">

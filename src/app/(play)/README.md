@@ -20,7 +20,7 @@ files without adding `/play` to the URL/deep-link path.
   reconnects) so a network blip while still queued doesn't strand the player.
   Leaving the screen emits `queue:leave`.
 - `match.tsx` — the chess board itself, built from `the_match_pro_stage_production_ready`.
-  Reads `mode`/`difficulty` (+ optional `duration`/`venueTier`) route params for
+  Reads `mode`/`difficulty` (+ optional `color`/`duration`/`venueTier`) route params for
   bot matches, or `mode=online` + `matchId`/`color`/`fen`/`opponentName` +
   server-provided `clockW`/`clockB` (real multiplayer, passed by `matchmaking.tsx`
   once the server pairs an opponent) and passes them into `useChessGame`, which
@@ -28,7 +28,22 @@ files without adding `/play` to the URL/deep-link path.
   locally. Mounts `StockfishEngine` when `difficulty` is one of the two Stockfish
   tiers. Bot/local clock time = `DURATION_MS[duration]` (from `src/lib/onlineMatch.ts`)
   when a `duration` param is present, else `DEFAULT_CLOCK_MS` (5 min). `venueTier`
-  is carried in the params but has no visual effect yet.
+  (falls back to `garage` when absent) resolves to a `Venue` from
+  `src/constants/venues.ts` and drives purely atmospheric HUD chrome: a
+  `VenueBackdrop` (photo + scrim + accent color wash, `src/components/ui/VenueBackdrop.tsx`)
+  behind the board, a venue name/icon badge in the header, and venue-accent-tinted
+  borders/glow on the menu button and action bar — intensity scales with the
+  venue's ladder position (`getVenueIntensity`), so Garage stays minimal and
+  World Tour gets the richest treatment (including an animated shimmer sweep).
+  This never touches `ChessBoard`'s own `theme`/`pieceSprites`, which stay
+  driven solely by the player's equipped Forge cosmetic regardless of venue.
+  When `color=b` (online
+  Black seat, or the bots screen's "Play As: Black") `ChessBoard` renders
+  `flipped` — a 180° coordinate transform so the local player's pieces sit at
+  the bottom, pieces/labels upright — and the player/opponent rows + clocks bind
+  to the right side. Bot matches also pass `botColor` (the non-picked side) into
+  `useChessGame` so the bot plays the other color and opens the game when it has
+  White. Local pass-and-play stays White-oriented.
 - `result-placeholder.tsx` — stub destination for Resign until the real Win/Loss
   screen is built.
 - `bots.tsx` — AI opponent gallery, built from `bots_pro_stage_animated`. Each
@@ -38,11 +53,14 @@ files without adding `/play` to the URL/deep-link path.
   stockfish-basic (~1600 Elo), The Reaper=stockfish-lite (~2000 Elo), King
   Axl=stockfish-strong (~2800 Elo) — forwarded to `/match` as a route param.
   A "Match Options" row below the intro opens `MatchOptionsModal`
-  (`src/components/ui/MatchOptionsModal.tsx`) to pick a **time control**
-  (3m/5m/10m — drives the match clock) and a **venue** (recorded + passed as
-  `venueTier`, no match effect yet); the row also shows the current
-  `duration · venue` selection. Both ride along on the `/match` push; session
-  state only, resets to `5m` / `arena` on each visit.
+  (`src/components/ui/MatchOptionsModal.tsx`) to pick a **side** ("Play As"
+  White/Black — the bot takes the other side and the board flips for Black), a
+  **time control** (3m/5m/10m — drives the match clock) and a **venue**
+  (recorded + passed as `venueTier` — see `match.tsx`'s entry above for its
+  in-match atmosphere effect); the row also shows
+  the current `color · duration · venue` selection. All ride along on the
+  `/match` push; session state only, resets to White / `5m` / `arena` on each
+  visit.
 - `tournaments.tsx` — built from `tournaments_pro_stage_animated`.
 - `puzzles.tsx` — puzzle training hub over `src/lib/puzzleCatalog.ts` (~250
   puzzles curated by `scripts/curate-puzzles.mjs` from the Lichess CC0 DB, no

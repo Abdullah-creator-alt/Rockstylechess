@@ -58,6 +58,7 @@ export default function MatchmakingScreen() {
           clockW: String(payload.clocks.w),
           clockB: String(payload.clocks.b),
           incrementMs: String(payload.incrementMs),
+          venueTier,
         },
       });
     }

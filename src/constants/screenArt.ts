@@ -16,13 +16,13 @@ export const ScreenArt = {
   // Home / rewards
   dailyBonusChest: require('../../assets/icons/images/daily-bonus-0.jpg'),
 
-  // Venues — keyed to the venue ids in src/constants/venues.ts. All have
-  // dedicated art (assets/images/) except Mainstage, which falls back to the
-  // Arena shot until dedicated art exists.
+  // Venues — keyed to the venue ids in src/constants/venues.ts. All six have
+  // dedicated art (assets/images/).
   venueGarage: require('../../assets/images/garage.jpg'),
   venueClub: require('../../assets/images/club.jpg'),
   venueArena: require('../../assets/images/arena.jpg'),
   venueStadium: require('../../assets/images/stadium.jpg'),
+  venueMainstage: require('../../assets/images/mainstage.jpg'),
   venueWorldTour: require('../../assets/images/world-tour.jpg'),
 
   // Screen backdrops

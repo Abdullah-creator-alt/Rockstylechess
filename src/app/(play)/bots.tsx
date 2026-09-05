@@ -57,6 +57,7 @@ export default function BotsGalleryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gems, profile } = usePlayerProfile();
+  const [color, setColor] = useState<'w' | 'b'>('w');
   const [duration, setDuration] = useState<Duration>('5m');
   const [venueId, setVenueId] = useState('arena');
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -74,6 +75,7 @@ export default function BotsGalleryScreen() {
         difficulty: bot.difficulty,
         botName: bot.name,
         botEmoji: bot.emoji,
+        color,
         duration,
         venueTier: venueId,
       },
@@ -112,7 +114,7 @@ export default function BotsGalleryScreen() {
                   Match Options
                 </Text>
                 <Text className="mt-0.5 font-body-sm text-text-muted" style={{ fontSize: 11 }} numberOfLines={1}>
-                  {duration} · {getVenue(venueId).name}
+                  {color === 'w' ? 'White' : 'Black'} · {duration} · {getVenue(venueId).name}
                 </Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textMuted} />
@@ -173,8 +175,10 @@ export default function BotsGalleryScreen() {
 
       <MatchOptionsModal
         visible={optionsOpen}
+        color={color}
         duration={duration}
         venueId={venueId}
+        onColor={setColor}
         onDuration={setDuration}
         onVenue={setVenueId}
         onClose={() => setOptionsOpen(false)}
