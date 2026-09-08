@@ -14,7 +14,18 @@ let socket: Socket | null = null;
 let readyPromise: Promise<Socket> | null = null;
 
 function createSocket(): Socket {
-  return io(SERVER_URL, { transports: ['websocket'], autoConnect: true });
+  return io(SERVER_URL, {
+    transports: ['websocket'],
+    autoConnect: true,
+    // When the server is unreachable (offline, or a release build blocked
+    // from cleartext HTTP to a LAN dev server), don't hammer it -- back off
+    // hard so a failed connection costs ~nothing while idle. Keeps retrying
+    // (a real network can come back) but at most once every 30s.
+    reconnectionDelay: 2000,
+    reconnectionDelayMax: 30000,
+    randomizationFactor: 0.5,
+    timeout: 15000,
+  });
 }
 
 // Synchronous accessor, for call sites that only need to attach listeners
