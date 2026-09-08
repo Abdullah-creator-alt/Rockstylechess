@@ -12,7 +12,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { ChatPanel, ChatToast, ChessBoard, ConfirmModal, PlayerAvatar, VenueBackdrop } from '@/components/ui';
+import { ChatPanel, ChatToast, ChessBoard, ConfirmModal, PlayerAvatar, PromotionPicker, VenueBackdrop } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getAvatarImage } from '@/constants/avatars';
@@ -203,7 +203,11 @@ export default function MatchScreen() {
       reason = 'stalemate';
     } else {
       outcome = 'draw';
-      reason = result.agreed ? 'agreement' : 'draw';
+      reason = result.agreed
+        ? 'agreement'
+        : result.reason === 'insufficientVsTimeout'
+          ? 'insufficientTimeout'
+          : result.reason ?? 'draw';
     }
     console.log('Game over', outcome, reason);
 
@@ -259,7 +263,12 @@ export default function MatchScreen() {
         // Matches the opponent name shown live during the match (opponentDisplayName above).
         opponentLabel: mode === 'local' ? 'Local Match' : opponentDisplayName,
         outcome,
-        resultType: reason as LocalMatchReplay['resultType'],
+        // The replay store only knows the coarse ending kinds -- collapse the
+        // specific draw reasons (repetition / 50-move / material / time+material)
+        // back to 'draw' for it.
+        resultType: (['checkmate', 'stalemate', 'resignation', 'timeout'].includes(reason)
+          ? reason
+          : 'draw') as LocalMatchReplay['resultType'],
         playedAt: new Date().toISOString(),
         playerColor,
       });
@@ -521,6 +530,15 @@ export default function MatchScreen() {
           confirmLabel="Resign"
           onCancel={cancelResign}
           onConfirm={confirmResign}
+        />
+      ) : null}
+
+      {game.pendingPromotion ? (
+        <PromotionPicker
+          color={game.turn}
+          pieceSprites={pieceSprites}
+          onPick={game.completePromotion}
+          onCancel={game.cancelPromotion}
         />
       ) : null}
 

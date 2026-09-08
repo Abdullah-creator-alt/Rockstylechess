@@ -44,6 +44,16 @@ files without adding `/play` to the URL/deep-link path.
   to the right side. Bot matches also pass `botColor` (the non-picked side) into
   `useChessGame` so the bot plays the other color and opens the game when it has
   White. Local pass-and-play stays White-oriented.
+  Promoting a pawn (any mode) holds the move as `useChessGame`'s `pendingPromotion`
+  and shows `PromotionPicker` (`src/components/ui/PromotionPicker.tsx`) — Q/R/B/N in
+  the equipped piece set; a non-promotion move never sees it. For online, a
+  disconnect auto-reconnect re-emits `match:rejoin` and the position/clocks resync
+  from the server's `queue:matched` reply; a rejected move snaps the local board
+  back to the FEN carried on `move:rejected`.
+  A flag-fall where the side still on the clock has only K / K+N / K+B is scored a
+  **draw**, not a win (FIDE 6.9 — `src/lib/chessEndgame.ts`, mirrored server-side);
+  repetition / 50-move / insufficient-material draws each show their specific reason
+  on the result screen.
 - `result-placeholder.tsx` — stub destination for Resign until the real Win/Loss
   screen is built.
 - `bots.tsx` — AI opponent gallery, built from `bots_pro_stage_animated`. Each

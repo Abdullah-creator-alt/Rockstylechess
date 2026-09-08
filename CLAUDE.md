@@ -115,7 +115,12 @@ splitting it into multiple `setState` calls caused torn updates the board
 animation observed). Game endings (checkmate/stalemate/draw, resignation,
 forfeit, timeout) all funnel through a single `gameOverFiredRef`-guarded path
 so exactly one `onGameOver` fires per game regardless of which source
-triggered it.
+triggered it — including the FIDE 6.9 case where a flag-fall is a draw
+because the side still on the clock has no mating material
+(`src/lib/chessEndgame.ts`, mirrored in `server/src/chessEndgame.ts`).
+Promotion is the one move that isn't applied immediately on tap: it's parked
+as `pendingPromotion` until `PromotionPicker` resolves the piece
+(`completePromotion` / `cancelPromotion`).
 
 ### ChessBoard rendering — `src/components/ui/ChessBoard.tsx`
 

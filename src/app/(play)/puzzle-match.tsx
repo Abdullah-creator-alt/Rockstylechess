@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChessBoard, RockButton, RockCard } from '@/components/ui';
+import { ChessBoard, PromotionPicker, RockButton, RockCard } from '@/components/ui';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
@@ -201,6 +201,15 @@ function PuzzleMatchInner({
           )}
         </View>
       </View>
+
+      {game.pendingPromotion ? (
+        <PromotionPicker
+          color={game.turn}
+          pieceSprites={pieceSprites}
+          onPick={game.completePromotion}
+          onCancel={game.cancelPromotion}
+        />
+      ) : null}
     </View>
   );
 }

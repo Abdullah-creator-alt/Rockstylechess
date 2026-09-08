@@ -69,3 +69,13 @@ extractor can only strip baked shadows from the pale set, so drawing one shadow
 for all twelve is what keeps the lighting uniform. It's two stacked ellipses (a
 wide faint pool plus a tighter core) with the piece raised a few percent, which
 is what reads as height; a single flat ellipse looks like a decal.
+
+## PromotionPicker
+
+`ui/PromotionPicker.tsx` — the Q/R/B/N chooser shown while `useChessGame` holds a
+`pendingPromotion` (a committed pawn move to the last rank, not yet applied).
+`ChessBoard` has no game state and can't know a move is a promotion, so the
+detection and the held move both live in the hook; `match.tsx` and
+`puzzle-match.tsx` render this picker from `game.pendingPromotion` and call
+`game.completePromotion(piece)` / `game.cancelPromotion()`. Renders the choices
+with the same `pieceSprites` map `ChessBoard` uses.

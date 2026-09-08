@@ -32,6 +32,10 @@ const REASON_LABEL: Record<string, string> = {
   agreement: 'by Agreement',
   resignation: 'by Resignation',
   timeout: 'by Timeout',
+  repetition: 'by Repetition',
+  fiftyMove: 'by the 50-Move Rule',
+  insufficient: 'by Insufficient Material',
+  insufficientTimeout: 'Time Out vs. Insufficient Material',
 };
 
 function useCountUp(target: number, durationMs = 1200) {

@@ -38,3 +38,5 @@ export { AppIcon } from './AppIcon';
 export { GlowBox } from './GlowBox';
 
 export { ConfirmModal } from './ConfirmModal';
+
+export { PromotionPicker } from './PromotionPicker';

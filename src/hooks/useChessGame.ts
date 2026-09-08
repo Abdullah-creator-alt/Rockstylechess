@@ -2,6 +2,7 @@ import { Chess, type Move, type Square } from 'chess.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { resolveBotMove, type BotDifficulty, type RequestEngineMove } from '@/lib/botEngine';
+import { canDeliverMate } from '@/lib/chessEndgame';
 import {
   boardGridFromChess,
   checkSquareFromChess,
@@ -11,7 +12,14 @@ import {
   type VerboseLastMove,
 } from '@/lib/chessBoardSnapshot';
 import { getSocket } from '@/lib/socket';
-import type { DrawOfferedPayload, MatchEndedPayload, MoveAppliedPayload } from '@/lib/onlineMatch';
+import type {
+  DrawOfferedPayload,
+  MatchEndedPayload,
+  MoveAppliedPayload,
+  MoveRejectedPayload,
+  QueueMatchedPayload,
+} from '@/lib/onlineMatch';
+import { getPlayerId } from '@/lib/playerId';
 import { parseUciMove } from '@/lib/puzzleEngine';
 import { playSound } from '@/lib/soundEffects';
 
@@ -25,12 +33,15 @@ export type GameMode = 'bot' | 'local' | 'online' | 'puzzle';
 // mutated (callers only read / `.includes`).
 const NO_TARGETS: Square[] = [];
 
+// `agreed` marks a negotiated draw; `reason` names a chess.js-detected one
+// (or the FIDE 6.9 "flag fell but the opponent can't mate" case) so the
+// result screen can show the specific cause instead of a bare "Draw".
+export type DrawReason = 'repetition' | 'fiftyMove' | 'insufficient' | 'insufficientVsTimeout';
+
 export type ChessGameResult =
   | { type: 'checkmate'; winner: 'w' | 'b' }
   | { type: 'stalemate' }
-  // `agreed` distinguishes a negotiated draw (players agreed) from a
-  // chess.js-detected one (repetition, 50-move, insufficient material).
-  | { type: 'draw'; agreed?: boolean }
+  | { type: 'draw'; agreed?: boolean; reason?: DrawReason }
   | { type: 'resignation'; winner: 'w' | 'b' }
   | { type: 'forfeit'; winner: 'w' | 'b' }
   | { type: 'timeout'; winner: 'w' | 'b' };
@@ -234,6 +245,11 @@ export function useChessGame({
     buildSnapshot(chessRef.current, ledgerRef.current, null, 'playing'),
   );
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  // A legal pawn move to the last rank that the player has committed to but
+  // not yet picked a piece for -- the board keeps showing the pre-move
+  // position while match.tsx / puzzle-match.tsx render the PromotionPicker.
+  // null the rest of the time. Cleared by completePromotion / cancelPromotion.
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: Square; to: Square } | null>(null);
   // Which side currently has an outstanding draw offer, or null. Cleared by
   // the server's draw:cleared (any move) / draw:declined, and locally on every
   // move for instant feedback.
@@ -302,7 +318,14 @@ export function useChessGame({
     } else if (chess.isStalemate()) {
       onGameOverRef.current?.({ type: 'stalemate' });
     } else {
-      onGameOverRef.current?.({ type: 'draw' });
+      const reason: DrawReason | undefined = chess.isInsufficientMaterial()
+        ? 'insufficient'
+        : chess.isThreefoldRepetition()
+          ? 'repetition'
+          : chess.isDrawByFiftyMoves()
+            ? 'fiftyMove'
+            : undefined;
+      onGameOverRef.current?.({ type: 'draw', reason });
     }
   }
 
@@ -311,11 +334,14 @@ export function useChessGame({
   // retries against the same expected move (standard puzzle-trainer UX,
   // matching Lichess's own "try again" behavior rather than treating a
   // wrong guess as game over).
-  function handlePuzzleAttempt(from: Square, to: Square) {
+  function handlePuzzleAttempt(from: Square, to: Square, promotion?: 'q' | 'r' | 'b' | 'n') {
     if (!puzzle) return;
     const chess = chessRef.current;
     const expected = parseUciMove(puzzle.moves[puzzleMoveIndexRef.current]);
-    if (from !== expected.from || to !== expected.to) {
+    // When the solution is a promotion, the chosen piece is part of the
+    // answer (under-promotion puzzles are the whole point) -- a queen where a
+    // knight was needed is just as wrong as the wrong square.
+    if (from !== expected.from || to !== expected.to || (expected.promotion && promotion !== expected.promotion)) {
       playSound('illegal');
       refresh(null, 'failed');
       return;
@@ -347,9 +373,44 @@ export function useChessGame({
     }
   }
 
+  // The shared move-application path for a human move (tap, drag-drop, or a
+  // promotion resolved by the picker) in bot/local/online. Puzzle attempts go
+  // through handlePuzzleAttempt instead (they must never mutate on a wrong
+  // guess). `promotion` is only meaningful for a pawn reaching the last rank.
+  function applyLocalMove(from: Square, to: Square, promotion: 'q' | 'r' | 'b' | 'n' = 'q') {
+    const chess = chessRef.current;
+    try {
+      recordMove(chess.move({ from, to, promotion }));
+    } catch (error) {
+      console.log('Unexpected illegal move rejected by chess.js', error);
+      playSound('illegal');
+      return;
+    }
+    recordMoveTiming();
+    setDrawOfferFrom(null);
+    refresh('human');
+    reportGameOverIfDone();
+    if (mode === 'online' && online) {
+      // Applied locally already for instant feedback; this is the server's
+      // authoritative copy. A rejection comes back as move:rejected (handled
+      // in the online effect -- it resyncs from the server FEN).
+      getSocket().emit('move:make', { matchId: online.matchId, from, to, promotion });
+    }
+  }
+
+  // True if a from->to move for the currently selected piece is a promotion
+  // (the player must still choose the piece). chess.js emits one verbose move
+  // per promotion option, all sharing the same `to`.
+  function isPromotionMove(from: Square, to: Square): boolean {
+    return chessRef.current.moves({ square: from, verbose: true }).some((m) => m.to === to && Boolean(m.promotion));
+  }
+
   function handleSquarePress(square: Square) {
     const chess = chessRef.current;
     if (chess.isGameOver()) return;
+    // A promotion choice is pending -- ignore board taps until the picker is
+    // answered (completePromotion / cancelPromotion).
+    if (pendingPromotion) return;
     // Once a puzzle is solved (or its solution was revealed) there's nothing
     // left to do with further taps -- but a 'failed' guess stays retriable.
     if (mode === 'puzzle' && puzzle && (snapshot.puzzleStatus === 'solved' || snapshot.puzzleStatus === 'revealed'))
@@ -370,28 +431,19 @@ export function useChessGame({
     if (selectedSquare) {
       if (legalTargets.includes(square)) {
         const from = selectedSquare;
+        // A pawn reaching the last rank: hold the move and let the screen show
+        // the piece picker. Keep the pre-move board (don't apply anything yet).
+        if (isPromotionMove(from, square)) {
+          setSelectedSquare(null);
+          setPendingPromotion({ from, to: square });
+          return;
+        }
         setSelectedSquare(null);
         if (mode === 'puzzle' && puzzle) {
           handlePuzzleAttempt(from, square);
           return;
         }
-        try {
-          // promotion is always auto-queened -- no under-promotion picker yet.
-          recordMove(chess.move({ from, to: square, promotion: 'q' }));
-        } catch (error) {
-          console.log('Unexpected illegal move rejected by chess.js', error);
-          playSound('illegal');
-        }
-        recordMoveTiming();
-        setDrawOfferFrom(null);
-        refresh('human');
-        reportGameOverIfDone();
-        if (mode === 'online' && online) {
-          // Applied locally already for instant feedback; this is the
-          // server's authoritative copy. A rejection here would only mean a
-          // prior desync -- not handled beyond logging, see move:rejected below.
-          getSocket().emit('move:make', { matchId: online.matchId, from, to: square, promotion: 'q' });
-        }
+        applyLocalMove(from, square);
         return;
       }
 
@@ -412,6 +464,26 @@ export function useChessGame({
       clearFailedPuzzleStatus();
       setSelectedSquare(square);
     }
+  }
+
+  // The PromotionPicker's four choices land here. In puzzle mode the picked
+  // piece is validated against the solution; otherwise it's applied like any
+  // human move.
+  function completePromotion(piece: 'q' | 'r' | 'b' | 'n') {
+    if (!pendingPromotion) return;
+    const { from, to } = pendingPromotion;
+    setPendingPromotion(null);
+    if (mode === 'puzzle' && puzzle) {
+      handlePuzzleAttempt(from, to, piece);
+      return;
+    }
+    applyLocalMove(from, to, piece);
+  }
+
+  // Backing out of the picker -- nothing was applied, so just drop the pending
+  // move; the player re-taps to try again.
+  function cancelPromotion() {
+    setPendingPromotion(null);
   }
 
   // Resets to the puzzle's starting position (re-applying the opponent's setup
@@ -485,13 +557,39 @@ export function useChessGame({
     if (gameOverFiredRef.current) return;
     if (mode === 'online') return;
     gameOverFiredRef.current = true;
-    onGameOverRef.current?.({ type: 'timeout', winner: flaggedColor === 'w' ? 'b' : 'w' });
+    const winner: 'w' | 'b' = flaggedColor === 'w' ? 'b' : 'w';
+    // FIDE 6.9: a flag-fall is only a loss if the other side could still
+    // checkmate. Bare king / K+N / K+B on time -> draw, not a win.
+    if (!canDeliverMate(chessRef.current, winner)) {
+      onGameOverRef.current?.({ type: 'draw', reason: 'insufficientVsTimeout' });
+      return;
+    }
+    onGameOverRef.current?.({ type: 'timeout', winner });
   }
 
   useEffect(() => {
     if (mode !== 'online' || !online) return;
     const socket = getSocket();
     const chess = chessRef.current;
+    const matchId = online.matchId;
+
+    // Snap the local position back to whatever the server says is truth --
+    // used both when the server rejects a move (we're desynced) and on a
+    // reconnect resync. Rolls back any optimistic local move.
+    function resyncFromServer(fen: string, clocks?: { w: number; b: number }) {
+      try {
+        chess.load(fen);
+      } catch (error) {
+        console.log('Failed to resync position from server FEN', error);
+        return;
+      }
+      ledgerRef.current = deriveLedger(chess);
+      setSelectedSquare(null);
+      setPendingPromotion(null);
+      setDrawOfferFrom(null);
+      refresh(null);
+      if (clocks) onClockSyncRef.current?.(clocks);
+    }
 
     function handleMoveApplied(payload: MoveAppliedPayload) {
       // Called unconditionally, BEFORE the early-return below -- that guard
@@ -521,10 +619,13 @@ export function useChessGame({
       setDrawOfferFrom(null);
       if (gameOverFiredRef.current) return;
       gameOverFiredRef.current = true;
-      // A server "draw" is always a negotiated one (chess.js-detected draws
-      // are derived client-side from the move, never broadcast).
+      // A broadcast "draw" is a negotiated one UNLESS the server tagged a
+      // reason (today: a flag-fall where the winner couldn't mate -- FIDE
+      // 6.9). chess.js-detected draws are derived client-side, never broadcast.
       const result: ChessGameResult =
-        payload.result.type === 'draw' ? { type: 'draw', agreed: true } : payload.result;
+        payload.result.type === 'draw'
+          ? { type: 'draw', agreed: !payload.result.reason, reason: payload.result.reason }
+          : payload.result;
       onGameOverRef.current?.(result);
     }
 
@@ -535,17 +636,46 @@ export function useChessGame({
       setDrawOfferFrom(null);
     }
 
+    // The server rejected our move -- we're out of sync with its position.
+    // Snap back to the FEN it sent instead of dead-ending (every further move
+    // would also be rejected).
+    function handleMoveRejected(payload: MoveRejectedPayload) {
+      if (payload.fen) resyncFromServer(payload.fen);
+    }
+
+    // Socket.IO fires 'connect' for every automatic reconnect after a network
+    // blip (a fresh socket.id each time). Ask the server to seat us back in
+    // the match -- without this the server's whole match:rejoin path is dead
+    // code and a disconnect is force-forfeited after the 60s grace even
+    // though we're back.
+    function handleReconnect() {
+      void getPlayerId().then((guestId) => socket.emit('match:rejoin', { matchId, guestId }));
+    }
+
+    // The server's response to match:rejoin (same event shape as the initial
+    // pairing). Any queue:matched seen while this effect is mounted is a
+    // rejoin -- the first one already fired back in matchmaking.tsx.
+    function handleRejoined(payload: QueueMatchedPayload) {
+      resyncFromServer(payload.fen, payload.clocks);
+    }
+
     socket.on('move:applied', handleMoveApplied);
     socket.on('match:ended', handleMatchEnded);
     socket.on('draw:offered', handleDrawOffered);
     socket.on('draw:declined', handleDrawGone);
     socket.on('draw:cleared', handleDrawGone);
+    socket.on('move:rejected', handleMoveRejected);
+    socket.on('connect', handleReconnect);
+    socket.on('queue:matched', handleRejoined);
     return () => {
       socket.off('move:applied', handleMoveApplied);
       socket.off('match:ended', handleMatchEnded);
       socket.off('draw:offered', handleDrawOffered);
       socket.off('draw:declined', handleDrawGone);
       socket.off('draw:cleared', handleDrawGone);
+      socket.off('move:rejected', handleMoveRejected);
+      socket.off('connect', handleReconnect);
+      socket.off('queue:matched', handleRejoined);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, online?.matchId]);
@@ -553,7 +683,11 @@ export function useChessGame({
   useEffect(() => {
     if (mode !== 'bot') return;
     const chess = chessRef.current;
-    if (chess.isGameOver() || chess.turn() !== botColor) return;
+    // gameOverFiredRef covers the endings chess.js can't see (resign, agreed
+    // draw, timeout) -- without this guard a resign during the bot's think
+    // delay still lets the pending move land, animating a phantom bot move
+    // over the result-screen transition.
+    if (chess.isGameOver() || gameOverFiredRef.current || chess.turn() !== botColor) return;
 
     // The Stockfish tiers resolve asynchronously (a round trip through the
     // WebView), unlike easy/medium's synchronous lookups -- so the move can
@@ -567,7 +701,7 @@ export function useChessGame({
 
     const timeout = setTimeout(async () => {
       const move = await resolveBotMove(chess, difficulty, requestEngineMove);
-      if (cancelled || !move) return;
+      if (cancelled || !move || gameOverFiredRef.current) return;
       try {
         recordMove(chess.move(move));
       } catch (error) {
@@ -711,6 +845,9 @@ export function useChessGame({
     revealSolution,
     selectedSquare,
     legalTargets,
+    pendingPromotion,
+    completePromotion,
+    cancelPromotion,
     handleSquarePress,
     resetPuzzle,
     resign,

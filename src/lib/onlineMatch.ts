@@ -37,7 +37,18 @@ export interface MoveAppliedPayload {
 export interface MatchEndedPayload {
   result:
     | { type: 'resignation' | 'forfeit' | 'timeout'; winner: 'w' | 'b' }
-    | { type: 'draw'; winner: null };
+    // `reason` is only set for a non-negotiated broadcast draw -- today just
+    // a flag-fall where the winner had no mating material (FIDE 6.9).
+    | { type: 'draw'; winner: null; reason?: 'insufficientVsTimeout' };
+}
+
+// Server -> the mover only, when it re-validates their move and rejects it.
+// Carries the authoritative position so the client can snap back into sync
+// instead of dead-ending (every subsequent move would also be rejected).
+export interface MoveRejectedPayload {
+  reason: string;
+  fen?: string;
+  turn?: 'w' | 'b';
 }
 
 // Server -> client when the opponent offers / withdraws a draw. An offer is

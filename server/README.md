@@ -132,7 +132,10 @@ Client -> Server:
 - `match:resign { matchId }`
 - `draw:offer { matchId }` -- one outstanding offer per match; cleared by any move
 - `draw:respond { matchId, accept }` -- only the player who didn't offer can answer
-- `match:rejoin { matchId, guestId }`
+- `match:rejoin { matchId, guestId }` -- the client re-emits this on every
+  Socket.IO auto-reconnect while a match screen is mounted; the server replies
+  with a fresh `queue:matched` (position + live clocks) and clears any pending
+  forfeit timer.
 - `match:chat:send { matchId, text }`
 - `friend:challenge { guestId, toUserId, duration }` -- authed only
 - `friend:challenge:respond { guestId, challengeId, accept }` -- authed only
@@ -147,14 +150,18 @@ Server -> Client:
 - `room:created { code }`
 - `room:error { reason: 'not-found' | 'own-room' }`
 - `move:applied { from, to, promotion, fen, turn, isGameOver, clocks }`
-- `move:rejected { reason }`
+- `move:rejected { reason, fen, turn }` -- to the mover only; `fen`/`turn` are
+  the server's authoritative position so a desynced client can snap back to it
+  rather than dead-ending.
 - `match:opponentDisconnected { color }`
 - `match:opponentReconnected { color }`
-- `match:ended { result }` -- resignation / forfeit / timeout / **agreed draw**
-  (`{ type: 'draw', winner: null }`). Checkmate / stalemate / *natural* draw
-  (repetition, 50-move, insufficient material) are still derived independently
-  by both clients from the move itself (`move:applied`'s `isGameOver`) -- only
-  a *negotiated* draw is broadcast, since a move can't imply it.
+- `match:ended { result }` -- resignation / forfeit / timeout / **draw**
+  (`{ type: 'draw', winner: null }`, with an optional `reason:
+  'insufficientVsTimeout'` for a flag-fall the flagging side can't lose under
+  FIDE 6.9 because the opponent has no mating material). Checkmate / stalemate /
+  *natural* draw (repetition, 50-move, insufficient material) are still derived
+  independently by both clients from the move itself (`move:applied`'s
+  `isGameOver`) -- only a draw a move can't imply is broadcast.
 - `draw:offered { color }` -- the opponent offered a draw
 - `draw:declined {}` -- the opponent declined your offer
 - `draw:cleared {}` -- a pending offer was voided by a move

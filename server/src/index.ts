@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 
 import { allowedWebOrigins } from './allowedOrigins.js';
 import { authRouter } from './auth.js';
+import { canDeliverMate } from './chessEndgame.js';
 import { socketAuth } from './authMiddleware.js';
 import { auth } from './betterAuth.js';
 import { CHALLENGE_TTL_MS, cancelChallengesFromSocket, consumeChallenge, createChallenge } from './challenge.js';
@@ -171,6 +172,17 @@ async function buildChallengePlayer(
 // move:make's handler further down).
 function fireTimeout(match: MatchState, flaggedColor: PieceColor): void {
   const winner = opponentColor(flaggedColor);
+  // FIDE 6.9: a flag-fall is only a loss if the other side could still
+  // checkmate. Bare king / K+N / K+B on time -> draw.
+  if (!canDeliverMate(match.chess, winner)) {
+    io.to(match.id).emit('match:ended', {
+      matchId: match.id,
+      result: { type: 'draw', winner: null, reason: 'insufficientVsTimeout' },
+    });
+    persistMatchResult(match, 'draw', null).catch((err) => console.error('match persistence failed', err));
+    endMatchClean(match.id);
+    return;
+  }
   io.to(match.id).emit('match:ended', { matchId: match.id, result: { type: 'timeout', winner } });
   persistMatchResult(match, 'timeout', winner).catch((err) => console.error('match persistence failed', err));
   endMatchClean(match.id);
@@ -408,7 +420,13 @@ io.on('connection', (socket: Socket) => {
 
     const chess = applyMove(match, color, { from: payload.from, to: payload.to, promotion: payload.promotion });
     if (!chess) {
-      socket.emit('move:rejected', { reason: 'illegal-move' });
+      // Hand back the authoritative position so a desynced client can snap
+      // to it instead of dead-ending (every later move would also be rejected).
+      socket.emit('move:rejected', {
+        reason: 'illegal-move',
+        fen: match.chess.fen(),
+        turn: match.chess.turn(),
+      });
       return;
     }
 
