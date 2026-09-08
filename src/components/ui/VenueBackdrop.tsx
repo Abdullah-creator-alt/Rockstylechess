@@ -40,13 +40,18 @@ export function VenueBackdrop({ venueTier }: VenueBackdropProps) {
         locations={[0, 0.55, 1]}
         style={StyleSheet.absoluteFillObject}
       />
-      <LinearGradient
-        pointerEvents="none"
-        colors={[withOpacity(venue.accentColor, intensity.glowOpacity * 0.4), 'transparent']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0.6 }}
-        style={StyleSheet.absoluteFillObject}
-      />
+      {/* Diagonal accent wash -- only for the higher-energy venues. On the
+          low ones (Garage/Club) glowOpacity is small enough that this
+          full-screen gradient renders nothing you can see. */}
+      {intensity.glowOpacity >= 0.3 ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[withOpacity(venue.accentColor, intensity.glowOpacity * 0.4), 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0.6 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      ) : null}
       {intensity.shimmer ? <ShimmerSweep color={venue.accentColor} /> : null}
     </>
   );

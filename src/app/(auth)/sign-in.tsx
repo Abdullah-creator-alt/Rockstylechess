@@ -6,7 +6,7 @@ import { useState, type ReactNode } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { EmberParticles, KeyboardAwareScrollView, RockButton, RockCard } from '@/components/ui';
+import { KeyboardAwareScrollView, RockButton, RockCard } from '@/components/ui';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
@@ -51,7 +51,6 @@ export default function SignInScreen() {
         colors={[withOpacity(Colors.bgBase, 0.2), withOpacity(Colors.bgBase, 0.55), Colors.bgBase]}
         style={{ position: 'absolute', inset: 0 }}
       />
-      <EmberParticles count={12} />
 
       <KeyboardAwareScrollView
         className="z-10"

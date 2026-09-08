@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, CurrencyIcon, EmberParticles, RockButton } from '@/components/ui';
+import { AppIcon, CurrencyIcon, RockButton } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
 
 const REWARD_CHIPS = 10_000;
@@ -55,7 +55,6 @@ export default function WelcomeRewardScreen() {
   return (
     <View className="flex-1 items-center justify-center bg-bg-base" style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}>
       <LinearGradient pointerEvents="none" colors={[withOpacity(Colors.gold, 0.2), Colors.bgBase, Colors.bgBase]} style={{ position: 'absolute', inset: 0 }} />
-      <EmberParticles count={12} />
 
       <View className="items-center px-margin-mobile" style={{ width: '100%', maxWidth: 440 }}>
         <Text

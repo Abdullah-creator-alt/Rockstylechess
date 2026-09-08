@@ -18,7 +18,6 @@ export { ProgressBar } from './ProgressBar';
 export { BottomNav } from './BottomNav';
 export type { NavTab } from './BottomNav';
 
-export { EmberParticles } from './EmberParticles';
 
 export { KeyboardAwareScrollView } from './KeyboardAwareScrollView';
 

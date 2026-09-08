@@ -1,7 +1,7 @@
 import { Image, type ImageSource } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Colors, Gradients, Radius, Spacing, withOpacity } from '@/constants/theme';
 
@@ -51,6 +51,13 @@ export function RockCard({
   ];
   const glow = glowColor ?? Colors.gold;
   const innerGlowColor = innerGlow ?? glow;
+  // The soft top accent-glow layer is a whole LinearGradient view. It only
+  // reads as anything when there's a real accent -- an explicit innerGlow, or
+  // a glowColor that isn't one of the near-neutral chromes. Skip it otherwise
+  // (e.g. every list row that passes glowColor={Colors.chromeDark}).
+  const showInnerGlow =
+    innerGlow !== undefined ||
+    (glowColor !== undefined && glowColor !== Colors.chromeDark && glowColor !== Colors.chrome);
 
   const photoLayers = backgroundImage ? (
     <>
@@ -104,17 +111,25 @@ export function RockCard({
     );
   }
 
-  const ambientShadow = `0px 15px 30px ${withOpacity(Colors.bgBase, 0.85)}`;
-  const accentShadow = glowColor ? `, 0px 0px 24px ${withOpacity(glow, 0.45)}` : '';
+  // Android: the ambient drop shadow via `elevation` (GPU-composited) instead
+  // of a blurred `boxShadow` (slow raster path, and expensive per card in a
+  // list). A colored accent glow still needs the real shadow, so keep
+  // boxShadow when a glowColor is set. iOS keeps boxShadow throughout.
+  const depthShadow: ViewStyle =
+    Platform.OS === 'android' && !glowColor
+      ? { elevation: 8 }
+      : {
+          boxShadow: `0px 15px 30px ${withOpacity(Colors.bgBase, 0.85)}${
+            glowColor ? `, 0px 0px 24px ${withOpacity(glow, 0.45)}` : ''
+          }`,
+        };
 
   return (
     <View
       style={[
         styles.card,
-        {
-          borderColor: withOpacity(glowColor ?? Colors.gold, glowColor ? 0.55 : 0.22),
-          boxShadow: `${ambientShadow}${accentShadow}`,
-        },
+        depthShadow,
+        { borderColor: withOpacity(glowColor ?? Colors.gold, glowColor ? 0.55 : 0.22) },
         style,
       ]}
     >
@@ -131,22 +146,16 @@ export function RockCard({
 
       {photoLayers}
 
-      {/* Soft accent glow near the top -- independent of the photo scrim. */}
-      <LinearGradient
-        pointerEvents="none"
-        colors={[withOpacity(innerGlowColor, 0.16), withOpacity(innerGlowColor, 0)]}
-        style={styles.innerGlow}
-      />
-
-      {/* Thin top highlight line: translates the source's `::before` 1px
-          gradient-line trick for a crisp chrome edge catching light. */}
-      <LinearGradient
-        pointerEvents="none"
-        colors={[withOpacity(Colors.chrome, 0), withOpacity(Colors.chrome, 0.35), withOpacity(Colors.chrome, 0)]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.topHighlightLine}
-      />
+      {/* Soft accent glow near the top -- only when there's a real accent to
+          show (see showInnerGlow); a whole gradient view otherwise draws
+          nothing visible. */}
+      {showInnerGlow ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[withOpacity(innerGlowColor, 0.16), withOpacity(innerGlowColor, 0)]}
+          style={styles.innerGlow}
+        />
+      ) : null}
 
       <View style={contentStyle}>{children}</View>
     </View>
@@ -158,7 +167,9 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: Radius.lg,
     borderWidth: 1.5,
-    borderTopColor: withOpacity(Colors.chrome, 0.3),
+    // Brighter than the rest of the border -- stands in for the old 1px
+    // top-highlight gradient (a chrome edge catching light) at no draw cost.
+    borderTopColor: withOpacity(Colors.chrome, 0.45),
     overflow: 'hidden',
   },
   // new_ui GradientCard's box: radius 8, a bright hairline top edge and a
@@ -179,13 +190,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: '50%',
-  },
-  topHighlightLine: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 1,
   },
   content: {
     padding: Spacing.lg,

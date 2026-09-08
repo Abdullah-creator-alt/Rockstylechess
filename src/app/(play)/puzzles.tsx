@@ -90,7 +90,14 @@ const PuzzleRow = memo(function PuzzleRow({
   const tags = puzzle.tags2;
 
   return (
-    <Pressable onPress={() => onPress(puzzle)} style={{ marginTop: Spacing.sm }}>
+    <Pressable
+      onPress={() => onPress(puzzle)}
+      style={{ marginTop: Spacing.sm }}
+      // Flatten the row (card gradient + borders + icons) into one GPU texture
+      // so scrolling the list just blits bitmaps instead of re-compositing
+      // every row every frame -- this list was logging 1s+ update stalls.
+      renderToHardwareTextureAndroid
+    >
       <RockCard glowColor={Colors.chromeDark} innerGlow={solved ? Colors.cyan : undefined}>
         <View className="flex-row items-center gap-md">
           <View
@@ -368,10 +375,10 @@ export default function PuzzlesScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 110 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
           stickySectionHeadersEnabled={false}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          updateCellsBatchingPeriod={50}
-          windowSize={7}
+          initialNumToRender={5}
+          maxToRenderPerBatch={4}
+          updateCellsBatchingPeriod={60}
+          windowSize={4}
           removeClippedSubviews
         />
       )}

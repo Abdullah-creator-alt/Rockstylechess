@@ -18,7 +18,7 @@ interface ScreenBackdropProps {
 
 /**
  * Full-bleed atmospheric photo + a vertical scrim to `bgBase`, mounted as the
- * first child of a screen's root `View` (behind `EmberParticles` and content).
+ * first child of a screen's root `View` (behind the content).
  * Translates the Stitch mockups' full-screen background images without letting
  * them fight the foreground UI.
  */

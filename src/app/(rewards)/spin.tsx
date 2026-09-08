@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
-import { AppIcon, CurrencyPill, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyPill, RockButton, RockCard } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
@@ -108,7 +108,6 @@ export default function SpinScreen() {
 
   return (
     <View className="flex-1 bg-bg-base">
-      <EmberParticles count={10} />
       <SubPageHeader title="Daily Spin" trailing={<CurrencyPill type="gems" value={gems} />} />
 
       {profileStatus === 'guest' ? (

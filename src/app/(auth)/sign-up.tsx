@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, CurrencyIcon, EmberParticles, KeyboardAwareScrollView, RockButton } from '@/components/ui';
+import { AppIcon, CurrencyIcon, KeyboardAwareScrollView, RockButton } from '@/components/ui';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
@@ -52,7 +52,6 @@ export default function SignUpScreen() {
     <View className="flex-1 bg-bg-base">
       <Image source={ScreenArt.signUpArena} style={{ position: 'absolute', inset: 0, opacity: 0.6 }} contentFit="cover" cachePolicy="memory-disk" transition={300} />
       <LinearGradient pointerEvents="none" colors={[withOpacity(Colors.bgBase, 0.4), withOpacity(Colors.bgBase, 0.95)]} style={{ position: 'absolute', inset: 0 }} />
-      <EmberParticles count={12} />
 
       <KeyboardAwareScrollView
         className="z-10"

@@ -4,7 +4,7 @@ import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
-import { AppIcon, EmberParticles, PlayerAvatar, RockButton } from '@/components/ui';
+import { AppIcon, PlayerAvatar, RockButton } from '@/components/ui';
 import { BoardAssetPrewarm } from '@/components/ui/BoardAssetPrewarm';
 import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
@@ -105,7 +105,6 @@ export default function MatchmakingScreen() {
   return (
     <View className="flex-1 items-center justify-center gap-xl bg-bg-base px-xl" style={{ paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }}>
       <BoardAssetPrewarm pieceId={profile?.equippedPieceId} />
-      <EmberParticles count={8} />
 
       <Text
         className="font-display-hero text-cyan"

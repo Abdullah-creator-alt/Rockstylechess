@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, CurrencyIcon, EmberParticles, ProgressBar, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyIcon, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
 import { goUp } from '@/lib/navigation';
 
@@ -82,7 +82,6 @@ export default function RockShopScreen() {
           boxShadow: `0px 0px 80px ${withOpacity(Colors.ember, 0.12)}`,
         }}
       />
-      <EmberParticles count={12} />
 
       <View
         className="flex-row items-center justify-between gap-sm px-lg pb-md"

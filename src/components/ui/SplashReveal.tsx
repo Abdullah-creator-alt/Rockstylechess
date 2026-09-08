@@ -9,7 +9,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { EmberParticles } from '@/components/ui/EmberParticles';
 import { Colors, withOpacity } from '@/constants/theme';
 
 const LOGO = require('../../../assets/images/royalRiffStudio_logo.png');
@@ -63,7 +62,6 @@ export function SplashReveal({ onDone }: SplashRevealProps) {
 
   return (
     <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="none">
-      <EmberParticles count={14} />
       <Animated.View style={[styles.logoGroup, logoStyle]}>
         <View style={styles.glow} />
         <Image source={LOGO} style={styles.logo} contentFit="contain" />

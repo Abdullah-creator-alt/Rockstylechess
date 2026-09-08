@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, BottomNav, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, BottomNav, RockButton, RockCard } from '@/components/ui';
 import { TopAppBar } from '@/components/layout';
 import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
@@ -54,7 +54,6 @@ export default function HomeLobbyScreen() {
     <View className="flex-1 bg-bg-base">
       <View pointerEvents="none" style={{ position: 'absolute', top: -80, right: -60, width: 260, height: 260, borderRadius: 130, backgroundColor: withOpacity(Colors.cyan, 0.06), boxShadow: `0px 0px 120px ${withOpacity(Colors.cyan, 0.25)}` }} />
       <View pointerEvents="none" style={{ position: 'absolute', bottom: 60, left: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: withOpacity(Colors.ember, 0.06), boxShadow: `0px 0px 100px ${withOpacity(Colors.ember, 0.22)}` }} />
-      <EmberParticles count={10} />
 
       <TopAppBar />
 

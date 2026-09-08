@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, ConfirmModal, CurrencyPill, EmberParticles, PlayerAvatar, RockCard } from '@/components/ui';
+import { AppIcon, ConfirmModal, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
 import type { ICONS } from '@/constants/icons';
 import { getAvatarImage } from '@/constants/avatars';
@@ -122,7 +122,6 @@ export default function ControlCoreScreen() {
 
   return (
     <View className="flex-1 bg-bg-base">
-      <EmberParticles count={10} />
       <SubPageHeader title="Control Core" trailing={<CurrencyPill type="gems" value={gems} />} />
 
       <ScrollView contentContainerClassName="gap-xl px-margin-mobile py-xl" contentContainerStyle={{ paddingBottom: 60 + insets.bottom }}>

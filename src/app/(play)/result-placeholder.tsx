@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Alert, BackHandler, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, CurrencyIcon, CurrencyPill, EmberParticles, RockButton, RockCard, VenueBackdrop } from '@/components/ui';
+import { AppIcon, CurrencyIcon, CurrencyPill, RockButton, RockCard, VenueBackdrop } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
 import { useFriends } from '@/hooks/useFriends';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
@@ -168,7 +168,6 @@ export default function ResultScreen() {
   return (
     <View className="flex-1 items-center justify-center gap-xl bg-bg-base px-xl" style={{ paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }}>
       <VenueBackdrop venueTier={venueTier} />
-      <EmberParticles count={10} />
 
       <View className="items-center gap-1">
         <Text className="font-display-hero text-display-hero uppercase tracking-widest" style={{ color: bannerColor, textShadowColor: withOpacity(bannerGlow, 0.5), textShadowRadius: 24, textShadowOffset: { width: 0, height: 0 } }}>

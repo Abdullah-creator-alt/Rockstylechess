@@ -31,6 +31,9 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/images/royalRiffStudio_logo.png",
+          "imageWidth": 240,
+          "resizeMode": "contain",
           "backgroundColor": "#0B0709"
         }
       ],
