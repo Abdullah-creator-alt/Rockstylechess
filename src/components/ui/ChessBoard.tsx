@@ -663,16 +663,7 @@ export const ChessBoard = memo(function ChessBoard({
                 first) so `square`/`isLight`/labels stay canonical; when flipped,
                 the visual order is reversed with flexDirection so pieces and
                 labels stay upright (a `rotate` would flip them). */}
-            {/* The 64 squares are static during a piece animation (only ~4
-                tint overlays change, and only on a move -- a React re-render,
-                not per frame). Flattening the grid to one GPU texture means a
-                sliding piece composites over a cached bitmap instead of
-                re-recording 64 square views every frame. Re-rasterized once
-                per move when a tint changes. */}
-            <View
-              style={[styles.boardGrid, flipped && styles.boardGridFlipped]}
-              renderToHardwareTextureAndroid
-            >
+            <View style={[styles.boardGrid, flipped && styles.boardGridFlipped]}>
               {board.map((rowPieces, rowIndex) => (
                 <View key={rowIndex} style={[styles.boardRow, flipped && styles.boardRowFlipped]}>
                   {rowPieces.map((piece, colIndex) => {
