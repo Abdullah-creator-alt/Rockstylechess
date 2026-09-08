@@ -663,7 +663,16 @@ export const ChessBoard = memo(function ChessBoard({
                 first) so `square`/`isLight`/labels stay canonical; when flipped,
                 the visual order is reversed with flexDirection so pieces and
                 labels stay upright (a `rotate` would flip them). */}
-            <View style={[styles.boardGrid, flipped && styles.boardGridFlipped]}>
+            {/* The 64 squares are static during a piece animation (only ~4
+                tint overlays change, and only on a move -- a React re-render,
+                not per frame). Flattening the grid to one GPU texture means a
+                sliding piece composites over a cached bitmap instead of
+                re-recording 64 square views every frame. Re-rasterized once
+                per move when a tint changes. */}
+            <View
+              style={[styles.boardGrid, flipped && styles.boardGridFlipped]}
+              renderToHardwareTextureAndroid
+            >
               {board.map((rowPieces, rowIndex) => (
                 <View key={rowIndex} style={[styles.boardRow, flipped && styles.boardRowFlipped]}>
                   {rowPieces.map((piece, colIndex) => {
@@ -1389,17 +1398,19 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: withOpacity(Colors.cyan, 0.75),
   },
+  // Two overlapping translucent ellipses -- the wide faint pool + tighter dark
+  // core already give the falloff that reads as "piece above the board". The
+  // blurred boxShadow on each was near-invisible on top of that and cost a
+  // real blur-raster pass per piece per animation frame (x32 pieces).
   shadowPool: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: withOpacity(Colors.bgBase, 0.16),
-    boxShadow: `-2px 3px 10px ${withOpacity(Colors.bgBase, 0.3)}`,
+    backgroundColor: withOpacity(Colors.bgBase, 0.18),
   },
   shadowCore: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: withOpacity(Colors.bgBase, 0.34),
-    boxShadow: `-1px 1px 4px ${withOpacity(Colors.bgBase, 0.45)}`,
+    backgroundColor: withOpacity(Colors.bgBase, 0.36),
   },
   // Shared absolute-over-the-grid base for every persistent/transient piece
   // layer (BoardPiece, DyingPieceGhost) -- width/height/transform/zIndex are

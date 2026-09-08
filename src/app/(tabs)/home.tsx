@@ -52,8 +52,11 @@ export default function HomeLobbyScreen() {
 
   return (
     <View className="flex-1 bg-bg-base">
-      <View pointerEvents="none" style={{ position: 'absolute', top: -80, right: -60, width: 260, height: 260, borderRadius: 130, backgroundColor: withOpacity(Colors.cyan, 0.06), boxShadow: `0px 0px 120px ${withOpacity(Colors.cyan, 0.25)}` }} />
-      <View pointerEvents="none" style={{ position: 'absolute', bottom: 60, left: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: withOpacity(Colors.ember, 0.06), boxShadow: `0px 0px 100px ${withOpacity(Colors.ember, 0.22)}` }} />
+      {/* Ambient corner haze. Big blur radii (120/100px) are a slow raster on
+          Android for a barely-there effect -- a tighter blur on a slightly
+          stronger fill reads the same at a fraction of the cost. */}
+      <View pointerEvents="none" style={{ position: 'absolute', top: -80, right: -60, width: 260, height: 260, borderRadius: 130, backgroundColor: withOpacity(Colors.cyan, 0.09), boxShadow: `0px 0px 44px ${withOpacity(Colors.cyan, 0.28)}` }} />
+      <View pointerEvents="none" style={{ position: 'absolute', bottom: 60, left: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: withOpacity(Colors.ember, 0.09), boxShadow: `0px 0px 40px ${withOpacity(Colors.ember, 0.24)}` }} />
 
       <TopAppBar />
 
