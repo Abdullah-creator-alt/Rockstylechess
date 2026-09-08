@@ -10,6 +10,7 @@ import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { deleteAccount } from '@/lib/api';
 import { clearAuthToken, getAuthToken } from '@/lib/authStorage';
+import { setGuestMode } from '@/lib/guestMode';
 import { clearSocketAuth } from '@/lib/socket';
 
 type LinkedStatus = 'connected' | 'not-linked';
@@ -48,11 +49,12 @@ export default function AccountSecurityScreen() {
       }
       await deleteAccount(token);
       await clearAuthToken();
+      await setGuestMode(false);
       clearSocketAuth();
       // Same as control-core.tsx's logout -- resets the shared profile
       // context back to its guest state.
       refreshPlayerProfile();
-      router.replace('/sign-up');
+      router.replace('/sign-in');
     } catch (error) {
       console.log('Delete account failed', error);
       Alert.alert('Something went wrong', 'Could not delete your account. Please try again.');

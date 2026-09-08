@@ -12,6 +12,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { loadMusicPreference, setMusicEnabled } from '@/lib/backgroundMusic';
 import { clearAuthToken } from '@/lib/authStorage';
+import { setGuestMode } from '@/lib/guestMode';
 import { clearSocketAuth } from '@/lib/socket';
 import { loadSoundFxPreference, setSoundFxEnabled } from '@/lib/soundEffects';
 
@@ -103,12 +104,15 @@ export default function ControlCoreScreen() {
   async function handleLogout() {
     setLogoutVisible(false);
     await clearAuthToken();
+    // Clear the explicit-guest latch too, so the next launch shows the
+    // sign-in gate rather than silently dropping back into guest mode.
+    await setGuestMode(false);
     clearSocketAuth();
     // Resets the shared profile context back to its guest state (no token
     // -> refresh() resolves to status: 'guest'), so a next sign-in/sign-up
     // doesn't briefly show the previous account's stale balance.
     refreshPlayerProfile();
-    router.replace('/sign-up');
+    router.replace('/sign-in');
   }
 
   const { unreadCount: unreadNotifications } = useNotifications({ countOnly: true });

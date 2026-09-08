@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { getMyProfile, type PlayerProfile } from '@/lib/api';
-import { getAuthToken } from '@/lib/authStorage';
+import { clearAuthToken, getAuthToken } from '@/lib/authStorage';
 
 export type PlayerProfileStatus = 'loading' | 'ready' | 'error' | 'guest';
 
@@ -45,7 +45,17 @@ export function PlayerProfileProvider({ children }: { children: ReactNode }) {
       setStatus('ready');
     } catch (error) {
       console.log('Failed to load player profile', error);
-      setStatus('error');
+      // The server rejected the token itself (expired / account gone) -- drop
+      // it so the next launch shows the sign-in gate instead of a broken
+      // "signed in" home. A plain network failure ('Network request failed')
+      // keeps the token: the session may still be valid, just offline.
+      if (error instanceof Error && error.message === 'unauthorized') {
+        await clearAuthToken();
+        setProfile(null);
+        setStatus('guest');
+      } else {
+        setStatus('error');
+      }
     }
   }, []);
 

@@ -118,7 +118,7 @@ export default function SignUpScreen() {
               <SocialButton icon="facebook" onPress={() => console.log('Continue with Facebook')} />
               <SocialButton icon="apple" onPress={() => console.log('Continue with Apple')} />
             </View>
-            <Pressable onPress={() => router.push('/sign-in')} className="mt-md">
+            <Pressable onPress={() => router.replace('/sign-in')} className="mt-md">
               <Text className="font-body-sm text-body-sm text-text-muted">
                 Already a Rockstar? <Text className="font-bold text-cyan">Sign In</Text>
               </Text>

@@ -12,6 +12,7 @@ import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { signInWithEmail } from '@/lib/authClient';
 import { setAuthToken } from '@/lib/authStorage';
+import { setGuestMode } from '@/lib/guestMode';
 import { reauthenticateSocket } from '@/lib/socket';
 
 export default function SignInScreen() {
@@ -32,6 +33,7 @@ export default function SignInScreen() {
       reauthenticateSocket(token);
       // See sign-up.tsx's identical call -- picks up the now-signed-in
       // account's real balance instead of the initial 'guest' state.
+      void setGuestMode(false);
       refreshPlayerProfile();
       router.replace('/home');
     } catch (error) {
@@ -39,6 +41,15 @@ export default function SignInScreen() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleContinueAsGuest() {
+    // Explicit choice -- latch it so later launches skip this gate, and drop
+    // straight into the lobby with the persisted guest identity (no token =
+    // guest, see lib/playerId.ts / usePlayerProfile's 'guest' status).
+    await setGuestMode(true);
+    refreshPlayerProfile();
+    router.replace('/home');
   }
 
   return (
@@ -104,11 +115,18 @@ export default function SignInScreen() {
             </View>
           </RockCard>
 
-          <Pressable onPress={() => router.push('/sign-up')}>
-            <Text className="text-center font-body-sm text-body-sm text-text-muted">
-              New here? <Text className="font-semibold text-cyan">Join the Stage</Text>
+          <View className="gap-md">
+            <Pressable onPress={() => router.replace('/sign-up')}>
+              <Text className="text-center font-body-sm text-body-sm text-text-muted">
+                New here? <Text className="font-semibold text-cyan">Join the Stage</Text>
+              </Text>
+            </Pressable>
+
+            <RockButton label="Continue as Guest" variant="secondary" onPress={handleContinueAsGuest} />
+            <Text className="text-center font-caption text-caption text-text-muted">
+              Play bots and puzzles now. Sign in later to keep your chips, rank, and progress.
             </Text>
-          </Pressable>
+          </View>
       </KeyboardAwareScrollView>
     </View>
   );

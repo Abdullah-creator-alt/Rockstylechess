@@ -39,7 +39,7 @@ const PARENT: Record<string, Href> = {
   '/account-security': '/control-core',
   '/backstage-alerts': '/control-core',
   '/roadie-support': '/control-core',
-  '/sign-in': '/sign-up',
+  '/sign-up': '/sign-in',
 };
 
 // Android hardware back is swallowed on these -- either mid-onboarding (the
@@ -48,7 +48,9 @@ const PARENT: Record<string, Href> = {
 export const BLOCKED_BACK = new Set<string>(['/pick-rockstar', '/welcome-reward', '/match']);
 
 // Android hardware back falls through to the OS here (exit the app / default).
-export const ROOT_ROUTES = new Set<string>(['/home', '/sign-up', '/']);
+// `/sign-in` is the auth-flow root (unauthenticated entry lands here);
+// `/sign-up` sits one level under it.
+export const ROOT_ROUTES = new Set<string>(['/home', '/sign-in', '/']);
 
 /** Navigate one level up the menu hierarchy from `pathname`. */
 export function goUp(pathname: string): void {
