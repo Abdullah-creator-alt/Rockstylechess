@@ -31,13 +31,13 @@ export function ScreenBackdrop({ source, opacity = 0.35, topScrim = 0.55 }: Scre
         cachePolicy="memory-disk"
         transition={300}
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { opacity }]}
+        style={[StyleSheet.absoluteFillObject, { opacity }]}
       />
       <LinearGradient
         pointerEvents="none"
         colors={[withOpacity(Colors.bgBase, topScrim), withOpacity(Colors.bgBase, 0.85), Colors.bgBase]}
         locations={[0, 0.55, 1]}
-        style={StyleSheet.absoluteFill}
+        style={StyleSheet.absoluteFillObject}
       />
     </>
   );

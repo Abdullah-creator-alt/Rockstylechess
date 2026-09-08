@@ -1,6 +1,6 @@
 # RockStyle Chess
 
-A mobile chess app built with Expo Router (SDK 57) + React Native, styled as a
+A mobile chess app built with Expo Router (SDK 54) + React Native, styled as a
 "rockstar arena" experience. Chess itself, the five-tier bot ladder, and real
 online multiplayer (with accounts, Elo, and match history) are fully wired up
 end-to-end. Most of the surrounding meta-game — shop, social, daily
@@ -49,8 +49,8 @@ exists for it.
 ## Tech stack
 
 **Client**
-- Expo SDK 57, Expo Router (file-based routing + route groups), React 19,
-  React Native 0.86
+- Expo SDK 54, Expo Router (file-based routing + route groups), React 19,
+  React Native 0.81
 - `chess.js` — chess rules engine
 - `react-native-reanimated` / `react-native-gesture-handler` — board
   animation and drag/tap interaction
@@ -232,15 +232,14 @@ Things that aren't obvious the first time:
   rm -rf android/app/build android/build android/app/.cxx android/.gradle
   ```
   then re-run `./gradlew assembleRelease`.
-- **`package.json` has an `"overrides": { "expo-asset": "~57.0.16" }`.**
-  Don't remove it without understanding why: `expo-audio` declares an
-  unbounded `"expo-asset": "*"` dependency, which npm can resolve to a
-  version from a newer Expo SDK generation than the one installed and hoist
-  it to the top of `node_modules` — shadowing the version `expo` actually
+- **`package.json` has an `"overrides": { "expo-asset": "~12.0.13" }`.**
+  Don't remove it without understanding why: `expo-audio@1.1.1` declares an
+  unbounded `"expo-asset": "*"` dependency, which npm resolves to whatever
+  the latest published `expo-asset` is (was `57.0.13`, a version from a
+  completely different/newer Expo SDK generation) and hoists to the top of
+  `node_modules` — shadowing the `~12.0.13` that `expo@54.0.35` actually
   needs, which gets nested under `node_modules/expo/node_modules/expo-asset`
-  instead. Keep the override pinned to the `expo-asset` version bundled with
-  the current SDK (check `node_modules/expo/bundledNativeModules.json`).
-  Android's autolinking picks up the wrong top-level one; its
+  instead. Android's autolinking picks up the wrong top-level one; its
   compiled Kotlin references an `expo-modules-core` internal API
   (`AnyTypeCache`) that doesn't exist in the older, actually-installed
   `expo-modules-core`, and the app crashes with `NoClassDefFoundError` right

@@ -150,11 +150,11 @@ export default function SpinScreen() {
                 ))}
               </Svg>
 
-              <View style={StyleSheet.absoluteFill} pointerEvents="none">
+              <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
                 {SPIN_SEGMENTS.map((segment, i) => {
                   const midAngle = i * ANGLE_PER_SEGMENT + ANGLE_PER_SEGMENT / 2;
                   return (
-                    <View key={segment.id} style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${midAngle}deg` }] }]}>
+                    <View key={segment.id} style={[StyleSheet.absoluteFillObject, { transform: [{ rotate: `${midAngle}deg` }] }]}>
                       <Text
                         className="font-section-header"
                         style={{ position: 'absolute', top: 28, left: 0, right: 0, textAlign: 'center', fontSize: 11, color: Colors.textPrimary, textShadowColor: withOpacity(Colors.bgBase, 0.8), textShadowRadius: 3, textShadowOffset: { width: 0, height: 1 } }}

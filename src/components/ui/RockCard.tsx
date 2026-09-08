@@ -59,7 +59,7 @@ export function RockCard({
         contentFit="cover"
         cachePolicy="memory-disk"
         transition={300}
-        style={StyleSheet.absoluteFill}
+        style={StyleSheet.absoluteFillObject}
       />
       {/* Matches the source's `bg-gradient-to-t from-base-black
           via-base-black/50 to-transparent` scrim over the photo. */}
@@ -69,7 +69,7 @@ export function RockCard({
         locations={[0, 0.5, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={StyleSheet.absoluteFill}
+        style={StyleSheet.absoluteFillObject}
       />
     </>
   ) : null;
@@ -96,7 +96,7 @@ export function RockCard({
           colors={Gradients.cardSurface}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFill}
+          style={StyleSheet.absoluteFillObject}
         />
         {photoLayers}
         <View style={contentStyle}>{children}</View>
@@ -126,7 +126,7 @@ export function RockCard({
         colors={[withOpacity(Colors.bgPanel, 0.85), withOpacity(Colors.bgBase, 0.85)]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
+        style={StyleSheet.absoluteFillObject}
       />
 
       {photoLayers}

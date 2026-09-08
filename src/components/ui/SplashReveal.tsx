@@ -75,7 +75,7 @@ export function SplashReveal({ onDone }: SplashRevealProps) {
 // #region Styles
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     zIndex: 100,
     alignItems: 'center',
     justifyContent: 'center',

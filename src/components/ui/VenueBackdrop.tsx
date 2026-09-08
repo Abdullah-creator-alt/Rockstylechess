@@ -32,20 +32,20 @@ export function VenueBackdrop({ venueTier }: VenueBackdropProps) {
         cachePolicy="memory-disk"
         transition={300}
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { opacity: intensity.backdropOpacity }]}
+        style={[StyleSheet.absoluteFillObject, { opacity: intensity.backdropOpacity }]}
       />
       <LinearGradient
         pointerEvents="none"
         colors={[withOpacity(Colors.bgBase, intensity.scrimTop), withOpacity(Colors.bgBase, 0.85), Colors.bgBase]}
         locations={[0, 0.55, 1]}
-        style={StyleSheet.absoluteFill}
+        style={StyleSheet.absoluteFillObject}
       />
       <LinearGradient
         pointerEvents="none"
         colors={[withOpacity(venue.accentColor, intensity.glowOpacity * 0.4), 'transparent']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0.6 }}
-        style={StyleSheet.absoluteFill}
+        style={StyleSheet.absoluteFillObject}
       />
       {intensity.shimmer ? <ShimmerSweep color={venue.accentColor} /> : null}
     </>
@@ -66,7 +66,7 @@ function ShimmerSweep({ color }: { color: string }) {
   }, [translateX]);
 
   return (
-    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, animatedStyle]}>
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, animatedStyle]}>
       <LinearGradient
         colors={['transparent', withOpacity(color, 0.25), 'transparent']}
         start={{ x: 0, y: 0 }}

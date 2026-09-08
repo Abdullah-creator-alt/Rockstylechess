@@ -68,7 +68,7 @@ export function ChatToast({ message, onDismiss }: ChatToastProps) {
           colors={[withOpacity(Colors.bgPanel, 0.92), withOpacity(Colors.bgBase, 0.92)]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
+          style={StyleSheet.absoluteFillObject}
         />
         <LinearGradient
           pointerEvents="none"

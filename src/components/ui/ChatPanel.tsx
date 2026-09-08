@@ -68,9 +68,9 @@ export function ChatPanel({ visible, onClose, messages, myColor, onSend, canSend
   }
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? 'auto' : 'none'}>
+    <View style={StyleSheet.absoluteFillObject} pointerEvents={visible ? 'auto' : 'none'}>
       <Animated.View style={[styles.backdrop, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
       </Animated.View>
 
       <Animated.View style={[styles.sheetWrap, sheetStyle]}>
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backdrop: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: withOpacity(Colors.bgBase, 0.55),
   },
   sheetWrap: {
