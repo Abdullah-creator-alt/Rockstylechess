@@ -15,7 +15,7 @@ export { SectionLabel } from './SectionLabel';
 
 export { ProgressBar } from './ProgressBar';
 
-export { BottomNav } from './BottomNav';
+export { BottomNav, bottomNavTabForRoute } from './BottomNav';
 export type { NavTab } from './BottomNav';
 
 

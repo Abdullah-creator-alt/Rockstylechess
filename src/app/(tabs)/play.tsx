@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TopAppBar } from '@/components/layout';
-import { AppIcon, BottomNav, RockButton, RockCard, SectionLabel } from '@/components/ui';
+import { AppIcon, RockButton, RockCard, SectionLabel } from '@/components/ui';
 import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
 import type { Duration } from '@/lib/onlineMatch';
@@ -165,7 +165,6 @@ export default function PlayScreen() {
         </View>
       </ScrollView>
 
-      <BottomNav activeTab="play" />
     </View>
   );
 }

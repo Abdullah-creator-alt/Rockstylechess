@@ -7,7 +7,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SubPageHeader } from '@/components/layout';
 import {
   AppIcon,
-  BottomNav,
   CurrencyPill,
   ProgressBar,
   RockButton,
@@ -372,7 +371,7 @@ export default function PuzzlesScreen() {
               <SectionLabel label={section.title} />
             </View>
           )}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 110 + insets.bottom }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 32 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
           stickySectionHeadersEnabled={false}
           initialNumToRender={5}
@@ -383,7 +382,6 @@ export default function PuzzlesScreen() {
         />
       )}
 
-      <BottomNav activeTab="play" />
     </View>
   );
 }

@@ -15,6 +15,23 @@ interface BottomNavProps {
   onTabPress?: (tab: NavTab) => void;
 }
 
+// The five tab-level menu routes. Rendered from the root layout by pathname
+// (src/app/_layout.tsx) rather than by each screen -- a pushed detail screen
+// (bots, puzzles, forge, friends, a live match, ...) has a header back button
+// and no bar. Keep in sync with TAB_ROUTE below.
+const ROUTE_TAB: Record<string, NavTab> = {
+  '/home': 'home',
+  '/world-rankings': 'ranks',
+  '/play': 'play',
+  '/shop': 'shop',
+  '/iron-id': 'profile',
+};
+
+/** The tab to highlight for a route, or null if the bar shouldn't show there. */
+export function bottomNavTabForRoute(pathname: string): NavTab | null {
+  return ROUTE_TAB[pathname] ?? null;
+}
+
 type TabDef = { key: NavTab; label: string; icon: keyof typeof ICONS; center?: boolean };
 
 // Icons + order mirror new_ui's BottomNav (Material Symbols ligatures via

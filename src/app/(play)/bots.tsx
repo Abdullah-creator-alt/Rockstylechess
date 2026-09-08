@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, BottomNav, CurrencyIcon, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyIcon, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
 import { BoardAssetPrewarm } from '@/components/ui/BoardAssetPrewarm';
 import { MatchOptionsModal } from '@/components/ui/MatchOptionsModal';
 import { SubPageHeader } from '@/components/layout';
@@ -88,7 +88,7 @@ export default function BotsGalleryScreen() {
       <SubPageHeader title="Challenge the Legends" trailing={<CurrencyPill type="gems" value={gems} />} />
       <ScrollView
         contentContainerClassName="mx-auto w-full max-w-4xl gap-md px-margin-mobile pt-md"
-        contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
+        contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         <View>
@@ -171,7 +171,6 @@ export default function BotsGalleryScreen() {
         ))}
       </ScrollView>
 
-      <BottomNav activeTab="play" />
 
       <MatchOptionsModal
         visible={optionsOpen}

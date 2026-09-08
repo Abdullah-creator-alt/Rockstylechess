@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableFreeze } from 'react-native-screens';
 
 import { ChallengeModals } from '@/components/friends/ChallengeModals';
+import { BottomNav, bottomNavTabForRoute } from '@/components/ui';
 import { SplashReveal } from '@/components/ui/SplashReveal';
 import { Colors } from '@/constants/theme';
 import { ChallengesProvider } from '@/hooks/useChallenges';
@@ -107,6 +108,12 @@ export default function RootLayout() {
     return null;
   }
 
+  // The bottom tab bar lives here, once, driven by the route -- not rendered
+  // (and its activeTab hand-set) by each screen. It shows only on the five
+  // tab-level menu routes; every pushed detail screen and gameplay screen has
+  // a header back button instead. See src/components/ui/BottomNav.tsx.
+  const navTab = bottomNavTabForRoute(pathname);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -127,6 +134,7 @@ export default function RootLayout() {
                     gestureEnabled: false,
                   }}
                 />
+                {navTab ? <BottomNav activeTab={navTab} /> : null}
                 <ChallengeModals />
               </ChallengesProvider>
             </FriendsProvider>

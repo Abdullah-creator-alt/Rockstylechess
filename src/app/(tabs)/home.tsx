@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, BottomNav, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, RockButton, RockCard } from '@/components/ui';
 import { TopAppBar } from '@/components/layout';
 import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
@@ -251,7 +251,6 @@ export default function HomeLobbyScreen() {
         </View>
       </ScrollView>
 
-      <BottomNav activeTab="home" />
     </View>
   );
 }

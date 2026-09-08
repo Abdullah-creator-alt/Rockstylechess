@@ -2,7 +2,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { SubPageHeader } from '@/components/layout'
-import { AppIcon, BottomNav, CurrencyPill, ProgressBar, RockButton, RockCard, SectionLabel } from '@/components/ui'
+import { AppIcon, CurrencyPill, ProgressBar, RockButton, RockCard, SectionLabel } from '@/components/ui'
 import { Colors, withOpacity } from '@/constants/theme'
 import { usePlayerProfile } from '@/hooks/usePlayerProfile'
 
@@ -50,7 +50,7 @@ export default function TournamentsScreen() {
     <View className="flex-1 bg-bg-base">
       <SubPageHeader title="Championship Circuit" trailing={<CurrencyPill type="chips" value={chips} />} />
 
-      <ScrollView contentContainerClassName="gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 110 + insets.bottom }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerClassName="gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 32 + insets.bottom }} showsVerticalScrollIndicator={false}>
         <View className="flex-row items-end justify-between">
           <Text className="font-display-hero text-display-hero uppercase text-cyan" style={{ fontSize: 20 }}>
             Live Now
@@ -172,7 +172,6 @@ export default function TournamentsScreen() {
         </View>
       </ScrollView>
 
-      <BottomNav activeTab="play" />
     </View>
   )
 }

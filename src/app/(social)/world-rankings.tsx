@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FriendRow } from '@/components/friends/FriendRow';
-import { AppIcon, BottomNav, CurrencyPill, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyPill, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
 import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { useFriends } from '@/hooks/useFriends';
@@ -349,7 +349,6 @@ export default function WorldRankingsScreen() {
         </ScrollView>
       )}
 
-      <BottomNav activeTab="ranks" />
     </View>
   );
 }

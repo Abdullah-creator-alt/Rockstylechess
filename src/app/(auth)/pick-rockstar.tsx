@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, BottomNav, CurrencyPill, KeyboardAwareScrollView, PlayerAvatar, RockButton, SectionLabel } from '@/components/ui';
+import { AppIcon, CurrencyPill, KeyboardAwareScrollView, PlayerAvatar, RockButton, SectionLabel } from '@/components/ui';
 import { AVATARS, type AvatarOption } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { updateProfile } from '@/lib/api';
@@ -62,7 +62,7 @@ export default function PickRockstarScreen() {
         </View>
       </View>
 
-      <KeyboardAwareScrollView contentContainerClassName="items-center gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 120 + insets.bottom }} showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView contentContainerClassName="items-center gap-xl px-lg py-xl" contentContainerStyle={{ paddingBottom: 32 + insets.bottom }} showsVerticalScrollIndicator={false}>
         <View className="items-center">
           <Text className="text-center font-display-hero text-display-hero uppercase tracking-widest text-text-primary" style={{ fontSize: 26 }}>
             Pick Your Rockstar
@@ -146,7 +146,6 @@ export default function PickRockstarScreen() {
         </View>
       </KeyboardAwareScrollView>
 
-      <BottomNav activeTab="play" />
     </View>
   );
 }
