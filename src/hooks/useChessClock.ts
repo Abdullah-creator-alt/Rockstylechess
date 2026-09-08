@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 
+type TimerHandle = ReturnType<typeof setTimeout>;
+
 export interface ClockTimes {
   w: number;
   b: number;
@@ -52,6 +54,30 @@ export function useChessClock({
   // a stable ([]-dep) callback rather than re-created every render.
   const turnRef = useRef<'w' | 'b'>(turn);
   const gameOverRef = useRef<boolean>(isGameOver);
+  // The single pending expiry timer + a live ref to onExpire, so both the
+  // turn-change effect AND reconcile() can (re-)arm expiry from one place.
+  const expiryRef = useRef<TimerHandle | null>(null);
+  const onExpireRef = useRef(onExpire);
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  });
+
+  // (Re)arm the precise single-shot expiry for whichever side is active now,
+  // from the current refs. Clears any previous timer first; no-op once the
+  // clock is stopped. Stable identity ([] deps) -- reads everything from refs.
+  const armExpiry = useCallback(() => {
+    if (expiryRef.current) {
+      clearTimeout(expiryRef.current);
+      expiryRef.current = null;
+    }
+    if (gameOverRef.current) return;
+    const active = turnRef.current;
+    const msLeft = Math.max(0, remainingRef.current[active] - (Date.now() - turnStartedAtRef.current));
+    expiryRef.current = setTimeout(() => {
+      expiryRef.current = null;
+      onExpireRef.current(active);
+    }, msLeft);
+  }, []);
 
   // Single effect per turn change (or game-over toggle): does turn-change
   // bookkeeping (deduct elapsed from the mover, credit increment, reset the
@@ -79,16 +105,15 @@ export function useChessClock({
 
     // A single-shot timeout fires expiry at the exact instant the active side
     // hits 0 (a poll alone could lag up to a second behind the real deadline).
-    let expired = false;
-    const msLeft = Math.max(0, remainingRef.current[turn] - (Date.now() - turnStartedAtRef.current));
-    const expiry = setTimeout(() => {
-      if (expired) return;
-      expired = true;
-      onExpire(turn);
-    }, msLeft);
+    // reconcile() re-arms it too, so it stays accurate after a server sync that
+    // doesn't flip the turn (your own move's move:applied echo).
+    armExpiry();
 
     return () => {
-      clearTimeout(expiry);
+      if (expiryRef.current) {
+        clearTimeout(expiryRef.current);
+        expiryRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turn, isGameOver]);
@@ -117,10 +142,18 @@ export function useChessClock({
     return Math.max(0, anchor - (Date.now() - turnStartedAtRef.current));
   }, []);
 
-  const reconcile = useCallback((serverRemainingMs: ClockTimes) => {
-    remainingRef.current = { ...serverRemainingMs };
-    turnStartedAtRef.current = Date.now();
-  }, []);
+  const reconcile = useCallback(
+    (serverRemainingMs: ClockTimes) => {
+      remainingRef.current = { ...serverRemainingMs };
+      turnStartedAtRef.current = Date.now();
+      // Re-arm from the authoritative values -- the turn-change effect won't
+      // re-run when a sync arrives without a turn flip (e.g. the mover's own
+      // move:applied echo), so without this the pending expiry keeps counting
+      // down from the pre-sync local estimate.
+      armExpiry();
+    },
+    [armExpiry],
+  );
 
   // Stable API object for the life of the hook (both members are []-dep
   // callbacks) -- so `clock` itself never changes identity and can't be a

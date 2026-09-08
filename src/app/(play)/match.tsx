@@ -111,7 +111,12 @@ export default function MatchScreen() {
   // Which color this device plays. Online: the server's coin-flip, delivered as
   // the `color` param. Bot: the "Play As" pick from the bots screen (also the
   // `color` param). Local pass-and-play: no param -> White. Fixed for the life
-  // of this screen (it remounts per game).
+  // of this screen, which remounts per game: every entry to /match is a nav
+  // from another screen and every exit is router.replace('/result-placeholder'),
+  // so /match is never the current route when navigated to. If a rematch flow
+  // is ever added that does router.replace('/match', ...), it would REUSE this
+  // useChessGame instance -- wrap the body in a component keyed by a per-game id
+  // (see puzzle-match.tsx) before doing that.
   const playerColor: 'w' | 'b' = colorParam === 'b' ? 'b' : 'w';
   const opponentColor: 'w' | 'b' = playerColor === 'w' ? 'b' : 'w';
   // Render the board from Black's side when this device has Black, so the
@@ -134,6 +139,11 @@ export default function MatchScreen() {
   const stockfishRef = useRef<StockfishEngineHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [resignVisible, setResignVisible] = useState(false);
+  // chess.js only reports isGameOver for mate/stalemate/draw-by-rule; a resign,
+  // timeout, forfeit or agreed draw leaves the position non-terminal, so the
+  // clock would keep ticking on the result screen during handleGameOver's
+  // ~900ms hold. This latches the moment ANY ending fires so the clock freezes.
+  const [matchEnded, setMatchEnded] = useState(false);
   const { profile, refresh: refreshPlayerProfile } = usePlayerProfile();
   const boardTheme = getBoardTheme(profile?.equippedBoardId);
   const pieceSprites = getPieceSprites(profile?.equippedPieceId);
@@ -168,6 +178,8 @@ export default function MatchScreen() {
   async function handleGameOver(result: ChessGameResult) {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
+    // Stop the clocks immediately, whatever the ending (see matchEnded).
+    setMatchEnded(true);
     // Close the chat panel before the transition below so it doesn't just
     // vanish abruptly with the rest of the screen.
     setChatOpen(false);
@@ -318,9 +330,12 @@ export default function MatchScreen() {
   const clockIncrementMs = mode === 'online' && Number.isFinite(parsedIncrement) ? parsedIncrement : 0;
 
   const onExpire = useCallback((color: 'w' | 'b') => reportTimeout(color), [reportTimeout]);
+  // Freeze the clock on a real chess ending OR any other game end (resign,
+  // timeout, forfeit, agreed draw) -- the latter don't set game.isGameOver.
+  const clockFrozen = game.isGameOver || matchEnded;
   const clock = useChessClock({
     turn: game.turn,
-    isGameOver: game.isGameOver,
+    isGameOver: clockFrozen,
     initialMs: initialClockMs,
     incrementMs: clockIncrementMs,
     onExpire,
@@ -431,8 +446,8 @@ export default function MatchScreen() {
           getRemaining={clock.getRemaining}
           color={opponentColor}
           accent={Colors.crimson}
-          pulsing={game.turn === opponentColor}
-          running={!game.isGameOver}
+          pulsing={game.turn === opponentColor && !clockFrozen}
+          running={!clockFrozen}
           captured={opponentColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
         />
 
@@ -458,8 +473,8 @@ export default function MatchScreen() {
           getRemaining={clock.getRemaining}
           color={playerColor}
           accent={Colors.cyan}
-          pulsing={game.turn === playerColor}
-          running={!game.isGameOver}
+          pulsing={game.turn === playerColor && !clockFrozen}
+          running={!clockFrozen}
           captured={playerColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
         />
       </View>

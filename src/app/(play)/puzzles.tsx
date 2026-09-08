@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,30 +16,29 @@ import {
   SectionLabel,
 } from '@/components/ui';
 import { ScreenArt } from '@/constants/screenArt';
-import { Colors, Spacing, withOpacity } from '@/constants/theme';
+import { Colors, Radius, Spacing, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
-import { type PuzzleEntry } from '@/lib/puzzleCatalog';
 import {
   DIFFICULTY_TIERS,
-  MOTIF_STYLE,
   TACTIC_FILTERS,
   TIER_IDS,
   firstUnsolved,
-  puzzleMotif,
-  puzzleTags,
-  puzzleTitle,
   selectPuzzles,
   tacticLabelOf,
   themeLabel,
-  tierAccent,
   tierLabelOf,
-  tierOf,
+  type EnrichedPuzzle,
   type TacticFilterId,
   type TierId,
 } from '@/lib/puzzleMeta';
 import { loadSolvedPuzzles, usePuzzleProgress } from '@/lib/puzzleProgress';
 
 const TIER_STORAGE_KEY = 'rockstyle-chess:puzzle-tier';
+
+// Remembered across mounts so re-entering the screen restores the tier
+// synchronously instead of re-flashing the default while AsyncStorage is
+// read again. `null` until the first read completes this session.
+let lastTier: TierId | null = null;
 
 // The catalog is curated in 200-point bands (scripts/curate-puzzles.mjs); the
 // list groups a difficulty tier's puzzles back into those bands so a tier
@@ -54,11 +53,11 @@ function bandLabel(rating: number): string {
 
 interface PuzzleSection {
   title: string;
-  data: PuzzleEntry[];
+  data: EnrichedPuzzle[];
 }
 
-function groupByBand(puzzles: PuzzleEntry[]): PuzzleSection[] {
-  const groups = new Map<string, PuzzleEntry[]>();
+function groupByBand(puzzles: EnrichedPuzzle[]): PuzzleSection[] {
+  const groups = new Map<string, EnrichedPuzzle[]>();
   for (const puzzle of puzzles) {
     const label = bandLabel(puzzle.rating);
     if (!groups.has(label)) groups.set(label, []);
@@ -82,13 +81,13 @@ const PuzzleRow = memo(function PuzzleRow({
   solved,
   onPress,
 }: {
-  puzzle: PuzzleEntry;
+  puzzle: EnrichedPuzzle;
   solved: boolean;
-  onPress: (puzzle: PuzzleEntry) => void;
+  onPress: (puzzle: EnrichedPuzzle) => void;
 }) {
-  const motif = MOTIF_STYLE[puzzleMotif(puzzle)];
-  const accent = tierAccent(tierOf(puzzle.rating));
-  const tags = puzzleTags(puzzle, 2);
+  const motif = puzzle.motifStyle;
+  const accent = puzzle.tierAccent;
+  const tags = puzzle.tags2;
 
   return (
     <Pressable onPress={() => onPress(puzzle)} style={{ marginTop: Spacing.sm }}>
@@ -111,7 +110,7 @@ const PuzzleRow = memo(function PuzzleRow({
               numberOfLines={1}
               style={{ fontSize: 15 }}
             >
-              {puzzleTitle(puzzle)}
+              {puzzle.title}
             </Text>
 
             <View className="flex-row flex-wrap items-center gap-xs">
@@ -158,22 +157,42 @@ export default function PuzzlesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gems } = usePlayerProfile();
-  const { solved, count, total } = usePuzzleProgress();
+  const { solved, count, total, hydrated } = usePuzzleProgress();
 
-  const [tier, setTier] = useState<TierId>('easy');
+  const [tier, setTier] = useState<TierId>(lastTier ?? 'easy');
   const [tacticId, setTacticId] = useState<TacticFilterId>('all');
+  const [tierRestored, setTierRestored] = useState(lastTier !== null);
 
   // Restore the last-used difficulty (the tactic filter is always transient).
+  // Skipped after the first read this session -- `lastTier` already holds it.
   useEffect(() => {
+    if (lastTier !== null) return;
     (async () => {
       try {
         const stored = await AsyncStorage.getItem(TIER_STORAGE_KEY);
-        if (stored && TIER_IDS.has(stored)) setTier(stored as TierId);
+        if (stored && TIER_IDS.has(stored)) {
+          lastTier = stored as TierId;
+          setTier(lastTier);
+        } else {
+          lastTier = 'easy';
+        }
       } catch (error) {
         console.log('Failed to read saved puzzle tier', error);
+        lastTier = 'easy';
+      } finally {
+        setTierRestored(true);
       }
     })();
   }, []);
+
+  // Latch the transient route params so handlePuzzlePress keeps a stable
+  // identity across filter changes (otherwise every chip tap recreates it ->
+  // recreates renderItem -> re-renders every mounted row). Effect-phase write
+  // only, matching useChessGame.ts's onGameOverRef pattern.
+  const navRef = useRef({ tier, tacticId });
+  useEffect(() => {
+    navRef.current = { tier, tacticId };
+  });
 
   // Defensive: pick up solves recorded elsewhere. The in-memory store already
   // notifies subscribers on solve, so this only ever matters across a cold
@@ -185,15 +204,17 @@ export default function PuzzlesScreen() {
   );
 
   const selectTier = useCallback((next: TierId) => {
+    lastTier = next;
     setTier(next);
     AsyncStorage.setItem(TIER_STORAGE_KEY, next).catch(() => {});
   }, []);
 
   const handlePuzzlePress = useCallback(
-    (puzzle: PuzzleEntry) => {
+    (puzzle: EnrichedPuzzle) => {
+      const { tier, tacticId } = navRef.current;
       router.push({ pathname: '/puzzle-match', params: { puzzleId: puzzle.id, tier, tacticId } });
     },
-    [router, tier, tacticId],
+    [router],
   );
 
   const visible = useMemo(() => selectPuzzles({ tier, tacticId }), [tier, tacticId]);
@@ -201,14 +222,19 @@ export default function PuzzlesScreen() {
     () => groupByBand(visible).filter((section) => section.data.length > 0),
     [visible],
   );
-  // Recomputed each render (a solve re-renders via the progress subscription);
-  // the scan is trivial at <=252 entries.
-  const nextUnsolved = firstUnsolved({ tier });
+  // firstUnsolved reads the module-level solved set, which eslint can't see --
+  // listing `solved` (stable identity between real mutations) is what makes
+  // this recompute on a solve, and only then (not on every render).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const nextUnsolved = useMemo(() => firstUnsolved({ tier }), [tier, solved]);
 
   const trainingLabel = count === 0 ? 'Start Training' : nextUnsolved ? 'Continue Training' : 'Tier Complete';
+  // Both async reads settled -- until then show a skeleton instead of a
+  // flash of "0 / N" + the default 'easy' tier.
+  const ready = hydrated && tierRestored;
 
   const renderItem = useCallback(
-    ({ item }: { item: PuzzleEntry }) => (
+    ({ item }: { item: EnrichedPuzzle }) => (
       <PuzzleRow puzzle={item} solved={solved.has(item.id)} onPress={handlePuzzlePress} />
     ),
     [solved, handlePuzzlePress],
@@ -221,11 +247,14 @@ export default function PuzzlesScreen() {
 
       {/* Progress strip */}
       <View style={styles.progressStrip}>
-        <ProgressBar progress={total > 0 ? count / total : 0} label={`${count} / ${total} solved`} />
+        <ProgressBar
+          progress={ready && total > 0 ? count / total : 0}
+          label={ready ? `${count} / ${total} solved` : `— / ${total} solved`}
+        />
         <RockButton
-          label={trainingLabel}
+          label={ready ? trainingLabel : 'Loading…'}
           variant="primary"
-          disabled={!nextUnsolved}
+          disabled={!ready || !nextUnsolved}
           onPress={() => {
             if (nextUnsolved) {
               router.push({
@@ -307,7 +336,13 @@ export default function PuzzlesScreen() {
         </ScrollView>
       </View>
 
-      {sections.length === 0 ? (
+      {!ready ? (
+        <View style={styles.skeletonWrap}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <View key={i} style={styles.skeletonRow} />
+          ))}
+        </View>
+      ) : sections.length === 0 ? (
         <View className="flex-1 items-center justify-center px-xl">
           <RockCard>
             <View className="items-center gap-md">
@@ -333,6 +368,11 @@ export default function PuzzlesScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 110 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
           stickySectionHeadersEnabled={false}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          updateCellsBatchingPeriod={50}
+          windowSize={7}
+          removeClippedSubviews
         />
       )}
 
@@ -374,6 +414,18 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
+  },
+  skeletonWrap: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  skeletonRow: {
+    height: 84,
+    borderRadius: Radius.lg,
+    backgroundColor: withOpacity(Colors.bgPanel, 0.6),
+    borderWidth: 1,
+    borderColor: withOpacity(Colors.chromeDark, 0.25),
   },
   sectionHeader: {
     marginTop: Spacing.lg,

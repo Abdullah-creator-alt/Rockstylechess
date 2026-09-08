@@ -354,6 +354,22 @@ export const ChessBoard = memo(function ChessBoard({
   // so BoardPiece's drag/non-drag render branch switches on the UI thread
   // with no cross-thread latency -- see handleGrab/bakeDraggedPosition below.
   const draggingIdSV = useSharedValue(-1);
+  // true for the exact span of an active pan gesture (set in the Pan worklet's
+  // onStart, cleared in onEnd/onFinalize). bakeDraggedPosition reads this to
+  // know "a finger is still down" -- a reconcile pass triggered mid-gesture
+  // (e.g. the selection commit from onGrab) must NOT bake/clear a live drag.
+  const gestureActiveSV = useSharedValue(false);
+
+  // Held in a ref so the 64 Square gesture objects don't rebuild every time a
+  // selection changes onSquarePress's identity -- rebuilding a Gesture while
+  // its own pan is mid-flight can make react-native-gesture-handler resolve
+  // the release against a stale closure and silently drop a legal move. Kept
+  // current in a layout effect (synchronous at commit), same pattern as
+  // useChessGame's onGameOverRef.
+  const onSquarePressRef = useRef(onSquarePress);
+  useLayoutEffect(() => {
+    onSquarePressRef.current = onSquarePress;
+  });
 
   // Exact 8x8. Squares are laid out at an integer pixel size rather than with
   // flex:1, because eight flex children of a fractional width get rounded
@@ -364,6 +380,12 @@ export const ChessBoard = memo(function ChessBoard({
   const squareSize = Math.floor(gridSize / 8);
   const boardSize = squareSize * 8;
   const interactive = Boolean(onSquarePress);
+
+  // O(1) membership for the per-square `legalTargets.includes(...)` checks
+  // below -- otherwise every board render scans the array ~128 times (64
+  // squares x2). `legalTargets` keeps a stable identity while nothing is
+  // selected (useChessGame's NO_TARGETS), so this rebuilds only on selection.
+  const legalTargetSet = useMemo(() => new Set(legalTargets), [legalTargets]);
 
   // Kept in sync with squareSize so every piece's position worklet reads a
   // live value instead of one frozen at animation-start -- absorbs a board
@@ -420,18 +442,20 @@ export const ChessBoard = memo(function ChessBoard({
   // drag system had to account for.
   const bakeDraggedPosition = useCallback((): number => {
     const draggedId = draggingIdSV.value;
-    if (draggedId !== -1) {
-      const pos = positionsRef.current.get(draggedId);
-      if (pos && squareSize > 0) {
-        pos.col.value += dragX.value / squareSize;
-        pos.row.value += dragY.value / squareSize;
-      }
-      dragX.value = 0;
-      dragY.value = 0;
-      draggingIdSV.value = -1;
+    if (draggedId === -1) return -1;
+    // A finger is still down (a reconcile pass fired mid-gesture, e.g. from the
+    // onGrab selection commit) -- leave the live drag completely alone.
+    if (gestureActiveSV.value) return -1;
+    const pos = positionsRef.current.get(draggedId);
+    if (pos && squareSize > 0) {
+      pos.col.value += dragX.value / squareSize;
+      pos.row.value += dragY.value / squareSize;
     }
+    dragX.value = 0;
+    dragY.value = 0;
+    draggingIdSV.value = -1;
     return draggedId;
-  }, [draggingIdSV, dragX, dragY, squareSize]);
+  }, [draggingIdSV, gestureActiveSV, dragX, dragY, squareSize]);
 
   const settleDraggedPieceHome = useCallback(
     (id: number) => {
@@ -541,22 +565,28 @@ export const ChessBoard = memo(function ChessBoard({
     // dependency -- a resize mid-drag is rare and re-running this whole
     // reconciliation on every resize would be wasted work; it already reads
     // the live value via closure each time the effect actually runs.
+    //
+    // `selectedSquare` is a dependency but is NOT read in the body: an
+    // illegal / reselect drag-drop changes only the selection (handleSquarePress
+    // never refresh()es for a non-move), so this is the only thing that gets the
+    // pass to re-run and bake+settle the just-released piece home via the
+    // boardMatchesLivePieces branch below. On a plain tap-select it's a cheap
+    // no-op run (nothing to bake, board already matches).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board, lastMove, animateLastMove, lastMoveSound, checkSquare, flipped]);
+  }, [board, lastMove, animateLastMove, lastMoveSound, checkSquare, flipped, selectedSquare]);
 
   const handleGridLayout = useCallback((event: LayoutChangeEvent) => {
     setGridSize(Math.min(event.nativeEvent.layout.width, event.nativeEvent.layout.height));
   }, []);
 
-  // Stable identities so the 64 memo(Square)s -- and the 3 Gesture objects each
-  // builds -- don't rebuild on every ChessBoard render (they change only when
-  // `onSquarePress` itself does, i.e. on a square selection).
-  const handleTapSquare = useCallback(
-    (square: string) => {
-      onSquarePress?.(square);
-    },
-    [onSquarePress],
-  );
+  // Read onSquarePress from a ref so these three keep a stable identity across
+  // selections -- otherwise each 64 Square's composedGesture useMemo (which
+  // lists them as deps) rebuilds every selection, including mid-pan, which can
+  // make RNGH resolve a release against a stale closure. They now only rebuild
+  // on interactive / canDrag / squareSize / square changes.
+  const handleTapSquare = useCallback((square: string) => {
+    onSquarePressRef.current?.(square);
+  }, []);
 
   const handleGrab = useCallback(
     (square: string) => {
@@ -564,9 +594,9 @@ export const ChessBoard = memo(function ChessBoard({
       dragY.value = 0;
       const livePiece = livePiecesRef.current.find((p) => p.square === square);
       if (livePiece) draggingIdSV.value = livePiece.id;
-      onSquarePress?.(square);
+      onSquarePressRef.current?.(square);
     },
-    [onSquarePress, dragX, dragY, draggingIdSV],
+    [dragX, dragY, draggingIdSV],
   );
 
   const handleDrop = useCallback(
@@ -580,16 +610,19 @@ export const ChessBoard = memo(function ChessBoard({
       const targetDispCol = Math.min(7, Math.max(0, flipIndex(fromCol, flipped) + deltaCol));
       const targetSquare = squareAt(flipIndex(targetDispRow, flipped), flipIndex(targetDispCol, flipped));
       if (targetSquare !== fromSquare) {
-        // A real attempt (legal or not) -- the reconciliation effect above
-        // resolves where this piece's drag ends up, once refresh() lands.
-        onSquarePress?.(targetSquare);
+        // A real attempt (legal or not). A legal move refresh()es -> the
+        // reconciliation effect settles the piece; an illegal / reselect drop
+        // only changes selectedSquare, which now also re-runs that effect (see
+        // its dep list) so the piece still gets settled home rather than
+        // stranded at the drop point.
+        onSquarePressRef.current?.(targetSquare);
         return;
       }
       // Dropped back where it started -- no state change is coming, so there's
       // nothing to wait on; resolve the drag right here.
       settleDraggedPieceHome(bakeDraggedPosition());
     },
-    [onSquarePress, settleDraggedPieceHome, bakeDraggedPosition, flipped],
+    [settleDraggedPieceHome, bakeDraggedPosition, flipped],
   );
 
   return (
@@ -652,8 +685,8 @@ export const ChessBoard = memo(function ChessBoard({
                         }
                         isLight={isLight}
                         isSelected={square === selectedSquare}
-                        isLegalTarget={legalTargets.includes(square)}
-                        isCapture={legalTargets.includes(square) && piece !== ''}
+                        isLegalTarget={legalTargetSet.has(square)}
+                        isCapture={legalTargetSet.has(square) && piece !== ''}
                         isCheck={square === checkSquare}
                         isLastMove={lastMove !== null && (square === lastMove.from || square === lastMove.to)}
                         showRankLabel={colIndex === (flipped ? 7 : 0)}
@@ -665,6 +698,7 @@ export const ChessBoard = memo(function ChessBoard({
                         canDrag={canDrag}
                         dragX={dragX}
                         dragY={dragY}
+                        gestureActiveSV={gestureActiveSV}
                         onTapSquare={handleTapSquare}
                         onGrab={handleGrab}
                         onDrop={handleDrop}
@@ -779,6 +813,7 @@ interface SquareProps {
   canDrag: boolean;
   dragX: SharedValue<number>;
   dragY: SharedValue<number>;
+  gestureActiveSV: SharedValue<boolean>;
   onTapSquare: (square: string) => void;
   onGrab: (square: string) => void;
   onDrop: (square: string, deltaRow: number, deltaCol: number) => void;
@@ -807,6 +842,7 @@ const Square = memo(function Square({
   canDrag,
   dragX,
   dragY,
+  gestureActiveSV,
   onTapSquare,
   onGrab,
   onDrop,
@@ -815,8 +851,9 @@ const Square = memo(function Square({
 
   // Rebuilt only when one of these actually changes (canDrag flips as a piece
   // moves on/off the square, squareSize on a board resize) -- not on every
-  // ChessBoard render, which used to churn ~192 Gesture objects a second while
-  // the clock ticked.
+  // ChessBoard render, and never mid-pan (the callbacks are ref-backed and
+  // stable), which used to let a selection commit swap the gesture object out
+  // from under an in-flight drag.
   const composedGesture = useMemo(() => {
     const tap = Gesture.Tap()
       .enabled(interactive)
@@ -828,6 +865,7 @@ const Square = memo(function Square({
       .enabled(canDrag)
       .minDistance(4)
       .onStart(() => {
+        gestureActiveSV.value = true;
         runOnJS(onGrab)(square);
       })
       .onUpdate((event) => {
@@ -835,16 +873,21 @@ const Square = memo(function Square({
         dragY.value = event.translationY;
       })
       .onEnd((event) => {
+        gestureActiveSV.value = false;
         const deltaCol = Math.round(event.translationX / squareSize);
         const deltaRow = Math.round(event.translationY / squareSize);
         // Deliberately doesn't reset dragX/dragY/draggingIdSV here -- see
         // bakeDraggedPosition's comment for why that handoff happens on the JS
         // thread instead, synchronous with whatever state update follows.
         runOnJS(onDrop)(square, deltaRow, deltaCol);
+      })
+      // Covers a cancelled / interrupted pan (no onEnd) so the flag can't stick.
+      .onFinalize(() => {
+        gestureActiveSV.value = false;
       });
 
     return Gesture.Race(pan, tap);
-  }, [interactive, canDrag, squareSize, square, dragX, dragY, onTapSquare, onGrab, onDrop]);
+  }, [interactive, canDrag, squareSize, square, dragX, dragY, gestureActiveSV, onTapSquare, onGrab, onDrop]);
 
   return (
     <GestureDetector gesture={composedGesture}>

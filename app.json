@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "rockstylechess",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "icon": "./assets/expo.icon"
     },
@@ -31,9 +30,6 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/royalRiffStudio_logo.png",
-          "imageWidth": 240,
-          "resizeMode": "contain",
           "backgroundColor": "#0B0709"
         }
       ],

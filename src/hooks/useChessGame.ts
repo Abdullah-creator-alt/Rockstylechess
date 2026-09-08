@@ -1,4 +1,4 @@
-import { Chess, type Square } from 'chess.js';
+import { Chess, type Move, type Square } from 'chess.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { resolveBotMove, type BotDifficulty, type RequestEngineMove } from '@/lib/botEngine';
@@ -18,6 +18,12 @@ import { playSound } from '@/lib/soundEffects';
 export type { BotDifficulty } from '@/lib/botEngine';
 
 export type GameMode = 'bot' | 'local' | 'online' | 'puzzle';
+
+// Shared empty array so `legalTargets` keeps a stable identity whenever
+// nothing is selected -- returning a fresh `[]` each render needlessly
+// changed ChessBoard's `legalTargets` prop on every idle re-render. Never
+// mutated (callers only read / `.includes`).
+const NO_TARGETS: Square[] = [];
 
 export type ChessGameResult =
   | { type: 'checkmate'; winner: 'w' | 'b' }
@@ -137,12 +143,25 @@ function createPuzzleChess(puzzle: PuzzleInfo): Chess {
   return chess;
 }
 
-function buildSnapshot(chess: Chess, lastMoveSource: LastMoveSource, puzzleStatus: PuzzleStatus): GameSnapshot {
-  const cells = chess.board();
-  const board = boardGridFromChess(chess, cells);
-  const turn = chess.turn();
-  const checkSquare = checkSquareFromChess(chess, cells);
+// Running tally of everything a snapshot needs that used to be re-derived
+// from scratch via `chess.history({ verbose: true })` on every single move.
+// That call replays the whole game internally (generating moves at each ply
+// for SAN) -- ~4.5ms at move 40 on a fast desktop, several times that on a
+// mid-range phone, and it grows with game length, so a match visibly "lags
+// up" the longer it runs. This ledger is instead updated by one O(1)
+// `recordMove` call per applied move (see the hook body).
+interface MoveLedger {
+  capturedByWhite: string[];
+  capturedByBlack: string[];
+  /** Plies played so far. */
+  ply: number;
+  lastMove: VerboseLastMove | null;
+}
 
+// The old history-scan, run ONCE (at mount / puzzle load / reset) to seed the
+// ledger -- covers a puzzle's auto-played setup move and an online match
+// resumed from a mid-game FEN, both of which arrive with existing history.
+function deriveLedger(chess: Chess): MoveLedger {
   const history = chess.history({ verbose: true });
   const capturedByWhite: string[] = [];
   const capturedByBlack: string[] = [];
@@ -152,19 +171,36 @@ function buildSnapshot(chess: Chess, lastMoveSource: LastMoveSource, puzzleStatu
       else capturedByBlack.push(move.captured);
     }
   }
+  return {
+    capturedByWhite,
+    capturedByBlack,
+    ply: history.length,
+    lastMove: pickVerboseLastMove(history[history.length - 1]),
+  };
+}
 
-  const lastHistoryMove = history[history.length - 1];
-  const lastMove = pickVerboseLastMove(lastHistoryMove);
-  const lastMoveSound = classifyMoveSound(chess, lastHistoryMove);
+function buildSnapshot(
+  chess: Chess,
+  ledger: MoveLedger,
+  lastMoveSource: LastMoveSource,
+  puzzleStatus: PuzzleStatus,
+): GameSnapshot {
+  const cells = chess.board();
+  const board = boardGridFromChess(chess, cells);
+  const turn = chess.turn();
+  const checkSquare = checkSquareFromChess(chess, cells);
+
+  const lastMove = ledger.lastMove;
+  const lastMoveSound = classifyMoveSound(chess, lastMove ?? undefined);
 
   return {
     board,
     turn,
     checkSquare,
     isGameOver: chess.isGameOver(),
-    capturedByWhite,
-    capturedByBlack,
-    moveCount: Math.ceil(history.length / 2),
+    capturedByWhite: ledger.capturedByWhite.slice(),
+    capturedByBlack: ledger.capturedByBlack.slice(),
+    moveCount: Math.ceil(ledger.ply / 2),
     lastMove,
     lastMoveSource,
     lastMoveSound,
@@ -187,7 +223,13 @@ export function useChessGame({
   onClockSync,
 }: UseChessGameOptions) {
   const chessRef = useRef<Chess>(puzzle ? createPuzzleChess(puzzle) : new Chess(online?.initialFen));
-  const [snapshot, setSnapshot] = useState<GameSnapshot>(() => buildSnapshot(chessRef.current, null, 'playing'));
+  // Incrementally maintained (see recordMove) instead of re-scanned from
+  // chess.history() every move -- seeded once here from whatever history the
+  // starting position already carries (a puzzle's setup move, a resumed FEN).
+  const ledgerRef = useRef<MoveLedger>(deriveLedger(chessRef.current));
+  const [snapshot, setSnapshot] = useState<GameSnapshot>(() =>
+    buildSnapshot(chessRef.current, ledgerRef.current, null, 'playing'),
+  );
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   // Which side currently has an outstanding draw offer, or null. Cleared by
   // the server's draw:cleared (any move) / draw:declined, and locally on every
@@ -223,13 +265,26 @@ export function useChessGame({
     moveElapsedMsRef.current.push(Date.now() - matchStartRef.current);
   }
 
+  // O(1) per-move ledger update -- call with the Move that chess.js just
+  // returned from a successful chess.move(). Keeps capturedBy*/ply/lastMove
+  // current without the per-move history replay buildSnapshot used to do.
+  function recordMove(move: Move) {
+    const ledger = ledgerRef.current;
+    if (move.captured) {
+      if (move.color === 'w') ledger.capturedByWhite.push(move.captured);
+      else ledger.capturedByBlack.push(move.captured);
+    }
+    ledger.ply += 1;
+    ledger.lastMove = pickVerboseLastMove(move);
+  }
+
   const legalTargets = useMemo(() => {
-    if (!selectedSquare) return [];
+    if (!selectedSquare) return NO_TARGETS;
     return chessRef.current.moves({ square: selectedSquare, verbose: true }).map((move) => move.to);
   }, [selectedSquare, snapshot]);
 
   function refresh(source: LastMoveSource = null, puzzleStatus: PuzzleStatus = 'playing') {
-    setSnapshot(buildSnapshot(chessRef.current, source, puzzleStatus));
+    setSnapshot(buildSnapshot(chessRef.current, ledgerRef.current, source, puzzleStatus));
   }
 
   function reportGameOverIfDone() {
@@ -263,7 +318,7 @@ export function useChessGame({
       return;
     }
     try {
-      chess.move({ from, to, promotion: expected.promotion ?? 'q' });
+      recordMove(chess.move({ from, to, promotion: expected.promotion ?? 'q' }));
     } catch (error) {
       console.log('Puzzle move unexpectedly rejected by chess.js', error);
       playSound('illegal');
@@ -277,6 +332,16 @@ export function useChessGame({
     // spuriously fire onGameOver with real-match semantics that don't apply
     // here. Puzzle completion is signaled purely via puzzleStatus.
     refresh('human', solved ? 'solved' : 'playing');
+  }
+
+  // A wrong puzzle guess leaves puzzleStatus 'failed' purely to drive the
+  // "Not quite -- try again" label; the position is untouched and still
+  // retriable. Picking a piece back up to retry clears that label (flips
+  // status back to 'playing') without moving anything. Puzzle-only.
+  function clearFailedPuzzleStatus() {
+    if (mode === 'puzzle' && puzzle && snapshot.puzzleStatus === 'failed') {
+      refresh(null, 'playing');
+    }
   }
 
   function handleSquarePress(square: Square) {
@@ -308,7 +373,7 @@ export function useChessGame({
         }
         try {
           // promotion is always auto-queened -- no under-promotion picker yet.
-          chess.move({ from, to: square, promotion: 'q' });
+          recordMove(chess.move({ from, to: square, promotion: 'q' }));
         } catch (error) {
           console.log('Unexpected illegal move rejected by chess.js', error);
           playSound('illegal');
@@ -329,12 +394,18 @@ export function useChessGame({
       const piece = chess.get(square);
       // Tapping a different piece of the side to move reselects instead of
       // moving; tapping anything else (empty/illegal/opponent piece) deselects.
-      setSelectedSquare(piece && piece.color === chess.turn() ? square : null);
+      if (piece && piece.color === chess.turn()) {
+        clearFailedPuzzleStatus();
+        setSelectedSquare(square);
+      } else {
+        setSelectedSquare(null);
+      }
       return;
     }
 
     const piece = chess.get(square);
     if (piece && piece.color === chess.turn()) {
+      clearFailedPuzzleStatus();
       setSelectedSquare(square);
     }
   }
@@ -344,7 +415,13 @@ export function useChessGame({
   function resetPuzzle() {
     if (!puzzle) return;
     chessRef.current = createPuzzleChess(puzzle);
+    ledgerRef.current = deriveLedger(chessRef.current);
     puzzleMoveIndexRef.current = 1;
+    // Otherwise a piece the solver had selected before hitting "Give Up" stays
+    // selected against the reset position -- either a stuck highlight or, worse,
+    // the next tap gets routed as a move from that stale square (spurious
+    // 'failed' attempt + illegal sound).
+    setSelectedSquare(null);
     refresh(null, 'playing');
   }
 
@@ -418,7 +495,7 @@ export function useChessGame({
       // the opponent's move, identifiable because the turn just became ours.
       if (!online || payload.turn !== online.playerColor) return;
       try {
-        chess.move({ from: payload.from, to: payload.to, promotion: payload.promotion ?? 'q' });
+        recordMove(chess.move({ from: payload.from, to: payload.to, promotion: payload.promotion ?? 'q' }));
       } catch (error) {
         console.log('Opponent move rejected unexpectedly', error);
       }
@@ -479,7 +556,7 @@ export function useChessGame({
       const move = await resolveBotMove(chess, difficulty, requestEngineMove);
       if (cancelled || !move) return;
       try {
-        chess.move(move);
+        recordMove(chess.move(move));
       } catch (error) {
         console.log('Bot move rejected unexpectedly', error);
       }
@@ -494,6 +571,11 @@ export function useChessGame({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, difficulty, botColor, snapshot]);
+
+  // NOTE: this hook does not react to `puzzle` changing identity mid-mount --
+  // puzzle-match.tsx wraps its body in a component keyed by puzzleId, so every
+  // "Next Puzzle" is a fresh mount (fresh chessRef/ledger/indices). Any future
+  // puzzle caller that does NOT remount per puzzle must add that keying.
 
   useEffect(() => {
     if (mode !== 'puzzle' || !puzzle) return;
@@ -511,7 +593,7 @@ export function useChessGame({
       if (cancelled) return;
       const chess = chessRef.current;
       try {
-        chess.move(parseUciMove(puzzle.moves[index]));
+        recordMove(chess.move(parseUciMove(puzzle.moves[index])));
       } catch (error) {
         console.log('Puzzle opponent reply rejected unexpectedly', error);
       }
@@ -530,12 +612,26 @@ export function useChessGame({
   // Not part of GameSnapshot (like legalTargets) -- purely derived from the
   // puzzle's next expected move, for the puzzle screen's Hint button.
   const hintSquare = useMemo(() => {
-    if (mode !== 'puzzle' || !puzzle || snapshot.puzzleStatus !== 'playing') return null;
+    // Available while 'playing' AND after a wrong guess ('failed') -- a failed
+    // attempt is fully retriable, so the hint must stay usable (this guard
+    // used to also exclude 'failed', which silently disabled the Hint button
+    // until the next correct move).
+    if (mode !== 'puzzle' || !puzzle || snapshot.puzzleStatus === 'solved') return null;
     const index = puzzleMoveIndexRef.current;
     if (index >= puzzle.moves.length) return null;
     return parseUciMove(puzzle.moves[index]).from;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, puzzle, snapshot]);
+
+  // The Hint button: just select the piece the solver should move. Must NOT go
+  // through handleSquarePress(hintSquare) -- if the solver already has some
+  // other piece selected that can legally reach hintSquare, that path treats
+  // the press as a move and burns a (failed) attempt. Selecting directly can't.
+  function revealHint() {
+    if (mode !== 'puzzle' || !puzzle || !isSolverTurnInPuzzle || !hintSquare) return;
+    clearFailedPuzzleStatus();
+    setSelectedSquare(hintSquare);
+  }
 
   // Bot/local/online -- match.tsx's handleGameOver reads this once at
   // game-over and hands it to localMatchReplayStore.ts for the immediate
@@ -566,6 +662,7 @@ export function useChessGame({
     lastMoveSound: snapshot.lastMoveSound,
     puzzleStatus: snapshot.puzzleStatus,
     hintSquare,
+    revealHint,
     selectedSquare,
     legalTargets,
     handleSquarePress,

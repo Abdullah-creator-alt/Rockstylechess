@@ -1,10 +1,10 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChessBoard, EmberParticles, RockButton, RockCard } from '@/components/ui';
+import { ChessBoard, RockButton, RockCard } from '@/components/ui';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
@@ -13,19 +13,37 @@ import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { reportPuzzleSolvedForQuests } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import { goUp } from '@/lib/navigation';
-import { PUZZLES } from '@/lib/puzzleCatalog';
-import { nextPuzzle, puzzleTags, puzzleTitle, themeLabel } from '@/lib/puzzleMeta';
+import { PUZZLE_BY_ID, nextPuzzle, themeLabel } from '@/lib/puzzleMeta';
 import { markPuzzleSolved } from '@/lib/puzzleProgress';
 
+// "Next Puzzle" navigates with router.replace to this same route, which
+// re-renders with new params instead of remounting -- so the inner component
+// is keyed by puzzleId to force a clean remount (fresh useChessGame: fresh
+// chessRef / ledger / move index / "reported solved" ref). Without this the
+// hook briefly runs against the previous puzzle's solved state, which showed a
+// flash of the old board and let the reported-solved effect mark (and report a
+// server quest solve for) the NEXT puzzle before it was played.
 export default function PuzzleMatchScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { puzzleId, tier, tacticId } = useLocalSearchParams<{
     puzzleId?: string;
     tier?: string;
     tacticId?: string;
   }>();
-  const entry = PUZZLES.find((p) => p.id === puzzleId);
+  return <PuzzleMatchInner key={puzzleId ?? 'none'} puzzleId={puzzleId} tier={tier} tacticId={tacticId} />;
+}
+
+function PuzzleMatchInner({
+  puzzleId,
+  tier,
+  tacticId,
+}: {
+  puzzleId?: string;
+  tier?: string;
+  tacticId?: string;
+}) {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const entry = puzzleId ? PUZZLE_BY_ID.get(puzzleId) : undefined;
   const { profile } = usePlayerProfile();
   const boardTheme = getBoardTheme(profile?.equippedBoardId);
   const pieceSprites = getPieceSprites(profile?.equippedPieceId);
@@ -33,20 +51,33 @@ export default function PuzzleMatchScreen() {
   // Hooks must run unconditionally -- passed a placeholder puzzle when the
   // param doesn't resolve so useChessGame stays happy; the render below
   // shows a "not found" state instead of using any of this hook's output.
-  const game = useChessGame({
-    mode: 'puzzle',
-    puzzle: entry ? { puzzleId: entry.id, fen: entry.fen, moves: entry.moves } : undefined,
-  });
+  // Memoized so its identity is stable across renders -- it feeds two dep
+  // arrays inside useChessGame (the scripted-reply effect and hintSquare).
+  const puzzle = useMemo(
+    () => (entry ? { puzzleId: entry.id, fen: entry.fen, moves: entry.moves } : undefined),
+    [entry],
+  );
+  const game = useChessGame({ mode: 'puzzle', puzzle });
+  const { handleSquarePress } = game;
+
+  // Stable identity so ChessBoard (and its 64 memoized Squares, each holding
+  // gesture objects) isn't forced to re-render on every unrelated re-render.
+  const handleBoardSquarePress = useCallback(
+    (square: string) => handleSquarePress(square as Parameters<typeof handleSquarePress>[0]),
+    [handleSquarePress],
+  );
+  const animateReply = game.lastMoveSource !== null && game.lastMoveSource !== 'human';
 
   // Fire-once per puzzle (same pattern as useChessGame.ts's gameOverFiredRef)
   // -- resetPuzzle()/retrying after a failed attempt must never re-report a
-  // solve that already landed.
+  // solve that already landed. A plain ref is enough because this component
+  // remounts per puzzle (see PuzzleMatchScreen's key).
   const reportedSolvedRef = useRef(false);
   useEffect(() => {
-    if (game.puzzleStatus !== 'solved' || reportedSolvedRef.current) return;
+    if (game.puzzleStatus !== 'solved' || !entry || reportedSolvedRef.current) return;
     reportedSolvedRef.current = true;
     // Local, auth-independent -- guests get progress tracking too.
-    if (entry) void markPuzzleSolved(entry.id);
+    void markPuzzleSolved(entry.id);
     (async () => {
       const token = await getAuthToken();
       if (!token) return;
@@ -69,9 +100,7 @@ export default function PuzzleMatchScreen() {
     );
   }
 
-  // entry.fen's turn field is whoever plays the auto-played SETUP move
-  // (moves[0]) -- the solver is the other color.
-  const solverColor = entry.fen.split(' ')[1] === 'b' ? 'White' : 'Black';
+  const solverColor = entry.solverColor;
   const statusText =
     game.puzzleStatus === 'solved'
       ? 'Solved!'
@@ -92,8 +121,6 @@ export default function PuzzleMatchScreen() {
 
   return (
     <View style={styles.root}>
-      <EmberParticles count={8} />
-
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable onPress={() => goUp('/puzzle-match')} style={styles.backButton}>
           <MaterialCommunityIcons name="chevron-left" size={26} color={Colors.textPrimary} />
@@ -104,14 +131,14 @@ export default function PuzzleMatchScreen() {
 
       <View style={[styles.middle, { paddingBottom: insets.bottom + Spacing.lg }]}>
         <RockCard glowColor={statusColor} style={styles.infoCard}>
-          <Text style={styles.cardTitle}>{puzzleTitle(entry)}</Text>
+          <Text style={styles.cardTitle}>{entry.title}</Text>
           <View style={styles.infoRow}>
             <View style={styles.ratingPill}>
               <MaterialCommunityIcons name="puzzle" size={14} color={Colors.cyan} />
               <Text style={styles.ratingPillText}>{entry.rating}</Text>
             </View>
             <View style={styles.themeRow}>
-              {puzzleTags(entry, 3).map((theme) => (
+              {entry.tags3.map((theme) => (
                 <View key={theme} style={styles.themeTag}>
                   <Text style={styles.themeTagText}>{themeLabel(theme)}</Text>
                 </View>
@@ -128,9 +155,9 @@ export default function PuzzleMatchScreen() {
           checkSquare={game.checkSquare}
           lastMove={game.lastMove}
           turn={game.turn}
-          animateLastMove={game.lastMoveSource !== null && game.lastMoveSource !== 'human'}
+          animateLastMove={animateReply}
           lastMoveSound={game.lastMoveSound}
-          onSquarePress={(square) => game.handleSquarePress(square as Parameters<typeof game.handleSquarePress>[0])}
+          onSquarePress={handleBoardSquarePress}
           theme={boardTheme}
           pieceSprites={pieceSprites}
         />
@@ -148,11 +175,7 @@ export default function PuzzleMatchScreen() {
           ) : (
             <>
               <View style={styles.actionButton}>
-                <RockButton
-                  label="Hint"
-                  variant="primary"
-                  onPress={() => game.hintSquare && game.handleSquarePress(game.hintSquare)}
-                />
+                <RockButton label="Hint" variant="primary" onPress={game.revealHint} />
               </View>
               <View style={styles.actionButton}>
                 <RockButton label="Give Up" variant="danger" onPress={game.resetPuzzle} />

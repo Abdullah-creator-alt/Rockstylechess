@@ -92,8 +92,9 @@ cd android && ./gradlew assembleRelease   # bundles JS statically -- use this, n
 hangs on the splash screen forever with no error. Needs a full JDK 17 on
 `JAVA_HOME` (not just a `java` binary — headless JRE-only installs fail deep
 in the build with a confusing error) and the pinned NDK version installed via
-`sdkmanager`. **Don't remove `package.json`'s `"overrides": {"expo-asset":
-"~12.0.13"}`** — without it, `expo-audio`'s unbounded `expo-asset` dependency
+`sdkmanager`. **Don't remove `package.json`'s `"overrides": {"expo-asset": …}`** (pin it to
+the SDK's bundled `expo-asset`, per `node_modules/expo/bundledNativeModules.json`)
+— without it, `expo-audio`'s unbounded `expo-asset` dependency
 gets hoisted over the version `expo` actually needs, and Android crashes with
 `NoClassDefFoundError` right after the splash screen with no build-time error
 (verify with `npm ls expo-asset` — must show one version, not two). Full

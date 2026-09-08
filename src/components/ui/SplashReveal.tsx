@@ -21,25 +21,37 @@ interface SplashRevealProps {
 }
 
 // Staged reveal shown once the native (OS-level) splash hides, so there's a
-// designed moment instead of the app just appearing. Same bg color as the
-// native splash and the same logo asset, so the handoff from native splash
-// to this overlay is invisible.
+// designed moment instead of the app just appearing. The native splash is now
+// a bare #0B0709 screen with no image (see app.json) -- the logo only ever
+// appears here, as the round glow + ember reveal, so the earlier bare
+// rectangular logo asset on the native splash never shows. This overlay shares
+// that same bg color, so the handoff from native splash to this overlay is an
+// invisible cut on a plain black screen.
+const BLACK_HOLD_MS = 180;
+
 export function SplashReveal({ onDone }: SplashRevealProps) {
   const logoOpacity = useSharedValue(0);
   const logoScale = useSharedValue(0.82);
   const overlayOpacity = useSharedValue(1);
 
   useEffect(() => {
-    logoOpacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.quad) });
-    logoScale.value = withTiming(1, { duration: 650, easing: Easing.out(Easing.back(1.4)) });
+    // Let the plain black screen register for a beat before the logo animates
+    // in, so the reveal reads as "black -> round logo" rather than a hard pop.
+    const revealTimer = setTimeout(() => {
+      logoOpacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.quad) });
+      logoScale.value = withTiming(1, { duration: 650, easing: Easing.out(Easing.back(1.4)) });
+    }, BLACK_HOLD_MS);
 
     const holdTimer = setTimeout(() => {
       overlayOpacity.value = withTiming(0, { duration: 350, easing: Easing.in(Easing.quad) }, (finished) => {
         if (finished) runOnJS(onDone)();
       });
-    }, 1250);
+    }, BLACK_HOLD_MS + 1250);
 
-    return () => clearTimeout(holdTimer);
+    return () => {
+      clearTimeout(revealTimer);
+      clearTimeout(holdTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -63,7 +75,7 @@ export function SplashReveal({ onDone }: SplashRevealProps) {
 // #region Styles
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 100,
     alignItems: 'center',
     justifyContent: 'center',

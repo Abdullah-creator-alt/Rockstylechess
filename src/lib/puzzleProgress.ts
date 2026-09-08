@@ -35,28 +35,32 @@ function emit() {
  * again -- used both on first mount and defensively on screen focus.
  */
 export async function loadSolvedPuzzles(): Promise<ReadonlySet<string>> {
+  let added = false;
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        let added = false;
         for (const id of parsed) {
           if (typeof id === 'string' && !solvedSet.has(id)) {
             solvedSet.add(id);
             added = true;
           }
         }
-        if (added || !hydrated) {
-          snapshot = new Set(solvedSet);
-          if (added) emit();
-        }
       }
     }
   } catch (error) {
     console.log('Failed to load solved puzzles', error);
   }
-  hydrated = true;
+  // Emit on the first hydration too (even with nothing stored), so screens
+  // gated on `hydrated` re-render once the read completes.
+  if (added || !hydrated) {
+    snapshot = new Set(solvedSet);
+    hydrated = true;
+    emit();
+  } else {
+    hydrated = true;
+  }
   return snapshot;
 }
 
@@ -72,6 +76,11 @@ export function getSolvedSnapshot(): ReadonlySet<string> {
 
 export function getSolvedCount(): number {
   return snapshot.size;
+}
+
+/** Whether the persisted solved set has been read at least once. */
+export function isSolvedHydrated(): boolean {
+  return hydrated;
 }
 
 /**
@@ -106,6 +115,9 @@ export function usePuzzleProgress(): {
   solved: ReadonlySet<string>;
   count: number;
   total: number;
+  /** False until the persisted set has been read once (see loadSolvedPuzzles,
+   *  which emits on that first read so this flips with a re-render). */
+  hydrated: boolean;
   isSolved: (id: string) => boolean;
 } {
   const solved = useSyncExternalStore(subscribeSolved, getSolvedSnapshot, getSolvedSnapshot);
@@ -118,6 +130,7 @@ export function usePuzzleProgress(): {
     solved,
     count: solved.size,
     total: PUZZLE_TOTAL,
+    hydrated,
     isSolved: (id: string) => solved.has(id),
   };
 }

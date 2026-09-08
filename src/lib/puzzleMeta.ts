@@ -379,15 +379,79 @@ export const TACTIC_IDS: ReadonlySet<string> = new Set(TACTIC_FILTERS.map((f) =>
 
 const TACTIC_BY_ID = new Map(TACTIC_FILTERS.map((f) => [f.id, f]));
 
+// Each filter's theme allow-list as a Set for O(1) membership, built once.
+// 'all' (empty allow-list) maps to an empty set == "matches everything".
+const TACTIC_THEME_SET_BY_ID = new Map<TacticFilterId, ReadonlySet<string>>(
+  TACTIC_FILTERS.map((f) => [f.id, new Set(f.themes)]),
+);
+
 export function matchesTactic(entry: PuzzleEntry, id: TacticFilterId): boolean {
-  const filter = TACTIC_BY_ID.get(id);
-  if (!filter || filter.themes.length === 0) return true;
-  return entry.themes.some((t) => filter.themes.includes(t));
+  const set = TACTIC_THEME_SET_BY_ID.get(id);
+  if (!set || set.size === 0) return true;
+  return entry.themes.some((t) => set.has(t));
 }
 
 export function tacticLabelOf(id: TacticFilterId): string {
   return TACTIC_BY_ID.get(id)?.label ?? id;
 }
+
+// #endregion
+
+// #region Enriched catalog
+
+/**
+ * A `PuzzleEntry` with every derived value the screens need precomputed once
+ * at module load, so rows and the selection helpers do O(1) field reads
+ * instead of re-deriving titles / tag lists / tier / tactic membership on
+ * every render and every scroll-mount. Solved-state is deliberately NOT baked
+ * in -- it changes at runtime and stays a live `isPuzzleSolved` check.
+ */
+export interface EnrichedPuzzle extends PuzzleEntry {
+  tier: TierId;
+  tierAccent: string;
+  title: string;
+  motif: PuzzleMotif;
+  motifStyle: MotifStyle;
+  /** Up to 2 / 3 display tags -- see puzzleTags. */
+  tags2: string[];
+  tags3: string[];
+  /** "White" / "Black" -- the side the solver plays (opposite of moves[0]). */
+  solverColor: 'White' | 'Black';
+  /** Which tactic filters (excluding 'all') this puzzle satisfies. */
+  tacticIds: ReadonlySet<TacticFilterId>;
+}
+
+function solverColorOf(fen: string): 'White' | 'Black' {
+  // fen's side-to-move field is whoever plays the auto-played setup move
+  // (moves[0]); the solver is the other color.
+  return fen.split(' ')[1] === 'b' ? 'White' : 'Black';
+}
+
+export const ENRICHED: EnrichedPuzzle[] = PUZZLES.map((p) => {
+  const tier = tierOf(p.rating);
+  const motif = puzzleMotif(p);
+  const tacticIds = new Set<TacticFilterId>();
+  for (const [id, set] of TACTIC_THEME_SET_BY_ID) {
+    if (set.size > 0 && p.themes.some((t) => set.has(t))) tacticIds.add(id);
+  }
+  return {
+    ...p,
+    tier,
+    tierAccent: tierAccent(tier),
+    title: puzzleTitle(p),
+    motif,
+    motifStyle: MOTIF_STYLE[motif],
+    tags2: puzzleTags(p, 2),
+    tags3: puzzleTags(p, 3),
+    solverColor: solverColorOf(p.fen),
+    tacticIds,
+  };
+});
+
+/** O(1) id lookup -- replaces `PUZZLES.find(p => p.id === ...)`. */
+export const PUZZLE_BY_ID: ReadonlyMap<string, EnrichedPuzzle> = new Map(
+  ENRICHED.map((p) => [p.id, p]),
+);
 
 // #endregion
 
@@ -400,18 +464,18 @@ export interface PuzzleQuery {
 }
 
 /**
- * PUZZLES filtered by tier / tactic / solved-state, sorted rating-ascending
+ * ENRICHED filtered by tier / tactic / solved-state, sorted rating-ascending
  * (then id for stability). An unrecognized tier or tacticId means "no filter
  * on that axis" -- never "match nothing" -- so a stale route param can't blank
  * the list.
  */
-export function selectPuzzles(q: PuzzleQuery): PuzzleEntry[] {
+export function selectPuzzles(q: PuzzleQuery): EnrichedPuzzle[] {
   const tier = q.tier && TIER_IDS.has(q.tier) ? (q.tier as TierId) : undefined;
   const tacticId = q.tacticId && TACTIC_IDS.has(q.tacticId) ? (q.tacticId as TacticFilterId) : undefined;
 
-  return PUZZLES.filter((p) => {
-    if (tier && tierOf(p.rating) !== tier) return false;
-    if (tacticId && !matchesTactic(p, tacticId)) return false;
+  return ENRICHED.filter((p) => {
+    if (tier && p.tier !== tier) return false;
+    if (tacticId && tacticId !== 'all' && !p.tacticIds.has(tacticId)) return false;
     if (q.unsolvedOnly && isPuzzleSolved(p.id)) return false;
     return true;
   }).sort((a, b) => a.rating - b.rating || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -423,7 +487,7 @@ export function selectPuzzles(q: PuzzleQuery): PuzzleEntry[] {
  * to the plain next puzzle so the "Next Puzzle" button never dead-ends. Returns
  * null only when the pool has one entry or `currentId` isn't in it.
  */
-export function nextPuzzle(currentId: string, q: PuzzleQuery): PuzzleEntry | null {
+export function nextPuzzle(currentId: string, q: PuzzleQuery): EnrichedPuzzle | null {
   const pool = selectPuzzles({ tier: q.tier, tacticId: q.tacticId });
   if (pool.length <= 1) return null;
   const idx = pool.findIndex((p) => p.id === currentId);
@@ -434,7 +498,7 @@ export function nextPuzzle(currentId: string, q: PuzzleQuery): PuzzleEntry | nul
 }
 
 /** First unsolved puzzle for a tier/tactic; null when that set is fully solved or empty. */
-export function firstUnsolved(q: Omit<PuzzleQuery, 'unsolvedOnly'>): PuzzleEntry | null {
+export function firstUnsolved(q: Omit<PuzzleQuery, 'unsolvedOnly'>): EnrichedPuzzle | null {
   return selectPuzzles({ ...q, unsolvedOnly: true })[0] ?? null;
 }
 

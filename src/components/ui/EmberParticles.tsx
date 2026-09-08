@@ -93,7 +93,7 @@ const Ember = memo(function Ember({ durationMs, delayMs, driftPx, style }: Parti
 // #region Styles
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: 'hidden',
   },
   ember: {
