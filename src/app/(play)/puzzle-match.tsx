@@ -104,11 +104,19 @@ function PuzzleMatchInner({
   const statusText =
     game.puzzleStatus === 'solved'
       ? 'Solved!'
-      : game.puzzleStatus === 'failed'
-        ? 'Not quite — try again'
-        : `Find the best move for ${solverColor}`;
+      : game.puzzleStatus === 'revealed'
+        ? 'Solution'
+        : game.puzzleStatus === 'failed'
+          ? 'Not quite — try again'
+          : `Find the best move for ${solverColor}`;
   const statusColor =
-    game.puzzleStatus === 'solved' ? Colors.gold : game.puzzleStatus === 'failed' ? Colors.crimson : Colors.cyan;
+    game.puzzleStatus === 'solved'
+      ? Colors.gold
+      : game.puzzleStatus === 'revealed'
+        ? Colors.chromeMid
+        : game.puzzleStatus === 'failed'
+          ? Colors.crimson
+          : Colors.cyan;
 
   const handleNextPuzzle = () => {
     const next = nextPuzzle(entry.id, { tier, tacticId });
@@ -172,13 +180,22 @@ function PuzzleMatchInner({
                 <RockButton label="Next Puzzle" variant="primary" onPress={handleNextPuzzle} />
               </View>
             </>
+          ) : game.puzzleStatus === 'revealed' ? (
+            <>
+              <View style={styles.actionButton}>
+                <RockButton label="Retry" variant="secondary" onPress={game.resetPuzzle} />
+              </View>
+              <View style={styles.actionButton}>
+                <RockButton label="Next Puzzle" variant="primary" onPress={handleNextPuzzle} />
+              </View>
+            </>
           ) : (
             <>
               <View style={styles.actionButton}>
                 <RockButton label="Hint" variant="primary" onPress={game.revealHint} />
               </View>
               <View style={styles.actionButton}>
-                <RockButton label="Give Up" variant="danger" onPress={game.resetPuzzle} />
+                <RockButton label="Give Up" variant="danger" onPress={game.revealSolution} />
               </View>
             </>
           )}

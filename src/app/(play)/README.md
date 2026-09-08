@@ -84,4 +84,8 @@ files without adding `/play` to the URL/deep-link path.
   (`puzzleProgress.ts`) and still fires `reportPuzzleSolvedForQuests` for the
   daily quest; the solved-state action row offers "Next Puzzle"
   (`nextPuzzle(...)`, `router.replace` to keep the stack flat). Server
-  persistence of puzzle attempts still does not exist.
+  persistence of puzzle attempts still does not exist. "Give Up"
+  (`revealSolution`) plays the rest of the solution out move-by-move into a
+  terminal `'revealed'` status — no interaction, and it never records a solve;
+  the action row then offers Retry / Next Puzzle. "Hint" (`revealHint`) just
+  selects the piece to move (never a move attempt).

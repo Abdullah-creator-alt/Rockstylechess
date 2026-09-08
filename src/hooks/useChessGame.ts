@@ -54,7 +54,10 @@ export interface PuzzleInfo {
   moves: string[];
 }
 
-export type PuzzleStatus = 'playing' | 'solved' | 'failed';
+// 'revealed' = the player hit "Give Up" and the rest of the solution was
+// played out for them. Terminal like 'solved' (no more interaction) but does
+// NOT count as solved for progress.
+export type PuzzleStatus = 'playing' | 'solved' | 'failed' | 'revealed';
 
 type LastMoveSource = 'human' | 'bot' | 'opponent' | null;
 
@@ -347,9 +350,10 @@ export function useChessGame({
   function handleSquarePress(square: Square) {
     const chess = chessRef.current;
     if (chess.isGameOver()) return;
-    // Once a puzzle is solved there's nothing left to do with further taps
-    // -- but a 'failed' guess stays retriable (see handlePuzzleAttempt).
-    if (mode === 'puzzle' && puzzle && snapshot.puzzleStatus === 'solved') return;
+    // Once a puzzle is solved (or its solution was revealed) there's nothing
+    // left to do with further taps -- but a 'failed' guess stays retriable.
+    if (mode === 'puzzle' && puzzle && (snapshot.puzzleStatus === 'solved' || snapshot.puzzleStatus === 'revealed'))
+      return;
     // Online: only this device's own color may act, and only on its turn --
     // the opponent's moves arrive exclusively via the server (see the online
     // effect below), never through local taps.
@@ -410,19 +414,28 @@ export function useChessGame({
     }
   }
 
-  // Resets to the puzzle's starting position (re-applying the opponent's
-  // setup move) -- used by the "Give Up"/retry action on the puzzle screen.
+  // Resets to the puzzle's starting position (re-applying the opponent's setup
+  // move) -- the "Retry" action, and used after a "Give Up" reveal.
   function resetPuzzle() {
     if (!puzzle) return;
     chessRef.current = createPuzzleChess(puzzle);
     ledgerRef.current = deriveLedger(chessRef.current);
     puzzleMoveIndexRef.current = 1;
-    // Otherwise a piece the solver had selected before hitting "Give Up" stays
-    // selected against the reset position -- either a stuck highlight or, worse,
-    // the next tap gets routed as a move from that stale square (spurious
-    // 'failed' attempt + illegal sound).
+    // Otherwise a piece the solver had selected stays selected against the
+    // reset position -- either a stuck highlight or, worse, the next tap gets
+    // routed as a move from that stale square (spurious 'failed' + illegal sound).
     setSelectedSquare(null);
     refresh(null, 'playing');
+  }
+
+  // "Give Up": lock the puzzle in a terminal 'revealed' state; the effect
+  // below then plays out the remaining solution one move at a time so the
+  // player can watch the answer. Never records a solve (that's the point).
+  function revealSolution() {
+    if (mode !== 'puzzle' || !puzzle) return;
+    if (snapshot.puzzleStatus === 'solved' || snapshot.puzzleStatus === 'revealed') return;
+    setSelectedSquare(null);
+    refresh(null, 'revealed');
   }
 
   function resign(resigningColor: 'w' | 'b') {
@@ -609,6 +622,37 @@ export function useChessGame({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, puzzle, snapshot]);
 
+  // "Give Up" reveal: once revealSolution() flips the status to 'revealed',
+  // step through the remaining solution moves one at a time (same cadence as
+  // the scripted-reply effect above) so the player watches the answer play
+  // out. Each move is a single ply from the current position, so ChessBoard
+  // animates it normally.
+  useEffect(() => {
+    if (mode !== 'puzzle' || !puzzle) return;
+    if (snapshot.puzzleStatus !== 'revealed') return;
+    const index = puzzleMoveIndexRef.current;
+    if (index >= puzzle.moves.length) return; // whole line shown
+
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (cancelled) return;
+      try {
+        recordMove(chessRef.current.move(parseUciMove(puzzle.moves[index])));
+        puzzleMoveIndexRef.current += 1;
+      } catch (error) {
+        console.log('Puzzle solution move rejected while revealing', error);
+        puzzleMoveIndexRef.current = puzzle.moves.length;
+      }
+      refresh('opponent', 'revealed');
+    }, 650);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, puzzle, snapshot]);
+
   // Not part of GameSnapshot (like legalTargets) -- purely derived from the
   // puzzle's next expected move, for the puzzle screen's Hint button.
   const hintSquare = useMemo(() => {
@@ -616,7 +660,8 @@ export function useChessGame({
     // attempt is fully retriable, so the hint must stay usable (this guard
     // used to also exclude 'failed', which silently disabled the Hint button
     // until the next correct move).
-    if (mode !== 'puzzle' || !puzzle || snapshot.puzzleStatus === 'solved') return null;
+    if (mode !== 'puzzle' || !puzzle || snapshot.puzzleStatus === 'solved' || snapshot.puzzleStatus === 'revealed')
+      return null;
     const index = puzzleMoveIndexRef.current;
     if (index >= puzzle.moves.length) return null;
     return parseUciMove(puzzle.moves[index]).from;
@@ -663,6 +708,7 @@ export function useChessGame({
     puzzleStatus: snapshot.puzzleStatus,
     hintSquare,
     revealHint,
+    revealSolution,
     selectedSquare,
     legalTargets,
     handleSquarePress,
