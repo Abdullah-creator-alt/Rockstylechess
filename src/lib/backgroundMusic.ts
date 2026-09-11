@@ -4,16 +4,42 @@ import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 const STORAGE_KEY = 'rockstyle-chess:music-enabled';
 
 // Lazily created (not eagerly like soundEffects.ts's SFX players) -- this is
-// a single ~75s looping track, not a tiny bundled clip, so there's no reason
-// to pay its load cost before the menu is actually reached.
-let player: AudioPlayer | null = null;
+// a non-trivial track, not a tiny bundled clip, so there's no reason to pay
+// its load cost before the menu is actually reached.
+//
+// The track is split into a one-shot intro plus a seamlessly loopable tail
+// (two separate files, since expo-audio's `loop` restarts the whole source
+// rather than looping a sub-region). `phase` tracks which one is current;
+// once the intro finishes it flips to 'loop' for the rest of the app's
+// lifetime, so returning to the menu later resumes the loop, not the intro.
+let introPlayer: AudioPlayer | null = null;
+let loopPlayer: AudioPlayer | null = null;
+let phase: 'intro' | 'loop' = 'intro';
+
+function getIntroPlayer(): AudioPlayer {
+  if (!introPlayer) {
+    introPlayer = createAudioPlayer(require('../../assets/sounds/mainMenuFixed_intro.wav'));
+    introPlayer.loop = false;
+    introPlayer.addListener('playbackStatusUpdate', (status) => {
+      if (status.didJustFinish && phase === 'intro') {
+        phase = 'loop';
+        if (wantsToPlay && enabledCache !== false) getLoopPlayer().play();
+      }
+    });
+  }
+  return introPlayer;
+}
+
+function getLoopPlayer(): AudioPlayer {
+  if (!loopPlayer) {
+    loopPlayer = createAudioPlayer(require('../../assets/sounds/mainMenuFixed_loop.wav'));
+    loopPlayer.loop = true;
+  }
+  return loopPlayer;
+}
 
 function getPlayer(): AudioPlayer {
-  if (!player) {
-    player = createAudioPlayer(require('../../assets/sounds/mainMenuBackground.wav'));
-    player.loop = true;
-  }
-  return player;
+  return phase === 'intro' ? getIntroPlayer() : getLoopPlayer();
 }
 
 // Same cached-variable-in-front-of-AsyncStorage pattern as soundEffects.ts.
@@ -55,5 +81,6 @@ export function playMenuMusic(): void {
 // Gameplay screens call this on focus.
 export function stopMenuMusic(): void {
   wantsToPlay = false;
-  player?.pause();
+  introPlayer?.pause();
+  loopPlayer?.pause();
 }
