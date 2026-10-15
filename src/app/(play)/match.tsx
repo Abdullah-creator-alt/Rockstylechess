@@ -23,7 +23,7 @@ import {
   VenueBackdrop,
 } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
-import { getPieceSprites } from '@/components/ui/pieceSprites';
+import { getPieceSprites, type PieceSpriteMap } from '@/components/ui/pieceSprites';
 import { getAvatarImage } from '@/constants/avatars';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { ScreenArt } from '@/constants/screenArt';
@@ -50,16 +50,18 @@ import { DURATION_MS, isDuration, isVenueTier } from '@/lib/onlineMatch';
 // present for mode === 'online'; bot/local always fall through to this.
 const DEFAULT_CLOCK_MS = 5 * 60_000;
 
-// Pieces are always lowercase letters from chess.js's `captured` field --
-// a tiny local glyph map just for rendering the captured-piece trays.
-const CAPTURED_GLYPHS: Record<string, string> = {
-  p: '♟', n: '♞', b: '♝', r: '♜', q: '♛',
-};
+// Captured pieces render as the real piece sprites (same set as the board),
+// ordered by value and overlapped like chess.com so a long capture list stays
+// on one compact line instead of wrapping and growing the player row.
+const CAPTURED_ORDER = ['q', 'r', 'b', 'n', 'p'];
+const CAPTURED_PIECE_SIZE = 26;
+const CAPTURED_PIECE_OVERLAP = 14;
 
 const CAPTURED_TRAY_STYLE = {
-  paddingVertical: 2,
-  backgroundColor: withOpacity(Colors.chromeDark, 0.35),
-  maxWidth: 120,
+  maxWidth: 180,
+  height: CAPTURED_PIECE_SIZE,
+  paddingLeft: CAPTURED_PIECE_OVERLAP,
+  overflow: 'hidden',
 } as const;
 
 // Navigation params: bots.tsx passes mode=bot + difficulty (which of the
@@ -503,6 +505,7 @@ export default function MatchScreen() {
           pulsing={game.turn === opponentColor && !clockFrozen}
           running={!clockFrozen}
           captured={opponentColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
+          pieceSprites={pieceSprites}
         />
 
         <View style={styles.boardStack}>
@@ -557,6 +560,7 @@ export default function MatchScreen() {
           pulsing={game.turn === playerColor && !clockFrozen}
           running={!clockFrozen}
           captured={playerColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
+          pieceSprites={pieceSprites}
         />
       </View>
 
@@ -650,6 +654,7 @@ const PlayerRow = memo(function PlayerRow({
   pulsing = false,
   running,
   captured = [],
+  pieceSprites,
 }: {
   name: string;
   avatarSource?: ImageSourcePropType;
@@ -662,7 +667,14 @@ const PlayerRow = memo(function PlayerRow({
   pulsing?: boolean;
   running: boolean;
   captured?: string[];
+  pieceSprites: PieceSpriteMap;
 }) {
+  // `captured` holds the pieces this row's player has taken -- i.e. the
+  // opposite color's.
+  const capturedColor = color === 'w' ? 'b' : 'w';
+  const sortedCaptured = [...captured].sort(
+    (x, y) => CAPTURED_ORDER.indexOf(x) - CAPTURED_ORDER.indexOf(y),
+  );
   return (
     <View className="flex-row items-center justify-between gap-sm px-sm py-xs">
       <View className="flex-shrink flex-row items-center gap-sm">
@@ -686,11 +698,18 @@ const PlayerRow = memo(function PlayerRow({
       <View className="items-end gap-1">
         <TimerPill getRemaining={getRemaining} color={color} accent={accent} pulsing={pulsing} running={running} />
         {captured.length > 0 ? (
-          <View className="flex-row flex-wrap rounded-full px-sm" style={CAPTURED_TRAY_STYLE}>
-            {captured.map((piece, index) => (
-              <Text key={`${piece}-${index}`} style={{ fontSize: 13, color: accent, opacity: 0.9 }}>
-                {CAPTURED_GLYPHS[piece] ?? ''}
-              </Text>
+          <View className="flex-row items-center" style={CAPTURED_TRAY_STYLE}>
+            {sortedCaptured.map((piece, index) => (
+              <Image
+                key={`${piece}-${index}`}
+                source={pieceSprites[capturedColor + piece]}
+                contentFit="contain"
+                style={{
+                  width: CAPTURED_PIECE_SIZE,
+                  height: CAPTURED_PIECE_SIZE,
+                  marginLeft: -CAPTURED_PIECE_OVERLAP,
+                }}
+              />
             ))}
           </View>
         ) : null}

@@ -1,7 +1,26 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { Platform } from 'react-native';
 
 const STORAGE_KEY = 'rockstyle-chess:music-enabled';
+
+// Browsers block audio autoplay before the user has interacted with the
+// page at all -- expo-audio's web player (AudioModule.web.ts) calls the
+// underlying <audio> element's play() (which returns a Promise) but its own
+// play() wrapper is typed/declared `void` and never catches that promise,
+// so a blocked autoplay surfaces as an unhandled rejection we have no local
+// try/catch or .catch() access to from this file's call sites below. This
+// is the one targeted, filtered way to stop that specific, harmless case
+// from crashing the page as an uncaught error -- anything else still
+// surfaces normally.
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    const message = String(event.reason?.message ?? event.reason);
+    if (event.reason?.name === 'NotAllowedError' || /play method is not allowed|play\(\) failed/i.test(message)) {
+      event.preventDefault();
+    }
+  });
+}
 
 // Lazily created (not eagerly like soundEffects.ts's SFX players) -- this is
 // non-trivial background music, not a tiny bundled clip, so there's no

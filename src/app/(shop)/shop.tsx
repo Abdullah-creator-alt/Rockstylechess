@@ -3,12 +3,13 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIAP, type Purchase, type PurchaseError } from 'react-native-iap';
+import type { Purchase, PurchaseError } from 'react-native-iap';
 
 import { AppIcon, CurrencyIcon, ProgressBar, RockButton, RockCard } from '@/components/ui';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
 import { ALL_IAP_ANDROID_PRODUCT_IDS, androidProductIdForPack, packIdForAndroidProductId } from '@/constants/iapProducts';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { useShopIAP } from '@/hooks/useShopIAP';
 import { verifyPurchase } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import { goUp } from '@/lib/navigation';
@@ -73,7 +74,7 @@ export default function RockShopScreen() {
   // as "just bought this" for an unrelated pack.
   const [purchasingPackId, setPurchasingPackId] = useState<string | null>(null);
 
-  const { connected, products, fetchProducts, requestPurchase, finishTransaction } = useIAP({
+  const { connected, products, fetchProducts, requestPurchase, finishTransaction } = useShopIAP({
     onPurchaseSuccess: async (purchase: Purchase) => {
       const packId = packIdForAndroidProductId(purchase.productId);
       if (!packId || !purchase.purchaseToken) {

@@ -64,3 +64,9 @@ new_ui/
 
 # generated from node_modules/stockfish -- run scripts/generate-stockfish-engine.js
 src/lib/stockfishEngineAssets.ts
+
+# Play Console store-listing assets (icon/feature graphic/screenshots) and the
+# local Playwright tooling used to generate them -- one-time deliverables for
+# manual upload to Play Console, not app content, kept out of the app bundle
+# (assets/) entirely so they can never accidentally ship in the binary.
+/store-assets/

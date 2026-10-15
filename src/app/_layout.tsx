@@ -6,9 +6,9 @@ import { Oswald_600SemiBold } from '@expo-google-fonts/oswald';
 import { useFonts } from 'expo-font';
 import { Stack, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { BackHandler } from 'react-native';
+import { BackHandler, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -36,6 +36,14 @@ const GAMEPLAY_ROUTES = new Set(['/match', '/puzzle-match']);
 // can't cost a hidden screen a reconcile, and returning to a screen is
 // instant. react-native-screens is already a dependency (via expo-router).
 enableFreeze(true);
+
+// react-native-keyboard-controller's native module access isn't web-safe --
+// browsers already handle keyboard-avoiding behavior natively, so this is a
+// pure no-op on web rather than something to find a shim for.
+function KeyboardProviderOrFragment({ children }: { children: ReactNode }) {
+  if (Platform.OS === 'web') return <>{children}</>;
+  return <KeyboardProvider>{children}</KeyboardProvider>;
+}
 
 // Keep the native splash screen visible until fonts are ready, so there's
 // no flash of unstyled text on first launch.
@@ -117,7 +125,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <KeyboardProvider>
+        <KeyboardProviderOrFragment>
           <PlayerProfileProvider>
             <FriendsProvider>
               <ChallengesProvider>
@@ -139,7 +147,7 @@ export default function RootLayout() {
               </ChallengesProvider>
             </FriendsProvider>
           </PlayerProfileProvider>
-        </KeyboardProvider>
+        </KeyboardProviderOrFragment>
         {showSplashReveal && <SplashReveal onDone={() => setShowSplashReveal(false)} />}
       </SafeAreaProvider>
     </GestureHandlerRootView>
