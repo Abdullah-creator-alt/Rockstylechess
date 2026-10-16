@@ -77,6 +77,11 @@ const FRAME_END = { x: 0.9, y: 1 } as const;
 const BEVEL_COLORS = [withOpacity(Colors.chrome, 0.95), withOpacity(Colors.chrome, 0), withOpacity(Colors.bgBase, 0.35)] as const;
 const BEVEL_LOCATIONS = [0, 0.35, 1] as const;
 
+// Outer-side cap (dp) for the 'large' variant -- see ChessBoardProps.variant.
+// Sits above every phone width (the widest is ~430dp) so phones are never
+// clamped by it; it only stops the board ballooning on tablets / wide web.
+const LARGE_MAX_BOARD_SIZE = 440;
+
 function squareToRowCol(square: string): [row: number, col: number] {
   const col = FILES.indexOf(square[0]);
   const row = 8 - Number(square[1]);
@@ -330,6 +335,24 @@ interface ChessBoardProps {
    * `false` -- every non-match caller keeps the White-at-bottom view.
    */
   flipped?: boolean;
+  /**
+   * 'large' is the match screen's roomier fit: the board fills 100% of its
+   * container's width (the caller can bleed the container toward the screen
+   * edges) instead of 98%, with a slimmer bezel and a tighter glow so the
+   * playing surface gets the width the frame used to take. The four corner
+   * rivets are left out -- the slim bezel has no room for them. Everything
+   * inside the frame (pieces, shadows, drag, animations) is derived from the
+   * measured square size, so it scales with the board for free. Defaults to
+   * 'default', which keeps every other screen's original look untouched.
+   */
+  variant?: 'default' | 'large';
+  /**
+   * Upper bound (dp) on the board's outer side. The board is square and sized
+   * from its container's WIDTH, so on a short screen it can outgrow the
+   * vertical room its neighbours leave it -- a caller that knows that room
+   * passes it here. Only consulted by the 'large' variant.
+   */
+  maxSize?: number;
 }
 
 export const ChessBoard = memo(function ChessBoard({
@@ -346,7 +369,14 @@ export const ChessBoard = memo(function ChessBoard({
   theme = DEFAULT_BOARD_THEME,
   pieceSprites = DEFAULT_PIECE_SPRITES,
   flipped = false,
+  variant = 'default',
+  maxSize,
 }: ChessBoardProps) {
+  const large = variant === 'large';
+  // Clamped on BOTH axes: the slot is width-driven with aspectRatio, and a
+  // max-width alone isn't guaranteed to keep the aspect-derived height in step
+  // on every layout engine -- capping the height too keeps it square.
+  const largeCap = Math.min(LARGE_MAX_BOARD_SIZE, maxSize !== undefined && maxSize > 0 ? maxSize : LARGE_MAX_BOARD_SIZE);
   const [gridSize, setGridSize] = useState(0);
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
@@ -627,8 +657,8 @@ export const ChessBoard = memo(function ChessBoard({
 
   return (
     <View style={[styles.boardWrap, style]}>
-      <View style={styles.frameSlot}>
-        <GlowRing color={theme.glowColor} />
+      <View style={large ? [styles.frameSlotLarge, { maxWidth: largeCap, maxHeight: largeCap }] : styles.frameSlot}>
+        <GlowRing color={theme.glowColor} large={large} />
 
         <LinearGradient
           // Brushed-metal frame: the extra mid stops give it a bright top-left
@@ -638,7 +668,7 @@ export const ChessBoard = memo(function ChessBoard({
           locations={FRAME_LOCATIONS}
           start={FRAME_START}
           end={FRAME_END}
-          style={styles.boardFrame}
+          style={large ? [styles.boardFrame, styles.boardFrameLarge] : styles.boardFrame}
         >
           {/* Bevel: a bright inner highlight down the top edge and a dark
               recess at the bottom, so the playfield looks inset into the frame. */}
@@ -646,13 +676,17 @@ export const ChessBoard = memo(function ChessBoard({
             pointerEvents="none"
             colors={BEVEL_COLORS}
             locations={BEVEL_LOCATIONS}
-            style={styles.frameBevel}
+            style={large ? [styles.frameBevel, styles.frameBevelLarge] : styles.frameBevel}
           />
 
-          <Rivet style={{ top: 6, left: 6 }} />
-          <Rivet style={{ top: 6, right: 6 }} />
-          <Rivet style={{ bottom: 6, left: 6 }} />
-          <Rivet style={{ bottom: 6, right: 6 }} />
+          {large ? null : (
+            <>
+              <Rivet style={{ top: 6, left: 6 }} />
+              <Rivet style={{ top: 6, right: 6 }} />
+              <Rivet style={{ bottom: 6, left: 6 }} />
+              <Rivet style={{ bottom: 6, right: 6 }} />
+            </>
+          )}
 
           <View style={styles.gridWrapper} onLayout={handleGridLayout}>
             {/* Sized to the exact 8x8 so the sheen and the drag ghost share the
@@ -766,27 +800,27 @@ export const ChessBoard = memo(function ChessBoard({
 // on Android, so the cyan halo in the reference is built as three concentric
 // rounded layers behind the frame with falling opacity -- a real layered glow
 // that renders identically on both platforms.
-function GlowRing({ color }: { color: string }) {
+function GlowRing({ color, large = false }: { color: string; large?: boolean }) {
   return (
     <>
       <View
         style={[
           styles.glowLayer,
-          styles.glowOuterShape,
+          large ? styles.glowOuterShapeLarge : styles.glowOuterShape,
           { borderColor: withOpacity(color, 0.08), backgroundColor: withOpacity(color, 0.05) },
         ]}
       />
       <View
         style={[
           styles.glowLayer,
-          styles.glowMidShape,
+          large ? styles.glowMidShapeLarge : styles.glowMidShape,
           { borderColor: withOpacity(color, 0.18), backgroundColor: withOpacity(color, 0.09) },
         ]}
       />
       <View
         style={[
           styles.glowLayer,
-          styles.glowInnerShape,
+          large ? styles.glowInnerShapeLarge : styles.glowInnerShape,
           { borderColor: withOpacity(color, 0.4), backgroundColor: withOpacity(color, 0.16) },
         ]}
       />
@@ -1258,6 +1292,12 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     aspectRatio: 1,
   },
+  // 'large' variant: full container width (the max-width/max-height cap is
+  // supplied inline, since it depends on the caller's maxSize).
+  frameSlotLarge: {
+    width: '100%',
+    aspectRatio: 1,
+  },
   boardFrame: {
     flex: 1,
     borderRadius: 16,
@@ -1265,6 +1305,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: withOpacity(Colors.chrome, 0.7),
     boxShadow: `0px 12px 34px ${withOpacity(Colors.bgBase, 0.9)}`,
+  },
+  // Slim bezel: 6px + the 1px border = 7px a side (default is 11px), so the
+  // playfield takes the width the frame gave up. Radius follows the padding.
+  boardFrameLarge: {
+    borderRadius: 12,
+    padding: 6,
   },
   frameBevel: {
     position: 'absolute',
@@ -1274,6 +1320,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 16,
     opacity: 0.5,
+  },
+  frameBevelLarge: {
+    borderRadius: 12,
   },
   glowLayer: {
     position: 'absolute',
@@ -1299,6 +1348,30 @@ const styles = StyleSheet.create({
     right: -3,
     bottom: -3,
     borderRadius: 19,
+  },
+  // Tighter halo for the 'large' variant: the board now sits close to the
+  // screen edges, and a 12px outer ring would be cut off there. Same three
+  // layers and falling opacities, scaled down; radius = frame radius + inset.
+  glowOuterShapeLarge: {
+    top: -6,
+    left: -6,
+    right: -6,
+    bottom: -6,
+    borderRadius: 18,
+  },
+  glowMidShapeLarge: {
+    top: -3,
+    left: -3,
+    right: -3,
+    bottom: -3,
+    borderRadius: 15,
+  },
+  glowInnerShapeLarge: {
+    top: -1,
+    left: -1,
+    right: -1,
+    bottom: -1,
+    borderRadius: 13,
   },
   rivet: {
     position: 'absolute',

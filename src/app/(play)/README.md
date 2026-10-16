@@ -54,6 +54,24 @@ files without adding `/play` to the URL/deep-link path.
   **draw**, not a win (FIDE 6.9 — `src/lib/chessEndgame.ts`, mirrored server-side);
   repetition / 50-move / insufficient-material draws each show their specific reason
   on the result screen.
+  **Board fit.** The board uses `ChessBoard`'s `variant="large"` and bleeds 4px
+  into the column's side padding (`BOARD_SIDE_BLEED`), so its outermost files sit
+  ~15dp from the screen edge — deliberately not flush, to stay clear of most of
+  Android's edge-swipe "back" zone (which would swallow a piece dragged inward
+  from the a/h files and surface the resign prompt). Width alone sizes it, so the
+  strip between the two player rows (`boardArea`, `flex: 1`) is measured and the
+  board is capped to it minus the peek strip and a small gap — before this, a
+  short phone (~640dp) pushed the player's own row/clock under the action bar. The
+  strip's height never depends on the board inside it, so there is no feedback
+  loop; the board stays invisible until that first measurement (no flash at an
+  uncapped size), measurements are ignored while the chat sheet is open (its
+  keyboard can squeeze the screen), and the cap has a floor (`MIN_BOARD_SIZE`)
+  so one odd layout pass can't collapse it.
+  **Captured pieces** are the real piece-set sprites on a grey chip under the
+  player's name (where chess.com puts them), repeats stacked tighter than a change
+  of piece type. The slot is *always* rendered at its full height, even empty: if
+  it only appeared with the first capture, the row would grow then and the board
+  would jump (and, when height-capped, resize) mid-game.
 - `result-placeholder.tsx` — stub destination for Resign until the real Win/Loss
   screen is built.
 - `bots.tsx` — AI opponent gallery, built from `bots_pro_stage_animated`. Each

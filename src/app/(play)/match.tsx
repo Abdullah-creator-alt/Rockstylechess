@@ -2,7 +2,15 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import {
+  BackHandler,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ImageSourcePropType,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -51,18 +59,52 @@ import { DURATION_MS, isDuration, isVenueTier } from '@/lib/onlineMatch';
 const DEFAULT_CLOCK_MS = 5 * 60_000;
 
 // Captured pieces render as the real piece sprites (same set as the board),
-// ordered by value and overlapped like chess.com so a long capture list stays
-// on one compact line instead of wrapping and growing the player row.
+// ordered by value and stacked like chess.com so a long capture list stays on
+// one compact line instead of wrapping and growing the player row. Repeats of
+// the same piece (the pawns) stack tighter than a change of piece type, which
+// keeps even a full 15-piece tray within the name column it sits in.
 const CAPTURED_ORDER = ['q', 'r', 'b', 'n', 'p'];
-const CAPTURED_PIECE_SIZE = 26;
-const CAPTURED_PIECE_OVERLAP = 14;
+const CAPTURED_PIECE_SIZE = 30;
+// Horizontal advance from one piece to the next.
+const CAPTURED_STEP_SAME = 10;
+const CAPTURED_STEP_DIFFERENT = 16;
 
+// The slot is always rendered at this height (see PlayerRow) so a row never
+// grows when the first capture lands. The backing pill only appears once there
+// is something in it. Hugs its pieces (alignSelf) but never outgrows the name
+// column it sits in -- an overlong tray is clipped rather than running under
+// the timer.
 const CAPTURED_TRAY_STYLE = {
-  maxWidth: 180,
+  alignSelf: 'flex-start',
+  maxWidth: '100%',
   height: CAPTURED_PIECE_SIZE,
-  paddingLeft: CAPTURED_PIECE_OVERLAP,
   overflow: 'hidden',
 } as const;
+
+// Mid-grey backing so BOTH colours of captured piece read against the dark
+// venue backdrop: without it the black pieces all but vanish.
+const CAPTURED_TRAY_FILLED_STYLE = {
+  ...CAPTURED_TRAY_STYLE,
+  paddingHorizontal: 3,
+  borderRadius: CAPTURED_PIECE_SIZE / 2,
+  backgroundColor: withOpacity(Colors.chromeDark, 0.7),
+} as const;
+
+// Board fit. The board is square and sized from the screen WIDTH, so the one
+// way it can go wrong is vertically: on a short screen it would overflow the
+// strip between the two player rows. That strip (boardArea) is measured, and
+// the board is capped to it minus what this screen keeps around the board.
+// The always-reserved strip under the board for the peek-mode nav (peekNavSlot).
+const PEEK_NAV_HEIGHT = 44;
+// Breathing room kept above the board and below the peek strip.
+const BOARD_VERTICAL_GAP = 6;
+// Floor for the cap, so a transient/odd layout pass can't collapse the board.
+const MIN_BOARD_SIZE = 200;
+// How far the board bleeds into the column's px-md (12) side padding. Kept
+// small on purpose: the outermost files stay ~15dp from the screen edge, clear
+// of most of Android's edge-swipe "back" zone, which would otherwise swallow a
+// piece dragged inward from the a/h files.
+const BOARD_SIDE_BLEED = 4;
 
 // Navigation params: bots.tsx passes mode=bot + difficulty (which of the
 // four bot engines to use) + color (the "Play As" pick); matchmaking.tsx
@@ -450,6 +492,25 @@ export default function MatchScreen() {
     [actionBarStyle, insets.bottom],
   );
 
+  // Height of the strip between the two player rows, measured so the board can
+  // be capped to it (see BOARD_* above). null until the first layout pass; the
+  // strip is flex:1, so its height never depends on the board inside it and
+  // sizing the board from it can't feed back into itself.
+  const [boardAreaHeight, setBoardAreaHeight] = useState<number | null>(null);
+  const handleBoardAreaLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      // The chat sheet's keyboard can squeeze the screen; don't let that shrink
+      // the board behind it and snap it back on close.
+      if (chatOpen) return;
+      setBoardAreaHeight(Math.max(0, Math.round(event.nativeEvent.layout.height)));
+    },
+    [chatOpen],
+  );
+  const boardMaxSize =
+    boardAreaHeight === null
+      ? undefined
+      : Math.max(MIN_BOARD_SIZE, boardAreaHeight - PEEK_NAV_HEIGHT - BOARD_VERTICAL_GAP * 2);
+
   return (
     <View style={styles.root}>
       <VenueBackdrop venueTier={venueTier} />
@@ -492,7 +553,7 @@ export default function MatchScreen() {
         </Pressable>
       </View>
 
-      <View className="flex-1 justify-between px-md pb-sm">
+      <View className="flex-1 px-md pb-sm">
         <PlayerRow
           name={opponentDisplayName}
           avatarSource={opponentAvatarSource}
@@ -508,44 +569,51 @@ export default function MatchScreen() {
           pieceSprites={pieceSprites}
         />
 
-        <View style={styles.boardStack}>
-          <ChessBoard
-            board={peekActive ? replay.board : game.board}
-            selectedSquare={peekActive ? null : game.selectedSquare}
-            legalTargets={peekActive ? [] : game.legalTargets}
-            checkSquare={peekActive ? replay.checkSquare : game.checkSquare}
-            lastMove={peekActive ? replay.lastMove : game.lastMove}
-            turn={peekActive ? replay.turn : game.turn}
-            flipped={flipBoard}
-            animateLastMove={peekActive ? false : animateOpponentMove}
-            lastMoveSound={peekActive ? null : game.lastMoveSound}
-            // Omitting onSquarePress keeps the board read-only while peeking
-            // -- ChessBoard's own `interactive` gate (tap AND drag) is
-            // `Boolean(onSquarePress)`.
-            onSquarePress={peekActive ? undefined : handleBoardSquarePress}
-            theme={boardTheme}
-            pieceSprites={pieceSprites}
-          />
-          {/* Fixed height, always rendered (even when not peeking) so this
-              reserved strip below the board never appears/disappears and
-              shifts the board's own vertical position when peek mode
-              toggles -- only its contents are conditional. */}
-          <View style={styles.peekNavSlot}>
-            {peekActive ? (
-              <PeekNav
-                onPrev={replay.prev}
-                onNext={replay.next}
-                atStart={replay.plyIndex === 0}
-                atLatest={replay.plyIndex >= replay.totalPlies}
-                label={
-                  replay.totalPlies === 0
-                    ? 'No moves yet'
-                    : replay.plyIndex === 0
-                      ? 'Start'
-                      : `Move ${replay.plyIndex} / ${replay.totalPlies}`
-                }
-              />
-            ) : null}
+        <View style={styles.boardArea} onLayout={handleBoardAreaLayout}>
+          <View style={styles.boardStack}>
+            <ChessBoard
+              variant="large"
+              maxSize={boardMaxSize}
+              // Bled into the column's side padding; invisible until boardArea
+              // has been measured, so it never flashes at an uncapped size.
+              style={boardAreaHeight === null ? styles.boardBleedHidden : styles.boardBleed}
+              board={peekActive ? replay.board : game.board}
+              selectedSquare={peekActive ? null : game.selectedSquare}
+              legalTargets={peekActive ? [] : game.legalTargets}
+              checkSquare={peekActive ? replay.checkSquare : game.checkSquare}
+              lastMove={peekActive ? replay.lastMove : game.lastMove}
+              turn={peekActive ? replay.turn : game.turn}
+              flipped={flipBoard}
+              animateLastMove={peekActive ? false : animateOpponentMove}
+              lastMoveSound={peekActive ? null : game.lastMoveSound}
+              // Omitting onSquarePress keeps the board read-only while peeking
+              // -- ChessBoard's own `interactive` gate (tap AND drag) is
+              // `Boolean(onSquarePress)`.
+              onSquarePress={peekActive ? undefined : handleBoardSquarePress}
+              theme={boardTheme}
+              pieceSprites={pieceSprites}
+            />
+            {/* Fixed height, always rendered (even when not peeking) so this
+                reserved strip below the board never appears/disappears and
+                shifts the board's own vertical position when peek mode
+                toggles -- only its contents are conditional. */}
+            <View style={styles.peekNavSlot}>
+              {peekActive ? (
+                <PeekNav
+                  onPrev={replay.prev}
+                  onNext={replay.next}
+                  atStart={replay.plyIndex === 0}
+                  atLatest={replay.plyIndex >= replay.totalPlies}
+                  label={
+                    replay.totalPlies === 0
+                      ? 'No moves yet'
+                      : replay.plyIndex === 0
+                        ? 'Start'
+                        : `Move ${replay.plyIndex} / ${replay.totalPlies}`
+                  }
+                />
+              ) : null}
+            </View>
           </View>
         </View>
 
@@ -676,8 +744,11 @@ const PlayerRow = memo(function PlayerRow({
     (x, y) => CAPTURED_ORDER.indexOf(x) - CAPTURED_ORDER.indexOf(y),
   );
   return (
-    <View className="flex-row items-center justify-between gap-sm px-sm py-xs">
-      <View className="flex-shrink flex-row items-center gap-sm">
+    // items-start: the name column below is taller than the avatar and the
+    // timer (it carries the capture slot), so top-aligning keeps all three level
+    // whether or not anything has been captured yet.
+    <View className="flex-row items-start justify-between gap-sm px-sm py-xs">
+      <View className="flex-shrink flex-row items-start gap-sm">
         <PlayerAvatar source={avatarSource} emoji={avatarEmoji} size="small" />
         <View className="flex-shrink">
           <View className="flex-row items-center gap-1">
@@ -692,28 +763,40 @@ const PlayerRow = memo(function PlayerRow({
               {rank}
             </Text>
           </View>
-        </View>
-      </View>
-
-      <View className="items-end gap-1">
-        <TimerPill getRemaining={getRemaining} color={color} accent={accent} pulsing={pulsing} running={running} />
-        {captured.length > 0 ? (
-          <View className="flex-row items-center" style={CAPTURED_TRAY_STYLE}>
+          {/* Under the name, where chess.com puts it, sharing the avatar's
+              height instead of stacking under the timer (which made every row
+              ~30px taller). Rendered even while empty: if the slot only
+              appeared with the first capture the row would grow by its height
+              right then, nudging the board (and, when the board is
+              height-capped, resizing it) mid-game. */}
+          <View
+            className="flex-row items-center"
+            style={captured.length > 0 ? CAPTURED_TRAY_FILLED_STYLE : CAPTURED_TRAY_STYLE}
+          >
             {sortedCaptured.map((piece, index) => (
               <Image
                 key={`${piece}-${index}`}
                 source={pieceSprites[capturedColor + piece]}
                 contentFit="contain"
+                // Same reason as the board's own sprites: these are heavy SVGs,
+                // and the default cache only keeps the bytes, not the decode.
+                cachePolicy="memory-disk"
                 style={{
                   width: CAPTURED_PIECE_SIZE,
                   height: CAPTURED_PIECE_SIZE,
-                  marginLeft: -CAPTURED_PIECE_OVERLAP,
+                  marginLeft:
+                    index === 0
+                      ? 0
+                      : (piece === sortedCaptured[index - 1] ? CAPTURED_STEP_SAME : CAPTURED_STEP_DIFFERENT) -
+                        CAPTURED_PIECE_SIZE,
                 }}
               />
             ))}
           </View>
-        ) : null}
+        </View>
       </View>
+
+      <TimerPill getRemaining={getRemaining} color={color} accent={accent} pulsing={pulsing} running={running} />
     </View>
   );
 });
@@ -921,10 +1004,26 @@ const styles = StyleSheet.create({
   boardStack: {
     position: 'relative',
   },
+  // Takes whatever height the two player rows leave and centres the board
+  // (+ its peek strip) in it. Measured by onLayout to cap the board's height.
+  // justifyContent only -- no alignItems, for the reason given above.
+  boardArea: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  // Applied to ChessBoard's wrapper: negative side margins let the board bleed
+  // into the column's px-md padding (see BOARD_SIDE_BLEED).
+  boardBleed: {
+    marginHorizontal: -BOARD_SIDE_BLEED,
+  },
+  boardBleedHidden: {
+    marginHorizontal: -BOARD_SIDE_BLEED,
+    opacity: 0,
+  },
   // Fixed height, always present (see the comment at its call site) -- a
   // plain in-flow row below the board, never an overlay on top of it.
   peekNavSlot: {
-    height: 44,
+    height: PEEK_NAV_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -19,7 +19,20 @@ Lives in `ui/` rather than a `chess/` folder — it's a self-contained primitive
 used by both Match (interactive) and Front Row (static spectate). Omit
 `onSquarePress` and it renders read-only.
 
-Three things about it are easy to break:
+Four things about it are easy to break:
+
+- **Two sizes: `variant="default" | "large"`, plus `maxSize`.** The board is
+  square and sized from its container's *width*, never its height. `default`
+  (98% width, 400 cap, 11px bezel, rivets, 12px glow) is what every screen but
+  Match uses, unchanged. `large` is Match's roomier fit: 100% width up to a 440
+  cap, a 7px bezel, a 6px glow, and **no rivets** (the slim bezel has no room
+  for them). Everything inside the frame — squares, pieces, shadows, drag
+  math, animations — is derived from the one measured `squareSize`, so it all
+  scales together; only the frame chrome is variant-specific. `maxSize` caps the
+  outer side for a caller that knows its vertical room (Match measures the strip
+  between the player rows). It is applied as both `maxWidth` *and* `maxHeight`
+  on the slot, because a width cap alone isn't guaranteed to keep the
+  aspect-ratio-derived height in step on every layout engine.
 
 - **Squares are laid out at an integer pixel size, not `flex: 1`.** Eight flex
   children of a fractional width round independently, so squares end up a pixel
