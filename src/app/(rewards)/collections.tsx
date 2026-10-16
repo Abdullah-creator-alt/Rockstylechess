@@ -3,9 +3,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, type ReactNode } from 'react';
 
 import { SubPageHeader } from '@/components/layout';
-import { AppIcon, BoardSwatch, ChessBoard, CurrencyPill, PieceSwatch, PlayerAvatar } from '@/components/ui';
+import { AppIcon, AvatarClassTabs, BoardSwatch, ChessBoard, CurrencyPill, PieceSwatch, PlayerAvatar } from '@/components/ui';
 import { getPieceSprites } from '@/components/ui/pieceSprites';
-import { AVATARS } from '@/constants/avatars';
+import { getAvatarsByClass, isAvatarOwned, type AvatarClass } from '@/constants/avatars';
 import { BOARD_THEMES, getBoardTheme } from '@/constants/boardThemes';
 import { PIECE_SETS, getPieceSet } from '@/constants/pieceSets';
 import { Colors, withOpacity } from '@/constants/theme';
@@ -26,11 +26,13 @@ export default function CollectionsScreen() {
   const { profile, gems, refresh: refreshProfile } = usePlayerProfile();
   const [activeTab, setActiveTab] = useState<InventoryCategory>('boards');
   const [isMutating, setIsMutating] = useState(false);
+  const [avatarClass, setAvatarClass] = useState<AvatarClass>('garage_band');
 
   const ownedCosmeticIds = profile?.ownedCosmeticIds ?? [];
   const ownedBoards = BOARD_THEMES.filter((t) => !t.locked || ownedCosmeticIds.includes(t.id));
   const ownedPieces = PIECE_SETS.filter((s) => !s.locked || ownedCosmeticIds.includes(s.id));
-  const ownedAvatars = AVATARS.filter((a) => !a.locked);
+  // Garage Band is free; Main Stage / Hall of Fame only once bought in the Forge.
+  const ownedAvatars = getAvatarsByClass(avatarClass).filter((a) => isAvatarOwned(a.id, ownedCosmeticIds));
 
   const equippedBoardId = getBoardTheme(profile?.equippedBoardId).id;
   const equippedPieceId = getPieceSet(profile?.equippedPieceId).id;
@@ -80,7 +82,7 @@ export default function CollectionsScreen() {
         <View className="overflow-hidden rounded-xl" style={{ minHeight: 220, backgroundColor: withOpacity(Colors.bgPanel, 0.6), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}>
           <View className="flex-1 items-center justify-center px-4 py-6">
             {activeTab === 'avatars' ? (
-              <PlayerAvatar source={AVATARS.find((a) => a.id === equippedAvatarId)?.image} size="large" selected />
+              <PlayerAvatar avatarId={equippedAvatarId ?? null} size="large" />
             ) : (
               <View style={{ width: '100%', maxWidth: 220 }}>
                 {activeTab === 'boards' ? (
@@ -97,6 +99,9 @@ export default function CollectionsScreen() {
           <Text className="font-section-header text-section-header uppercase text-text-muted">
             Your {activeTab} ({activeTab === 'boards' ? ownedBoards.length : activeTab === 'pieces' ? ownedPieces.length : ownedAvatars.length})
           </Text>
+          {activeTab === 'avatars' ? (
+            <AvatarClassTabs value={avatarClass} onChange={setAvatarClass} ownedCosmeticIds={ownedCosmeticIds} />
+          ) : null}
           <View className="flex-row flex-wrap gap-3">
             {activeTab === 'boards'
               ? ownedBoards.map((option) => (
@@ -133,11 +138,17 @@ export default function CollectionsScreen() {
                     onPress={() => handleEquip('avatars', option.id)}
                   >
                     <View className="flex-1 items-center justify-center" style={{ backgroundColor: withOpacity(Colors.bgBase, 0.5) }}>
-                      <PlayerAvatar source={option.image} size="small" />
+                      <PlayerAvatar avatarId={option.id} size="small" />
                     </View>
                   </InventoryTile>
                 ))
               : null}
+
+            {activeTab === 'avatars' && ownedAvatars.length === 0 ? (
+              <Text className="font-body-base text-text-muted" style={{ paddingVertical: 12 }}>
+                None yet — unlock them in The Forge.
+              </Text>
+            ) : null}
           </View>
         </View>
       </ScrollView>
@@ -180,7 +191,7 @@ function InventoryTile({
         className="absolute bottom-0 w-full items-center py-1"
         style={{ backgroundColor: withOpacity(Colors.bgPanel, 0.9), borderTopWidth: equipped ? 1 : 0, borderTopColor: withOpacity(Colors.cyan, 0.5) }}
       >
-        <Text className="font-caption text-caption" style={{ color: equipped ? Colors.cyan : Colors.textMuted }}>
+        <Text numberOfLines={1} className="font-caption text-caption" style={{ color: equipped ? Colors.cyan : Colors.textMuted, paddingHorizontal: 2 }}>
           {name}
         </Text>
       </View>

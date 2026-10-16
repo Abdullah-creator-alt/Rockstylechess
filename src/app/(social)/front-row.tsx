@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 
 import { ChessBoard, CountryFlag, PlayerAvatar, ScreenBackdrop } from '@/components/ui';
-import { getAvatarImage } from '@/constants/avatars';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
 import { getLiveMatches, type LiveMatchSummary } from '@/lib/api';
@@ -249,7 +248,7 @@ export default function FrontRowScreen() {
         <>
           <View className="flex-row gap-sm px-lg">
             <View className="flex-1 flex-row items-center gap-sm rounded-lg p-sm" style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chrome, 0.2) }}>
-              <PlayerAvatar source={getAvatarImage(players?.w.avatarId)} size="small" />
+              <PlayerAvatar avatarId={players?.w.avatarId ?? null} size="small" />
               <View>
                 <View className="flex-row items-center gap-1">
                   <CountryFlag code={players?.w.country} size={11} />
@@ -263,7 +262,7 @@ export default function FrontRowScreen() {
               </View>
             </View>
             <View className="flex-1 flex-row-reverse items-center gap-sm rounded-lg p-sm" style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.emberLight, 0.3) }}>
-              <PlayerAvatar source={getAvatarImage(players?.b.avatarId)} size="small" />
+              <PlayerAvatar avatarId={players?.b.avatarId ?? null} size="small" />
               <View style={{ alignItems: 'flex-end' }}>
                 <View className="flex-row-reverse items-center gap-1">
                   <CountryFlag code={players?.b.country} size={11} />

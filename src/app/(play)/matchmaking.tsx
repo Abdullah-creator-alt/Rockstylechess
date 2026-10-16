@@ -6,7 +6,6 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTim
 
 import { AppIcon, PlayerAvatar, RockButton } from '@/components/ui';
 import { BoardAssetPrewarm } from '@/components/ui/BoardAssetPrewarm';
-import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { goUp } from '@/lib/navigation';
@@ -116,7 +115,7 @@ export default function MatchmakingScreen() {
 
       <View className="flex-row items-center gap-xl">
         <View className="items-center gap-sm">
-          <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="large" />
+          <PlayerAvatar avatarId={profile?.avatarId ?? null} size="large" />
           <Text className="font-heading-md text-caption uppercase text-text-primary">{profile?.displayName ?? 'AXL_CHESS'}</Text>
         </View>
 

@@ -249,6 +249,14 @@ Things that aren't obvious the first time:
   `npm ls expo-asset` — it should show one version, not two, before trusting
   a build.
 
+**Faster test builds:** `bash scripts/build-apk.sh` (default `fast`) builds
+`arm64-v8a` only — the native C++ compiles once instead of four times, so it's
+several times quicker and the APK is about half the size. It installs on
+virtually any modern phone but not on old 32-bit phones or x86 emulators. Use
+`bash scripts/build-apk.sh full` for anything you distribute / upload. The ABI
+list is passed as a Gradle flag, so the regenerated `android/gradle.properties`
+is never edited.
+
 Output lands at `android/app/build/outputs/apk/release/app-release.apk` (or
 `.../debug/app-debug.apk` if you built that variant). The release build type
 currently signs with the Expo-generated debug keystore

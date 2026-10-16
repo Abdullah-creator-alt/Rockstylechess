@@ -13,7 +13,7 @@ files without adding `/rewards` to the URL/deep-link path.
   Reanimated rotation), built from `spin_the_45_pro_stage_animated`.
 - `quests.tsx` — Daily/Weekly battle quests, built from `quests_pro_stage_animated`.
 - `achievements.tsx` — Hall of Fame badge grid, built from `achievements_pro_stage_animated`.
-- `collections.tsx` — real inventory of owned boards/piece sets/avatars
+- `collections.tsx` — (avatars are shown per class via `AvatarClassTabs`; owned = free Garage Band + `ownedCosmeticIds`) real inventory of owned boards/piece sets/avatars
   (originally built from `collections_pro_stage_animated`'s collectible-card
   concept, since replaced with the actual cosmetics system: `BOARD_THEMES`/
   `PIECE_SETS`/`AVATARS` filtered by `usePlayerProfile()`'s

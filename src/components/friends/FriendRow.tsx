@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { CountryFlag, PlayerAvatar, RockCard } from '@/components/ui';
-import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import type { FriendPresence } from '@/hooks/useFriends';
 
@@ -38,7 +37,7 @@ export function FriendRow({ displayName, avatarId, country, rating, presence, su
     <RockCard variant="surface" contentPadding={12}>
       <View className="flex-row items-center gap-md">
         <View style={{ position: 'relative' }}>
-          <PlayerAvatar source={getAvatarImage(avatarId)} size="small" />
+          <PlayerAvatar avatarId={avatarId ?? null} size="small" />
           {presence ? (
             <View
               style={{

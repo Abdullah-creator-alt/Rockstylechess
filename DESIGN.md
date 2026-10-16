@@ -23,6 +23,7 @@ neon accents, deep stage-black backgrounds.
 | `gold` | `#FFC23A` | Rewards, currency (chips), highlighted/active card glow |
 | `cyan` | `#2FE6FF` | Primary interactive accent, active nav state, gems currency |
 | `crimson` | `#E11D2A` | Danger/destructive actions |
+| `neon` | `#B84DFF` | Main Stage avatar-class accent (frame, tab, header) |
 
 ### Chrome / Metal Neutrals
 | Token | Hex | Usage |
@@ -264,6 +265,13 @@ currently-chosen avatar rather than layering a separate selection outline.
 
 Priority: `source` → `imageUri` → `emoji` → `♟️`.
 
+- `avatarId` (preferred for any real player avatar) resolves the image **and**
+  draws the avatar's *class frame*: Garage Band = steel ring
+  (`Gradients.avatarRingSteel`), Main Stage = neon-violet ring
+  (`Colors.neon`, `Gradients.avatarRingNeon`), Hall of Fame = gold ring
+  (`Gradients.avatarRingGold`) with a breathing halo and three twinkling
+  sparkles (not shown at `tiny`). `selected` still overrides with the cyan ring.
+  Callers without an `avatarId` (bots, emoji, mock data) keep the ember fire ring.
 - `source` renders a bundled avatar image (`ImageSourcePropType`) covering
   the inner circle — used for the **player avatar badge set**
   ([`src/constants/avatars.ts`](src/constants/avatars.ts)): 12 neon rock

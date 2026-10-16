@@ -17,7 +17,7 @@ files without adding `/auth` to the URL/deep-link path.
 - `sign-up.tsx` — built from the `sign_up_pro_stage_production_ready` Stitch mockup.
   Calls `POST /auth/signup`, stores the returned JWT (`src/lib/authStorage.ts`), then
   continues to `pick-rockstar.tsx`.
-- `pick-rockstar.tsx` — stage name + avatar persona selection. Calls
+- `pick-rockstar.tsx` — stage name + avatar persona selection (class tabs; only free Garage Band avatars are selectable here, Main Stage / Hall of Fame show a "unlocks in The Forge" teaser). Calls
   `PATCH /me/profile` with the choice, then continues to `welcome-reward.tsx`.
 - `welcome-reward.tsx` — end of the onboarding sequence, hands off to `/home`.
 

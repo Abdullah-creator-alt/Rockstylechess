@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, ConfirmModal, CountryFlag, CountryPickerModal, CurrencyPill, PlayerAvatar } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
-import { getAvatarImage } from '@/constants/avatars';
 import { getCountryName } from '@/constants/countries';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
@@ -83,7 +82,7 @@ export default function AccountSecurityScreen() {
       <ScrollView contentContainerClassName="mx-auto w-full max-w-md gap-xl px-margin-mobile py-xl" contentContainerStyle={{ paddingBottom: 48 + insets.bottom }}>
         <View className="overflow-hidden rounded-lg p-md" style={{ backgroundColor: Colors.bgPanel, borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) }}>
           <View className="mx-md my-md flex-row items-center gap-lg">
-            <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="medium" />
+            <PlayerAvatar avatarId={profile?.avatarId ?? null} size="medium" />
             <View>
               <Text className="font-heading-md text-heading-md tracking-wide text-text-primary">{profile?.displayName ?? 'Rockstar'}</Text>
               <View className="mt-1 flex-row items-center gap-xs">

@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SubPageHeader } from '@/components/layout';
 import { AppIcon, CurrencyPill, PlayerAvatar, RockButton, ScreenBackdrop, SectionLabel } from '@/components/ui';
-import { getAvatarImage } from '@/constants/avatars';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
 import { useFriends } from '@/hooks/useFriends';
@@ -276,7 +275,7 @@ export default function MessagesScreen() {
                   <View className="absolute bottom-0 left-0 top-0" style={{ width: 4, backgroundColor: Colors.emberLight }} />
                 ) : null}
                 <View style={{ position: 'relative' }}>
-                  <PlayerAvatar source={getAvatarImage(c.avatarId)} size="small" />
+                  <PlayerAvatar avatarId={c.avatarId ?? null} size="small" />
                   {c.online ? (
                     <View
                       style={{ position: 'absolute', bottom: -1, right: -1, width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: Colors.bgBase, backgroundColor: Colors.cyan }}

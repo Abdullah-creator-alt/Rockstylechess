@@ -9,12 +9,13 @@ import {
   CountryFlag,
   CountryPickerModal,
   CurrencyPill,
+  AvatarClassTabs,
   KeyboardAwareScrollView,
   PlayerAvatar,
   RockButton,
   SectionLabel,
 } from '@/components/ui';
-import { AVATARS, type AvatarOption } from '@/constants/avatars';
+import { getAvatarsByClass, type AvatarClass, type AvatarOption } from '@/constants/avatars';
 import { getCountryName } from '@/constants/countries';
 import { Colors, withOpacity } from '@/constants/theme';
 import { updateProfile } from '@/lib/api';
@@ -24,6 +25,10 @@ export default function PickRockstarScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState('axe');
+  const [avatarClass, setAvatarClass] = useState<AvatarClass>('garage_band');
+  // Shown when a premium avatar is tapped: new accounts own nothing premium, so
+  // it is a teaser of what to save toward, not a purchase (that lives in the Forge).
+  const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [stageName, setStageName] = useState('');
   const [country, setCountry] = useState<string | null>(null);
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
@@ -31,9 +36,14 @@ export default function PickRockstarScreen() {
 
   function handleSelect(option: AvatarOption) {
     if (option.locked) {
-      console.log('Locked rockstar tapped', option.name, option.gemPrice, 'gems');
+      const gate = option.minRating ? ` Reach ${option.minRating.toLocaleString()} rating first.` : '';
+      const price = option.chipPrice
+        ? `${(option.gemPrice ?? 0).toLocaleString()} gems or ${option.chipPrice.toLocaleString()} chips`
+        : `${(option.gemPrice ?? 0).toLocaleString()} gems`;
+      setLockedNotice(`${option.name} unlocks in The Forge for ${price}.${gate}`);
       return;
     }
+    setLockedNotice(null);
     setSelectedId(option.id);
   }
 
@@ -86,14 +96,30 @@ export default function PickRockstarScreen() {
           <Text className="mt-xs font-section-header text-section-header uppercase tracking-widest text-text-muted">Select your stage persona</Text>
         </View>
 
+        <View className="w-full gap-md" style={{ maxWidth: 440 }}>
+          <AvatarClassTabs
+            value={avatarClass}
+            onChange={(next) => {
+              setAvatarClass(next);
+              setLockedNotice(null);
+            }}
+            ownedCosmeticIds={[]}
+          />
+          {lockedNotice ? (
+            <Text className="text-center font-body-base" style={{ color: Colors.gold }}>
+              {lockedNotice}
+            </Text>
+          ) : null}
+        </View>
+
         <View className="w-full flex-row flex-wrap justify-between gap-y-xl" style={{ maxWidth: 440 }}>
-          {AVATARS.map((option) => {
+          {getAvatarsByClass(avatarClass).map((option) => {
             const isSelected = !option.locked && selectedId === option.id;
             return (
               <Pressable key={option.id} onPress={() => handleSelect(option)} className="items-center gap-xs" style={({ pressed }) => [{ width: '47%' }, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
                 <View className="items-center justify-center" style={{ width: 100, height: 100 }}>
                   <View style={{ opacity: option.locked ? 0.5 : 1 }}>
-                    <PlayerAvatar source={option.image} size="large" selected={isSelected} />
+                    <PlayerAvatar avatarId={option.id} size="large" selected={isSelected} />
                   </View>
                   {option.locked ? (
                     <View className="items-center justify-center" style={{ position: 'absolute', top: 0, width: 100, height: 100, borderRadius: 50, backgroundColor: withOpacity(Colors.bgBase, 0.35) }}>
@@ -107,7 +133,7 @@ export default function PickRockstarScreen() {
                   ) : null}
                 </View>
 
-                <Text className="font-section-header" style={{ fontSize: 16, letterSpacing: 1, color: isSelected ? Colors.cyan : Colors.textMuted }}>
+                <Text numberOfLines={1} className="font-section-header" style={{ fontSize: 16, letterSpacing: 1, color: isSelected ? Colors.cyan : Colors.textMuted }}>
                   {option.name}
                 </Text>
 
@@ -128,20 +154,6 @@ export default function PickRockstarScreen() {
             );
           })}
 
-          <View className="items-center gap-xs" style={{ width: '47%' }}>
-            <View
-              className="items-center justify-center"
-              style={{ width: 100, height: 100, borderRadius: 50, borderWidth: 2, borderStyle: 'dashed', borderColor: withOpacity(Colors.chromeDark, 0.6) }}
-            >
-              <MaterialCommunityIcons name="plus" size={32} color={Colors.chromeMid} />
-            </View>
-            <Text className="font-section-header" style={{ fontSize: 16, letterSpacing: 1, color: withOpacity(Colors.textMuted, 0.6) }}>
-              COMING
-            </Text>
-            <Text className="font-section-header" style={{ fontSize: 11, letterSpacing: 1, color: Colors.textMuted }}>
-              SOON
-            </Text>
-          </View>
         </View>
 
         <View className="w-full" style={{ maxWidth: 440 }}>

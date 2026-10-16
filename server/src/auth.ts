@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { Router } from 'express';
 
 import { asyncHandler } from './asyncHandler.js';
+import { FREE_AVATAR_IDS, getPremiumAvatar, UNLOCK_ALL_AVATARS } from './avatars.js';
 import { requireAuth } from './authMiddleware.js';
 import { BOARD_THEMES } from './boardThemes.js';
 import { isValidCountryCode } from './countryCodes.js';
@@ -78,10 +79,41 @@ authRouter.patch(
       updatedAt: new Date(),
     };
     if (typeof displayName === 'string') updates.displayName = displayName.slice(0, 40);
-    if (typeof avatarId === 'string') updates.avatarId = avatarId.slice(0, 40);
-    // Unlike avatarId (an open, blindly-trusted cosmetic-catalog id), country
-    // is a closed ISO-3166-1 alpha-2 set -- reject anything that isn't a real
-    // code rather than storing it blindly.
+    // avatarId is validated against the avatar catalog: the 12 free Garage Band
+    // badges are always equippable, premium (Main Stage / Hall of Fame) ones only
+    // when owned. Re-saving the avatar the player already has is always allowed
+    // so a legacy/unknown stored id can't wedge an unrelated profile edit.
+    if (typeof avatarId === 'string') {
+      const id = avatarId.slice(0, 40);
+      if (!FREE_AVATAR_IDS.has(id)) {
+        const [current] = await db
+          .select({ avatarId: playerProfiles.avatarId })
+          .from(playerProfiles)
+          .where(eq(playerProfiles.userId, req.userId as string))
+          .limit(1);
+        if (current?.avatarId !== id) {
+          if (!getPremiumAvatar(id)) {
+            res.status(400).json({ error: 'invalid-avatar' });
+            return;
+          }
+          if (!UNLOCK_ALL_AVATARS) {
+            const [owned] = await db
+              .select({ itemId: userCosmetics.itemId })
+              .from(userCosmetics)
+              .where(and(eq(userCosmetics.userId, req.userId as string), eq(userCosmetics.itemId, id)))
+              .limit(1);
+            if (!owned) {
+              res.status(400).json({ error: 'avatar-not-owned' });
+              return;
+            }
+          }
+        }
+      }
+      updates.avatarId = id;
+    }
+    // Unlike the open-ended cosmetic ids, country is a closed ISO-3166-1
+    // alpha-2 set -- reject anything that isn't a real code rather than
+    // storing it blindly.
     if (typeof country === 'string') {
       const normalized = country.toUpperCase();
       if (!isValidCountryCode(normalized)) {
@@ -159,7 +191,7 @@ authRouter.get(
 );
 
 // Spend gems or chips (the client's choice) to own a locked cosmetic --
-// currently only board themes are seeded/purchasable this way. See
+// board themes, piece sets and premium avatars are purchasable this way. See
 // purchaseCosmetic for the atomic decrement + ownership-insert transaction.
 authRouter.post(
   '/me/cosmetics/:itemId/unlock',
@@ -177,6 +209,18 @@ authRouter.post(
     }
     if (result.status === 'already-owned') {
       res.status(409).json({ error: 'already-owned' });
+      return;
+    }
+    if (result.status === 'not-purchasable') {
+      res.status(400).json({ error: 'not-purchasable' });
+      return;
+    }
+    if (result.status === 'currency-not-allowed') {
+      res.status(400).json({ error: 'currency-not-allowed', currency: result.currency });
+      return;
+    }
+    if (result.status === 'rating-too-low') {
+      res.status(403).json({ error: 'rating-too-low', required: result.required, current: result.current });
       return;
     }
     if (result.status === 'insufficient-funds') {

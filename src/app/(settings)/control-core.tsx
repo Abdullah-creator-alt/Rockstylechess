@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppIcon, ConfirmModal, CurrencyPill, PlayerAvatar, RockCard } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
 import type { ICONS } from '@/constants/icons';
-import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { useNotifications } from '@/hooks/useNotifications';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
@@ -134,7 +133,7 @@ export default function ControlCoreScreen() {
           <RockCard variant="surface" contentPadding={0}>
             <View className="flex-row items-center justify-between p-md">
               <View className="flex-row items-center gap-md">
-                <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="medium" />
+                <PlayerAvatar avatarId={profile?.avatarId ?? null} size="medium" />
                 <View>
                   <Text className="font-heading-md text-heading-md text-text-primary">{profile?.displayName ?? 'Rockstar'}</Text>
                   <Text className="font-body-sm text-body-sm text-gold">Level {profile?.level ?? 1}</Text>

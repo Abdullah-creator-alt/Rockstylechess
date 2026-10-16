@@ -1,5 +1,6 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 
+import { getPremiumAvatar } from '../avatars.js';
 import { db } from './client.js';
 import { cosmeticItems, playerProfiles, userCosmetics } from './schema/index.js';
 
@@ -8,6 +9,9 @@ export type PurchaseCurrency = 'gems' | 'chips';
 export type PurchaseCosmeticResult =
   | { status: 'not-found' }
   | { status: 'already-owned' }
+  | { status: 'not-purchasable' }
+  | { status: 'currency-not-allowed'; currency: PurchaseCurrency }
+  | { status: 'rating-too-low'; required: number; current: number }
   | { status: 'insufficient-funds'; currency: PurchaseCurrency; price: number; balance: number }
   | { status: 'ok'; currency: PurchaseCurrency; price: number; gems: number; chips: number };
 
@@ -28,6 +32,36 @@ export async function purchaseCosmetic(
   const [item] = await db.select().from(cosmeticItems).where(eq(cosmeticItems.id, itemId)).limit(1);
   if (!item) return { status: 'not-found' };
   const price = priceFor(item, currency);
+
+  // Free (price 0) items are never "bought": a 0 price in either currency would
+  // otherwise insert ownership and debit nothing.
+  if (price <= 0) {
+    if (item.category === 'avatar' && currency === 'chips') {
+      return { status: 'currency-not-allowed', currency };
+    }
+    return { status: 'not-purchasable' };
+  }
+
+  if (item.category === 'avatar') {
+    // The catalog file, not the DB row, is authoritative for the gate -- a
+    // stale seed can't loosen it.
+    const avatar = getPremiumAvatar(item.id);
+    if (!avatar) return { status: 'not-found' };
+    if (currency === 'chips' && avatar.chipPrice === null) {
+      return { status: 'currency-not-allowed', currency };
+    }
+    if (avatar.minRating !== null) {
+      const [profile] = await db
+        .select({ rating: playerProfiles.rating })
+        .from(playerProfiles)
+        .where(eq(playerProfiles.userId, userId))
+        .limit(1);
+      const current = profile?.rating ?? 0;
+      if (current < avatar.minRating) {
+        return { status: 'rating-too-low', required: avatar.minRating, current };
+      }
+    }
+  }
 
   try {
     return await db.transaction(async (tx) => {

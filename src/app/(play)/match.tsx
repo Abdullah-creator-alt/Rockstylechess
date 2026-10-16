@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Text,
   View,
-  type ImageSourcePropType,
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,7 +31,6 @@ import {
 } from '@/components/ui';
 import { StockfishEngine, type StockfishEngineHandle } from '@/components/StockfishEngine';
 import { getPieceSprites, type PieceSpriteMap } from '@/components/ui/pieceSprites';
-import { getAvatarImage } from '@/constants/avatars';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
@@ -44,6 +42,7 @@ import { useMatchReplay } from '@/hooks/useMatchReplay';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { claimMatchReward, reportMatchOutcome } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
+import { capturedPoints, materialLead } from '@/lib/pieceValues';
 import { getSocket } from '@/lib/socket';
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 import { setPendingLocalReplay, type LocalMatchReplay } from '@/lib/localMatchReplayStore';
@@ -76,6 +75,9 @@ const CAPTURED_STEP_DIFFERENT = 16;
 // the timer.
 const CAPTURED_TRAY_STYLE = {
   alignSelf: 'flex-start',
+  // The pill shrinks (clips its pieces) before the material-lead label next
+  // to it does; RN's default flexShrink is 0, so it must be explicit.
+  flexShrink: 1,
   maxWidth: '100%',
   height: CAPTURED_PIECE_SIZE,
   overflow: 'hidden',
@@ -189,7 +191,9 @@ export default function MatchScreen() {
     mode === 'online' ? opponentName || 'OPPONENT' : mode === 'bot' ? botName || 'STORM_KING' : 'LOCAL PLAYER';
   // Online opponents get their picked avatar badge; bots keep their roster
   // emoji, and a same-device "local" opponent falls back to the rock hand.
-  const opponentAvatarSource = mode === 'online' ? getAvatarImage(opponentAvatarId) : undefined;
+  // Online opponents carry a persisted avatar id (drawn with its class frame);
+  // bots / local play pass nothing and fall back to their emoji.
+  const opponentAvatarKey = mode === 'online' ? (opponentAvatarId ?? null) : undefined;
   const opponentAvatarEmoji = mode === 'bot' ? botEmoji || '🤖' : mode === 'online' ? undefined : '🤘';
   const navigatedRef = useRef(false);
   const stockfishRef = useRef<StockfishEngineHandle>(null);
@@ -353,6 +357,9 @@ export default function MatchScreen() {
           reason,
           chipsGranted: String(chipsGranted),
           venueTier,
+          // Piece values each side captured (display only, result screen).
+          myPoints: String(capturedPoints(playerColor === 'w' ? game.capturedByWhite : game.capturedByBlack)),
+          oppPoints: String(capturedPoints(playerColor === 'w' ? game.capturedByBlack : game.capturedByWhite)),
           // Lets the result screen offer "Add Friend" for a signed-in online
           // opponent you just played.
           ...(mode === 'online' && opponentUserId
@@ -409,6 +416,13 @@ export default function MatchScreen() {
   // bot/local: honour the time control picked on the bots screen; fall back to
   // 5 min for online (server-authoritative), private rooms, and direct nav.
   const pickedDuration = isDuration(durationParam) ? durationParam : null;
+  // Net material lead (white minus black), measured on the live board -- not the
+  // peek board, matching the captured trays -- so a promotion counts. Only the
+  // leading side's row shows it (see PlayerRow `lead`).
+  const materialDiff = useMemo(() => materialLead(game.board), [game.board]);
+  const whiteLead = Math.max(0, materialDiff);
+  const blackLead = Math.max(0, -materialDiff);
+
   const initialClockMs = useMemo(() => {
     if (mode === 'online' && Number.isFinite(parsedClockW) && Number.isFinite(parsedClockB)) {
       return { w: parsedClockW, b: parsedClockB };
@@ -556,7 +570,7 @@ export default function MatchScreen() {
       <View className="flex-1 px-md pb-sm">
         <PlayerRow
           name={opponentDisplayName}
-          avatarSource={opponentAvatarSource}
+          avatarId={opponentAvatarKey}
           avatarEmoji={opponentAvatarEmoji}
           countryCode={mode === 'online' ? (opponentCountry ?? null) : null}
           rank="GRANDMASTER (2150)"
@@ -566,6 +580,7 @@ export default function MatchScreen() {
           pulsing={game.turn === opponentColor && !clockFrozen}
           running={!clockFrozen}
           captured={opponentColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
+          lead={opponentColor === 'w' ? whiteLead : blackLead}
           pieceSprites={pieceSprites}
         />
 
@@ -619,7 +634,7 @@ export default function MatchScreen() {
 
         <PlayerRow
           name={profile?.displayName ?? 'AXL_CHESS'}
-          avatarSource={getAvatarImage(profile?.avatarId)}
+          avatarId={profile?.avatarId ?? null}
           countryCode={profile?.country ?? null}
           rank="PRO (2145)"
           getRemaining={clock.getRemaining}
@@ -628,6 +643,7 @@ export default function MatchScreen() {
           pulsing={game.turn === playerColor && !clockFrozen}
           running={!clockFrozen}
           captured={playerColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
+          lead={playerColor === 'w' ? whiteLead : blackLead}
           pieceSprites={pieceSprites}
         />
       </View>
@@ -712,7 +728,7 @@ export default function MatchScreen() {
 
 const PlayerRow = memo(function PlayerRow({
   name,
-  avatarSource,
+  avatarId,
   avatarEmoji,
   countryCode = null,
   rank,
@@ -722,10 +738,11 @@ const PlayerRow = memo(function PlayerRow({
   pulsing = false,
   running,
   captured = [],
+  lead = 0,
   pieceSprites,
 }: {
   name: string;
-  avatarSource?: ImageSourcePropType;
+  avatarId?: string | null;
   avatarEmoji?: string;
   countryCode?: string | null;
   rank: string;
@@ -735,6 +752,8 @@ const PlayerRow = memo(function PlayerRow({
   pulsing?: boolean;
   running: boolean;
   captured?: string[];
+  /** Net material lead in points; > 0 only on the side that is ahead. */
+  lead?: number;
   pieceSprites: PieceSpriteMap;
 }) {
   // `captured` holds the pieces this row's player has taken -- i.e. the
@@ -749,7 +768,7 @@ const PlayerRow = memo(function PlayerRow({
     // whether or not anything has been captured yet.
     <View className="flex-row items-start justify-between gap-sm px-sm py-xs">
       <View className="flex-shrink flex-row items-start gap-sm">
-        <PlayerAvatar source={avatarSource} emoji={avatarEmoji} size="small" />
+        <PlayerAvatar avatarId={avatarId} emoji={avatarEmoji} size="small" />
         <View className="flex-shrink">
           <View className="flex-row items-center gap-1">
             <CountryFlag code={countryCode} size={12} />
@@ -769,6 +788,7 @@ const PlayerRow = memo(function PlayerRow({
               appeared with the first capture the row would grow by its height
               right then, nudging the board (and, when the board is
               height-capped, resizing it) mid-game. */}
+          <View style={styles.capturedRow}>
           <View
             className="flex-row items-center"
             style={captured.length > 0 ? CAPTURED_TRAY_FILLED_STYLE : CAPTURED_TRAY_STYLE}
@@ -792,6 +812,12 @@ const PlayerRow = memo(function PlayerRow({
                 }}
               />
             ))}
+          </View>
+          {/* Material lead, chess.com style. Lives inside the tray row (which is
+              already a fixed CAPTURED_PIECE_SIZE tall), so it can never change
+              the row's height -- and therefore the board's. flexShrink 0: if the
+              tray is overlong the pieces clip, never this number. */}
+          {lead > 0 ? <Text style={styles.materialLead}>+{lead}</Text> : null}
           </View>
         </View>
       </View>
@@ -992,6 +1018,10 @@ const styles = StyleSheet.create({
   wordmark: { fontSize: 16, fontStyle: 'italic', letterSpacing: 0.5 },
   playerName: { fontSize: 14 },
   playerRank: { fontSize: 10 },
+  // Tray pill + lead label side by side. minWidth 0 lets the pill (not the
+  // label) be the thing that shrinks inside the name column.
+  capturedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '100%', height: CAPTURED_PIECE_SIZE },
+  materialLead: { flexShrink: 0, fontFamily: Fonts.heading, fontSize: 12, color: Colors.gold },
   actionLabel: { fontSize: 13 },
   actionBadge: { top: -4, right: -4, minWidth: 16, height: 16, backgroundColor: Colors.emberLight },
   actionBadgeText: { fontSize: 9, color: Colors.bgBase },

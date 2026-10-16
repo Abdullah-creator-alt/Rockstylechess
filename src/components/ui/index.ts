@@ -11,6 +11,8 @@ export { CurrencyIcon } from './CurrencyIcon';
 export { PlayerAvatar } from './PlayerAvatar';
 export type { AvatarSize } from './PlayerAvatar';
 
+export { AvatarClassTabs } from './AvatarClassTabs';
+
 export { SectionLabel } from './SectionLabel';
 
 export { ProgressBar } from './ProgressBar';

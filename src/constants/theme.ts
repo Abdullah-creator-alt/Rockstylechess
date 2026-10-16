@@ -14,6 +14,9 @@ export const Colors = {
   gold: '#FFC23A',
   cyan: '#2FE6FF',
   crimson: '#E11D2A',
+  // Main Stage avatar-class accent (neon violet) -- distinct from the cyan
+  // "selected" ring and the gold Hall of Fame frame.
+  neon: '#B84DFF',
 
   // Chrome / metal neutrals
   chrome: '#F1F3F7',
@@ -110,6 +113,11 @@ export const Gradients = {
   cyanButton: ['#9CF0FF', Colors.cyan, '#006470'] as const,
   dangerButton: ['#FF4D58', Colors.crimson, '#991019'] as const,
   avatarRing: [Colors.ember, Colors.gold, Colors.crimson, Colors.ember] as const,
+  // Avatar class frames (PlayerAvatar `avatarId`): plain steel for Garage Band,
+  // neon violet for Main Stage, polished gold for Hall of Fame.
+  avatarRingSteel: ['#E6EAF0', Colors.chromeMid, '#7C8390', Colors.chromeMid] as const,
+  avatarRingNeon: ['#E3B8FF', Colors.neon, '#5A1E96', Colors.neon] as const,
+  avatarRingGold: ['#FFF1B8', Colors.gold, '#A9741A', Colors.gold, '#FFF1B8'] as const,
   // new_ui's `gradients.cardSurface` -- vertical bgPanel@0.9 -> bgBase@0.95
   // (raw rgba: withOpacity isn't defined yet at this point in the file),
   // used by RockCard's `surface` variant.

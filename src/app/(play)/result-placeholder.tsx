@@ -69,6 +69,8 @@ export default function ResultScreen() {
     outcome: outcomeParam,
     reason,
     chipsGranted: chipsGrantedParam,
+    myPoints: myPointsParam,
+    oppPoints: oppPointsParam,
     opponentUserId,
     opponentName,
     venueTier: venueTierParam,
@@ -76,6 +78,8 @@ export default function ResultScreen() {
     outcome?: string;
     reason?: string;
     chipsGranted?: string;
+    myPoints?: string;
+    oppPoints?: string;
     opponentUserId?: string;
     opponentName?: string;
     venueTier?: string;
@@ -158,6 +162,10 @@ export default function ResultScreen() {
   // match.tsx always passes this (the real, just-granted amount) -- the
   // reward table fallback only covers reaching this screen some other way
   // (e.g. direct navigation during development).
+  // Piece values each side captured (match.tsx). Absent -> no line at all.
+  const myPoints = myPointsParam !== undefined ? Number(myPointsParam) : NaN;
+  const oppPoints = oppPointsParam !== undefined ? Number(oppPointsParam) : NaN;
+  const showPoints = Number.isFinite(myPoints) && Number.isFinite(oppPoints);
   const parsedChipsGranted = Number(chipsGrantedParam);
   const chips = Number.isFinite(parsedChipsGranted) ? parsedChipsGranted : MATCH_CHIP_REWARDS[outcome];
   const chipsWon = useCountUp(chips);
@@ -211,6 +219,12 @@ export default function ResultScreen() {
             </View>
           ) : null}
         </View>
+
+        {showPoints ? (
+          <Text className="mt-sm font-caption text-caption text-text-muted">
+            Captured {myPoints} pts · Lost {oppPoints} pts
+          </Text>
+        ) : null}
       </RockCard>
 
       <View className="w-full gap-md" style={{ maxWidth: 320 }}>

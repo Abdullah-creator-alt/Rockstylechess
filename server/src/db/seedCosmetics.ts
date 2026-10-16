@@ -1,5 +1,6 @@
 import '../env.js';
 
+import { PREMIUM_AVATARS } from '../avatars.js';
 import { BOARD_THEMES } from '../boardThemes.js';
 import { PIECE_SETS } from '../pieceSets.js';
 import { db } from './client.js';
@@ -16,17 +17,43 @@ import { cosmeticItems } from './schema/index.js';
 // migration for a single extra int. See the board-theme-purchases plan doc
 // for why.
 async function main() {
+  // Premium avatars only -- the 12 free Garage Band badges stay implicit (see
+  // avatars.ts). Hall of Fame has no chip price (gems only) and a rating gate;
+  // both ride along in metadata, which purchaseCosmetic reads.
   const catalog = [
-    ...BOARD_THEMES.map((theme) => ({ ...theme, category: 'board' as const })),
-    ...PIECE_SETS.map((set) => ({ ...set, category: 'piece' as const })),
+    ...BOARD_THEMES.map((theme) => ({
+      ...theme,
+      category: 'board' as const,
+      metadata: { chipPrice: theme.chipPrice } as Record<string, unknown>,
+    })),
+    ...PIECE_SETS.map((set) => ({
+      ...set,
+      category: 'piece' as const,
+      metadata: { chipPrice: set.chipPrice } as Record<string, unknown>,
+    })),
+    ...PREMIUM_AVATARS.map((avatar) => ({
+      ...avatar,
+      category: 'avatar' as const,
+      metadata: {
+        chipPrice: avatar.chipPrice,
+        class: avatar.class,
+        rarity: avatar.rarity,
+        minRating: avatar.minRating,
+      } as Record<string, unknown>,
+    })),
   ];
+  const ids = new Set<string>();
+  for (const entry of catalog) {
+    if (ids.has(entry.id)) throw new Error(`Duplicate cosmetic id in catalog: ${entry.id}`);
+    ids.add(entry.id);
+  }
   for (const entry of catalog) {
     const row = {
       id: entry.id,
       category: entry.category,
       name: entry.name,
       gemPrice: entry.gemPrice,
-      metadata: { chipPrice: entry.chipPrice },
+      metadata: entry.metadata,
     };
     await db
       .insert(cosmeticItems)

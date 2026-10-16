@@ -3,7 +3,6 @@ import { Modal, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { AppIcon, PlayerAvatar, RockButton } from '@/components/ui';
-import { getAvatarImage } from '@/constants/avatars';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
 import { useChallenges } from '@/hooks/useChallenges';
 
@@ -59,7 +58,7 @@ export function ChallengeModals() {
       <Modal visible={incoming !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={() => respondToChallenge(false)}>
         {incoming ? (
           <ModalCard>
-            <PlayerAvatar source={getAvatarImage(incoming.from.avatarId)} size="large" />
+            <PlayerAvatar avatarId={incoming.from.avatarId ?? null} size="large" />
             <Text style={{ marginTop: Spacing.md, textAlign: 'center', fontSize: 18, fontWeight: '600', color: Colors.textPrimary }}>
               {incoming.from.displayName ?? 'A friend'}
             </Text>
@@ -96,7 +95,7 @@ export function ChallengeModals() {
       <Modal visible={outgoing !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={dismissOutgoing}>
         {outgoing ? (
           <ModalCard>
-            <PlayerAvatar source={getAvatarImage(null)} size="large" spinning={outgoing.status === 'pending'} />
+            <PlayerAvatar avatarId={null} size="large" spinning={outgoing.status === 'pending'} />
             <Text style={{ marginTop: Spacing.md, textAlign: 'center', fontSize: 18, fontWeight: '600', color: Colors.textPrimary }}>
               {outgoing.displayName}
             </Text>

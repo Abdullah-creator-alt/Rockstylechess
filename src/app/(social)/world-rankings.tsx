@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FriendRow } from '@/components/friends/FriendRow';
 import { AppIcon, CountryFlag, CurrencyPill, PlayerAvatar, RockButton, RockCard } from '@/components/ui';
-import { getAvatarImage } from '@/constants/avatars';
 import { Colors, withOpacity } from '@/constants/theme';
 import { useFriends } from '@/hooks/useFriends';
 import { getLeaderboard, getMyProfile, getMyRank, type LeaderboardEntry, type PlayerProfile } from '@/lib/api';
@@ -114,7 +113,7 @@ export default function WorldRankingsScreen() {
         style={{ paddingTop: insets.top + 12, gap: 8 }}
       >
         <View className="flex-shrink flex-row items-center gap-sm">
-          <PlayerAvatar source={getAvatarImage(myProfile?.avatarId)} size="small" />
+          <PlayerAvatar avatarId={myProfile?.avatarId ?? null} size="small" />
           <Text
             className="font-display-hero uppercase text-cyan"
             style={{ fontSize: 16, textShadowColor: withOpacity(Colors.cyan, 0.3), textShadowRadius: 5, textShadowOffset: { width: 0, height: 0 } }}
@@ -217,7 +216,7 @@ export default function WorldRankingsScreen() {
                         {rank === 1 ? <AppIcon name="workspace_premium" size={28} color={Colors.gold} /> : null}
 
                         <View>
-                          <PlayerAvatar source={getAvatarImage(entry.avatarId)} size={rank === 1 ? 'medium' : 'small'} />
+                          <PlayerAvatar avatarId={entry.avatarId ?? null} size={rank === 1 ? 'medium' : 'small'} />
                           <View
                             className="absolute -bottom-1 -right-1 items-center justify-center rounded-full"
                             style={{ width: rank === 1 ? 24 : 20, height: rank === 1 ? 24 : 20, backgroundColor: accent, borderWidth: 1.5, borderColor: Colors.bgBase }}
@@ -268,7 +267,7 @@ export default function WorldRankingsScreen() {
                         <Text className="w-6 text-center font-display-hero text-text-muted" style={{ fontSize: 20 }}>
                           {index + 4}
                         </Text>
-                        <PlayerAvatar source={getAvatarImage(entry.avatarId)} size="small" />
+                        <PlayerAvatar avatarId={entry.avatarId ?? null} size="small" />
                         <View className="flex-1">
                           <View className="flex-row items-center gap-1">
                             <CountryFlag code={entry.country} size={12} />
@@ -322,7 +321,7 @@ export default function WorldRankingsScreen() {
                     <Text className="w-8 text-center font-display-hero" style={{ fontSize: 24, color: Colors.emberLight }}>
                       {myRank.rank}
                     </Text>
-                    <PlayerAvatar source={getAvatarImage(myProfile.avatarId)} size="medium" />
+                    <PlayerAvatar avatarId={myProfile.avatarId ?? null} size="medium" />
                     <View className="flex-1">
                       <View className="flex-row items-center gap-1">
                         <CountryFlag code={myProfile.country} size={12} />

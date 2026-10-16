@@ -9,7 +9,6 @@ import { FriendRow, RowAction } from '@/components/friends/FriendRow';
 import { SubPageHeader } from '@/components/layout';
 import { ReportPlayerModal } from '@/components/social/ReportPlayerModal';
 import { AppIcon, ConfirmModal, CountryFlag, CurrencyPill, KeyboardAwareScrollView, PlayerAvatar, RockButton, RockCard, SectionLabel } from '@/components/ui';
-import { getAvatarImage } from '@/constants/avatars';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
 import { useChallenges } from '@/hooks/useChallenges';
 import { useFriends } from '@/hooks/useFriends';
@@ -198,7 +197,7 @@ export default function FriendsScreen() {
           {lookup.status === 'found' ? (
             <RockCard variant="surface" contentPadding={12}>
               <View className="flex-row items-center gap-md">
-                <PlayerAvatar source={getAvatarImage(lookup.user.avatarId)} size="small" />
+                <PlayerAvatar avatarId={lookup.user.avatarId ?? null} size="small" />
                 <View className="flex-1">
                   <View className="flex-row items-center gap-1">
                     <CountryFlag code={lookup.user.country} size={12} />

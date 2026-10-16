@@ -67,6 +67,14 @@ files without adding `/play` to the URL/deep-link path.
   uncapped size), measurements are ignored while the chat sheet is open (its
   keyboard can squeeze the screen), and the cap has a floor (`MIN_BOARD_SIZE`)
   so one odd layout pass can't collapse it.
+  **Piece values.** The side ahead on material shows a gold `+N` after its captured
+  pieces (P1 N3 B3 R5 Q9, `src/lib/pieceValues.ts`). The lead is measured on the
+  live *board*, not from the capture lists, so a promotion counts (pawn to queen is
+  +8) like chess.com; it is hidden when level or behind. It sits inside the tray
+  row, which is already a fixed height, so it can't move the board; if the tray is
+  overlong the pieces clip, never the number. The result screen gets
+  `myPoints`/`oppPoints` (total value each side captured) as route params and shows
+  "Captured N pts · Lost M pts" when they are present.
   **Captured pieces** are the real piece-set sprites on a grey chip under the
   player's name (where chess.com puts them), repeats stacked tighter than a change
   of piece type. The slot is *always* rendered at its full height, even empty: if

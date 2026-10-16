@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppIcon } from '@/components/ui/AppIcon';
 import { CurrencyPill } from '@/components/ui/CurrencyPill';
 import { PlayerAvatar } from '@/components/ui/PlayerAvatar';
-import { getAvatarImage } from '@/constants/avatars';
 import { Colors } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 
@@ -25,7 +24,7 @@ export function TopAppBar() {
       }}
     >
       <Pressable onPress={() => router.dismissTo('/iron-id')} className="flex-row items-center gap-sm">
-        <PlayerAvatar source={getAvatarImage(profile?.avatarId)} size="small" />
+        <PlayerAvatar avatarId={profile?.avatarId ?? null} size="small" />
         <View>
           <Text className="font-heading-md text-heading-md leading-none text-text-primary">
             {profile?.displayName ?? 'Guest'}

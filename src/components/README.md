@@ -13,6 +13,16 @@ Shared, reusable UI building blocks — not full screens.
   engine (see `src/lib/stockfishProtocol.ts`) inside a hidden WebView for
   the two Stockfish-tier bots. Mounted by `(play)/match.tsx`.
 
+## PlayerAvatar / AvatarClassTabs
+
+`PlayerAvatar`'s `avatarId` prop is the way to draw a real player avatar: it
+resolves the image and the class frame (steel / neon / gold, see `DESIGN.md`)
+together, so a frame can never disagree with the art. Classes, prices, rarity
+bands and rating gates are generated into `src/constants/avatarImages.generated.ts`
+and `server/src/avatarCatalog.generated.ts` by `scripts/gen-avatar-catalog.mjs` —
+edit the script, not the generated files. `AvatarClassTabs` is the shared
+3-tab (owned/total) picker header; a grid never mixes classes.
+
 ## ChessBoard
 
 Lives in `ui/` rather than a `chess/` folder — it's a self-contained primitive

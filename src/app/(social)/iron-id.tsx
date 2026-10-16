@@ -6,7 +6,6 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, CurrencyPill, PlayerAvatar, ProgressBar, RockButton, RockCard } from '@/components/ui';
-import { getAvatarImage } from '@/constants/avatars';
 import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
 import { useFriends } from '@/hooks/useFriends';
@@ -166,7 +165,7 @@ export default function IronIdScreen() {
         >
           <RockCard variant="surface">
             <View className="items-center gap-sm">
-              <PlayerAvatar source={getAvatarImage(profile.avatarId)} size="large" level={profile.level} />
+              <PlayerAvatar avatarId={profile.avatarId ?? null} size="large" level={profile.level} />
               <Text className="font-heading-md text-heading-md uppercase tracking-wide text-cyan">
                 {profile.displayName ?? 'Player'}
               </Text>

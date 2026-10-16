@@ -86,6 +86,21 @@ chips ones in `matchRewards.ts` (`MATCH_XP_REWARDS`). The curve itself is
 mirrored read-only in `src/lib/leveling.ts` on the client (display math
 only, no mutation helper) -- keep both files in sync if it changes.
 
+## Avatar classes (premium cosmetics)
+
+Avatars come in three classes: **Garage Band** (the 12 original badges — free and
+implicit, never rows in `cosmetic_items`), **Main Stage** (41, gems *or* chips) and
+**Hall of Fame** (24, gems only **and** a rating gate). Catalog: `src/avatars.ts` +
+generated `src/avatarCatalog.generated.ts` (edit prices/bands/gates in
+`../scripts/gen-avatar-catalog.mjs`, which also writes the client mirror). Seeded
+as `category: 'avatar'` by `seed:cosmetics` (run `seed:cosmetics:remote` after any
+catalog change; no schema migration involved). Rules enforced here, not in the app:
+`PATCH /me/profile` rejects an `avatarId` that is unknown (`invalid-avatar`) or
+premium-and-unowned (`avatar-not-owned`); `POST /me/cosmetics/:id/unlock` adds
+`currency-not-allowed` (Hall of Fame + chips), `rating-too-low` (403, with
+`required`/`current`, gate read from `player_profiles.rating` at purchase time) and
+`not-purchasable` (price 0). Once owned an avatar is kept even if rating drops.
+
 ## Local development vs. production
 
 Postgres 16 runs locally on this machine as a system service (not Docker --
