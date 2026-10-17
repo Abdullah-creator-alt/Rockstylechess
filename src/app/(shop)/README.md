@@ -8,6 +8,11 @@ files without adding `/shop` to the URL/deep-link path.
 
 - `shop.tsx` — the Rock Shop, built from the `rock_shop_pro_stage_animated` Stitch
   mockup (chosen over the `rock_shop_gear_gold` variant — see chat history for why).
+  The Chips tab also holds two ad-related cards: **Remove Ads** (one-time
+  non-consumable `remove_ads` purchase: verified server-side, acknowledged but never
+  consumed, flips `player_profiles.ads_removed`; has a "Restore purchase" link) and
+  **Free Chips** (a `RewardedAdButton`, +100 chips, 3/day — this replaced the old
+  "Stadium Vault" Coming-Soon claim tile). See "Ads" in the root `README.md`.
 - `forge.tsx` — board/piece/avatar customization. The Avatars tab is split into
   three **classes** (`AvatarClassTabs`: Garage Band free, Main Stage gems-or-chips,
   Hall of Fame gems-only + a rating gate); tapping an unowned premium avatar opens

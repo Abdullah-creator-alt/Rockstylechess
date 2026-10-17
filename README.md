@@ -299,6 +299,30 @@ real release keystore before shipping to the Play Store.
   Express route handler is similarly wrapped (`server/src/asyncHandler.ts`)
   so a database outage can't take the whole process down.
 
+## Ads
+
+AdMob via `react-native-google-mobile-ads` (pinned to the 16.x line — 17.x needs React
+Native 0.86+). Everything runs on **Google's public test IDs** until a real AdMob account
+exists: the test *app* id is in `app.json`'s plugin entry, the test *unit* ids are the
+defaults in `src/lib/ads/adsConfig.ts`. To go live, replace the `androidAppId` in
+`app.json`, set `EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID` / `EXPO_PUBLIC_ADMOB_REWARDED_ID`,
+turn on `ADS_REQUIRE_SSV` on the server, and rebuild the APK — no code change. Never
+upload a Play Store build that still uses test ids.
+
+- **Placements:** rewarded — Shop "Free Chips", Spin "extra spin", Daily Bonus "claim x2";
+  interstitial — leaving the result screen (every 3rd match) and "Next Puzzle" (every 5th
+  solve). No banners, nothing during a match. The whitelist lives in `src/lib/ads/types.ts`.
+- **Wrapper:** `src/lib/ads/` is the only code that imports the SDK (`index.web.ts` is the
+  no-op web stub). It runs the Google UMP consent flow, starts the SDK after the splash,
+  preloads one interstitial + one rewarded ad, pauses menu music while an ad is up, and
+  never blocks navigation. Settings shows "Privacy & Ad Choices" only where consent
+  rules require it (EEA/UK).
+- **Remove Ads** (Shop → Chips): one-time purchase that switches off interstitials
+  (`useAdsEnabled`); rewarded ads stay because the player opts into them. It must exist
+  in Play Console as a one-time product with id `remove_ads`.
+- Native module → needs `npx expo prebuild -p android` and a rebuild; not in Expo Go.
+  Server rules: `server/README.md` → "Ads".
+
 ## Scripts
 
 | Command | Where | What |

@@ -5,12 +5,19 @@ import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Purchase, PurchaseError } from 'react-native-iap';
 
-import { AppIcon, CurrencyIcon, ProgressBar, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyIcon, ProgressBar, RewardedAdButton, RockButton, RockCard } from '@/components/ui';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
-import { ALL_IAP_ANDROID_PRODUCT_IDS, androidProductIdForPack, packIdForAndroidProductId } from '@/constants/iapProducts';
+import {
+  ALL_IAP_ANDROID_PRODUCT_IDS,
+  androidProductIdForPack,
+  packIdForAndroidProductId,
+  REMOVE_ADS_ANDROID_PRODUCT_ID,
+  REMOVE_ADS_PACK_ID,
+} from '@/constants/iapProducts';
+import { useAdStatus } from '@/hooks/useAdStatus';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { useShopIAP } from '@/hooks/useShopIAP';
-import { verifyPurchase } from '@/lib/api';
+import { redeemFreeChipsAd, verifyPurchase } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import { goUp } from '@/lib/navigation';
 
@@ -19,7 +26,6 @@ interface ChipPack {
   amount: string;
   name: string;
   fallbackPrice: string;
-  isClaim?: boolean;
   highlighted?: boolean;
   badge?: string;
 }
@@ -40,7 +46,6 @@ const CHIP_PACKS: ChipPack[] = [
     badge: 'HOT',
   },
   { id: 'headliner-chest', amount: '50,000', name: 'Headliner Chest', fallbackPrice: '$24.99' },
-  { id: 'stadium-vault', amount: 'Stadium Vault', name: 'Unlimited Energy', fallbackPrice: 'Claim', isClaim: true },
 ];
 
 interface GemPack {
@@ -67,15 +72,21 @@ export default function RockShopScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<ShopTab>('chips');
-  const { refresh: refreshProfile } = usePlayerProfile();
+  const { status: profileStatus, profile, refresh: refreshProfile } = usePlayerProfile();
+  const { adStatus, refetch: refetchAdStatus } = useAdStatus();
+  const adsRemoved = profile?.adsRemoved === true;
   // Tracks the pack currently being purchased so its button can show a
   // loading state and so a stray purchaseUpdatedListener delivery (e.g. a
   // restored/pending purchase from a previous session) doesn't get treated
   // as "just bought this" for an unrelated pack.
   const [purchasingPackId, setPurchasingPackId] = useState<string | null>(null);
 
-  const { connected, products, fetchProducts, requestPurchase, finishTransaction } = useShopIAP({
+  const { connected, products, fetchProducts, requestPurchase, finishTransaction, getOwnedPurchases } = useShopIAP({
     onPurchaseSuccess: async (purchase: Purchase) => {
+      if (purchase.productId === REMOVE_ADS_ANDROID_PRODUCT_ID) {
+        await confirmRemoveAds(purchase);
+        return;
+      }
       const packId = packIdForAndroidProductId(purchase.productId);
       if (!packId || !purchase.purchaseToken) {
         setPurchasingPackId(null);
@@ -106,11 +117,83 @@ export default function RockShopScreen() {
   });
 
   useEffect(() => {
-    if (connected) void fetchProducts({ skus: ALL_IAP_ANDROID_PRODUCT_IDS, type: 'in-app' });
+    if (connected) void fetchProducts({ skus: [...ALL_IAP_ANDROID_PRODUCT_IDS, REMOVE_ADS_ANDROID_PRODUCT_ID], type: 'in-app' });
   }, [connected, fetchProducts]);
 
+  // Remove Ads is a one-time NON-consumable: the server verifies it and only
+  // acknowledges it (never consumes), so finishTransaction is told it is not
+  // consumable. Used by both a fresh purchase and "Restore purchase".
+  async function confirmRemoveAds(purchase: Purchase) {
+    if (!purchase.purchaseToken) {
+      setPurchasingPackId(null);
+      return;
+    }
+    try {
+      const token = await getAuthToken();
+      if (!token) throw new Error('not-signed-in');
+      await verifyPurchase(token, REMOVE_ADS_PACK_ID, purchase.purchaseToken);
+      await refreshProfile();
+      await finishTransaction({ purchase, isConsumable: false });
+    } catch (error) {
+      console.log('Remove Ads verification failed', error);
+      const message = error instanceof Error ? error.message : '';
+      Alert.alert(
+        'Purchase Error',
+        message === 'purchase-belongs-to-another-account'
+          ? 'This purchase is already linked to a different account.'
+          : "We couldn't confirm this purchase. If you were charged, contact support and it'll be sorted out.",
+      );
+    } finally {
+      setPurchasingPackId(null);
+    }
+  }
+
+  function handleBuyRemoveAds() {
+    if (profileStatus === 'guest') {
+      router.push('/sign-in');
+      return;
+    }
+    if (!connected) {
+      Alert.alert('Store Unavailable', "Can't reach the Play Store right now. Please try again in a moment.");
+      return;
+    }
+    setPurchasingPackId(REMOVE_ADS_PACK_ID);
+    requestPurchase({ request: { google: { skus: [REMOVE_ADS_ANDROID_PRODUCT_ID] } }, type: 'in-app' }).catch((error) => {
+      setPurchasingPackId(null);
+      console.log('requestPurchase dispatch failed', error);
+    });
+  }
+
+  async function handleRestoreRemoveAds() {
+    if (profileStatus === 'guest') {
+      router.push('/sign-in');
+      return;
+    }
+    try {
+      const owned = await getOwnedPurchases();
+      const existing = owned.find((p) => p.productId === REMOVE_ADS_ANDROID_PRODUCT_ID);
+      if (!existing) {
+        Alert.alert('Nothing to restore', "We couldn't find a Remove Ads purchase on this Google account.");
+        return;
+      }
+      setPurchasingPackId(REMOVE_ADS_PACK_ID);
+      await confirmRemoveAds(existing);
+    } catch (error) {
+      console.log('Restore purchases failed', error);
+      Alert.alert('Restore failed', 'Please try again in a moment.');
+    }
+  }
+
+  async function handleFreeChipsEarned() {
+    const token = await getAuthToken();
+    if (!token) throw new Error('not-signed-in');
+    await redeemFreeChipsAd(token);
+    await refreshProfile();
+    void refetchAdStatus();
+  }
+
   function priceForPack(packId: string, fallbackPrice: string): string {
-    const androidProductId = androidProductIdForPack(packId);
+    const androidProductId = packId === REMOVE_ADS_PACK_ID ? REMOVE_ADS_ANDROID_PRODUCT_ID : androidProductIdForPack(packId);
     const product = products.find((p) => p.id === androidProductId);
     return product?.displayPrice ?? fallbackPrice;
   }
@@ -220,6 +303,19 @@ export default function RockShopScreen() {
           <>
             <VipBanner compact onUpgrade={() => setActiveTab('vip')} />
 
+            <RemoveAdsCard
+              owned={adsRemoved}
+              price={priceForPack(REMOVE_ADS_PACK_ID, '$4.99')}
+              purchasing={purchasingPackId === REMOVE_ADS_PACK_ID}
+              onBuy={handleBuyRemoveAds}
+              onRestore={handleRestoreRemoveAds}
+            />
+
+            <FreeChipsCard
+              remaining={adStatus?.placements['free-chips'].remaining ?? null}
+              onEarned={handleFreeChipsEarned}
+            />
+
             <Text className="font-display-hero text-headline-lg uppercase text-cyan" style={{ fontSize: 18 }}>
               Chip Stacks
             </Text>
@@ -230,7 +326,7 @@ export default function RockShopScreen() {
                   pack={pack}
                   price={priceForPack(pack.id, pack.fallbackPrice)}
                   purchasing={purchasingPackId === pack.id}
-                  onPress={() => (pack.isClaim ? Alert.alert('Coming Soon', 'Stadium Vault claims are on the way!') : handlePurchase(pack.id))}
+                  onPress={() => handlePurchase(pack.id)}
                 />
               ))}
             </View>
@@ -319,6 +415,79 @@ function VipBanner({ compact, onUpgrade }: { compact: boolean; onUpgrade: () => 
   );
 }
 
+function FreeChipsCard({ remaining, onEarned }: { remaining: number | null; onEarned: () => Promise<void> }) {
+  return (
+    <RockCard glowColor={Colors.chromeDark} innerGlow={Colors.cyan}>
+      <View className="gap-md">
+        <View className="flex-row items-center gap-md">
+          <View
+            className="items-center justify-center rounded-md"
+            style={{ width: 44, height: 44, backgroundColor: withOpacity(Colors.cyan, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.cyan, 0.3) }}
+          >
+            <MaterialCommunityIcons name="movie-open-play" size={22} color={Colors.cyan} />
+          </View>
+          <View className="flex-1">
+            <Text className="font-heading-md text-heading-md uppercase text-text-primary" style={{ fontSize: 14 }}>
+              Free Chips
+            </Text>
+            <Text className="mt-xs font-body-sm text-body-sm text-text-muted">
+              Watch a short ad for 100 chips{remaining !== null ? ` · ${remaining} left today` : ''}
+            </Text>
+          </View>
+        </View>
+        <RewardedAdButton label="Watch ad · +100 chips" variant="primary" remaining={remaining} onEarned={onEarned} />
+      </View>
+    </RockCard>
+  );
+}
+
+function RemoveAdsCard({
+  owned,
+  price,
+  purchasing,
+  onBuy,
+  onRestore,
+}: {
+  owned: boolean;
+  price: string;
+  purchasing: boolean;
+  onBuy: () => void;
+  onRestore: () => void;
+}) {
+  return (
+    <RockCard glowColor={Colors.chromeDark} innerGlow={Colors.gold}>
+      <View className="gap-md">
+        <View className="flex-row items-center gap-md">
+          <View
+            className="items-center justify-center rounded-md"
+            style={{ width: 44, height: 44, backgroundColor: withOpacity(Colors.gold, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.3) }}
+          >
+            <MaterialCommunityIcons name={owned ? 'shield-check' : 'advertisements-off'} size={22} color={Colors.gold} />
+          </View>
+          <View className="flex-1">
+            <Text className="font-heading-md text-heading-md uppercase text-text-primary" style={{ fontSize: 14 }}>
+              {owned ? 'Ads Removed' : 'Remove Ads'}
+            </Text>
+            <Text className="mt-xs font-body-sm text-body-sm text-text-muted">
+              {owned ? 'Thanks for supporting the band! Optional reward ads still earn you free chips.' : 'One-time purchase. No more ads between games.'}
+            </Text>
+          </View>
+        </View>
+        {owned ? null : (
+          <>
+            <RockButton label={price} loadingLabel="Purchasing…" loading={purchasing} variant="reward" onPress={onBuy} />
+            <Pressable onPress={onRestore} disabled={purchasing} className="items-center">
+              <Text className="font-body-sm text-caption text-text-muted" style={{ textDecorationLine: 'underline' }}>
+                Restore purchase
+              </Text>
+            </Pressable>
+          </>
+        )}
+      </View>
+    </RockCard>
+  );
+}
+
 function ChipPackCard({
   pack,
   price,
@@ -330,7 +499,7 @@ function ChipPackCard({
   purchasing: boolean;
   onPress: () => void;
 }) {
-  const iconColor = pack.isClaim ? Colors.cyan : Colors.gold;
+  const iconColor = Colors.gold;
   const iconSize = pack.highlighted ? 88 : 56;
 
   return (
@@ -366,11 +535,7 @@ function ChipPackCard({
             borderColor: withOpacity(iconColor, 0.3),
           }}
         >
-          {pack.isClaim ? (
-            <AppIcon name="bolt" size={iconSize * 0.5} color={iconColor} />
-          ) : (
-            <CurrencyIcon type="chips" size={iconSize * 0.5} />
-          )}
+          <CurrencyIcon type="chips" size={iconSize * 0.5} />
         </View>
         <View className={pack.highlighted ? 'flex-1 gap-1' : 'w-full items-center gap-1'}>
           <Text
@@ -385,7 +550,7 @@ function ChipPackCard({
               label={price}
               loadingLabel="Purchasing…"
               loading={purchasing}
-              variant={pack.isClaim ? 'primary' : 'reward'}
+              variant="reward"
               onPress={onPress}
             />
           </View>

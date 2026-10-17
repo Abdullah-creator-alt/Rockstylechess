@@ -1,4 +1,4 @@
-import { bigint, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { bigint, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import { users } from './users.js';
 
@@ -14,14 +14,42 @@ export const purchases = pgTable('purchases', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   packId: text('pack_id').notNull(),
-  currencyGranted: currencyEnum('currency_granted').notNull(),
-  amountGranted: bigint('amount_granted', { mode: 'number' }).notNull(),
+  // Null for an entitlement purchase (Remove Ads) -- nothing is "granted" in
+  // a currency, `entitlement` below names what was unlocked instead.
+  currencyGranted: currencyEnum('currency_granted'),
+  amountGranted: bigint('amount_granted', { mode: 'number' }),
+  entitlement: text('entitlement'),
   priceUsdCents: integer('price_usd_cents').notNull(),
   provider: text('provider').notNull(),
   providerTransactionId: text('provider_transaction_id').notNull().unique(),
   status: purchaseStatusEnum('status').notNull().default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// One row per rewarded-ad reward. Two sources, see db/adEvents.ts:
+//  - 'ssv'    : inserted by Google's server-side-verification callback
+//               (GET /ads/ssv) the moment an ad is verifiably watched; waits
+//               unredeemed (placement/redeemedAt null) until the client asks
+//               for the reward. `transactionId` is Google's per-view id, so a
+//               replayed callback can't create a second row.
+//  - 'client' : the test-ID phase (ADS_REQUIRE_SSV off): inserted already
+//               redeemed when the client reports a finished ad.
+// Daily caps are counted from redeemed rows, per (user, placement).
+export const adEvents = pgTable(
+  'ad_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+    transactionId: text('transaction_id').unique(),
+    placement: text('placement'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    redeemedAt: timestamp('redeemed_at', { withTimezone: true }),
+  },
+  (t) => [index('ad_events_user_placement_idx').on(t.userId, t.placement, t.redeemedAt)],
+);
 
 export const vipGrants = pgTable('vip_grants', {
   id: uuid('id').primaryKey().defaultRandom(),

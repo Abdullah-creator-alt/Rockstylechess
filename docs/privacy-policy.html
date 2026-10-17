@@ -96,7 +96,7 @@
 <header>
   <div class="brand">Royal Riff Studio</div>
   <h1>Privacy Policy</h1>
-  <div class="updated">RockStyle Chess &nbsp;•&nbsp; Effective September 27, 2026</div>
+  <div class="updated">RockStyle Chess &nbsp;•&nbsp; Effective October 17, 2026</div>
 </header>
 <nav class="crumbs"><a href="terms-of-service.html">View Terms of Service →</a>&nbsp;&nbsp;&nbsp;<a href="data-deletion.html">Delete Your Account &amp; Data →</a></nav>
 <main>
@@ -111,9 +111,10 @@ players everywhere else the App is available.</p>
 
 <div class="callout">
 <strong>Short version:</strong> We collect what's needed to run your account, your matches,
-and your in-game purchases. We do not run any advertising, analytics, or tracking SDKs of
-any kind — there is nothing in this App collecting data for marketing purposes. We never
-sell your information.
+and your in-game purchases. The App shows ads served by Google AdMob (see Section 2i);
+there are no analytics or crash-reporting SDKs. Where the law requires it, ads are only
+requested after you consent through Google's consent form, and a one-time "Remove Ads"
+purchase turns off the ads shown between games. We never sell your personal information.
 </div>
 
 <h2 id="controller">1. Data Controller</h2>
@@ -160,10 +161,10 @@ to. If you block another player, we store that block so it can prevent messaging
 each of you from the other.</p>
 
 <h3>e. Purchase information</h3>
-<p>If you buy Chips or Gems, purchases are processed entirely by <strong>Google Play
+<p>If you buy Chips, Gems or the one-time "Remove Ads" upgrade, purchases are processed entirely by <strong>Google Play
 Billing</strong> — RockStyle Chess never sees or stores your payment card details. Our
 server verifies each purchase directly with Google's Play Developer API using a purchase
-token, and stores a record of: which pack you bought, how much currency it granted, the
+token, and stores a record of: which pack or upgrade you bought, how much currency it granted (if any), the
 price, and Google's transaction identifier — purely to credit your account and prevent
 duplicate/fraudulent credits.</p>
 
@@ -171,7 +172,7 @@ duplicate/fraudulent credits.</p>
 <ul>
   <li>A session token that keeps you signed in, plus the IP address and browser/device
   "user agent" string associated with that session — used only for account security (e.g.
-  detecting suspicious sign-ins), not for tracking or advertising.</li>
+  detecting suspicious sign-ins), not by us for tracking or advertising.</li>
   <li>Before you sign in, the App generates a random, anonymous guest identifier stored only
   on your device, used solely to let you queue for a match or reconnect to one before you
   have an account.</li>
@@ -182,8 +183,9 @@ duplicate/fraudulent credits.</p>
 <ul>
   <li>Your authentication token, stored in your device's secure, encrypted credential
   storage (Android/iOS Keystore via Expo SecureStore).</li>
-  <li>Sound/music preferences, cached puzzle progress, and the anonymous guest ID mentioned
-  above, stored in the App's local on-device storage (AsyncStorage).</li>
+  <li>Sound/music preferences, cached puzzle progress, how many games/puzzles you have
+  finished since the last full-screen ad (to pace ads), and the anonymous guest ID
+  mentioned above, stored in the App's local on-device storage (AsyncStorage).</li>
 </ul>
 
 <h3>h. Real-time gameplay data</h3>
@@ -192,10 +194,29 @@ offline), and messages are transmitted over a live connection to our own server 
 the board, clock, and conversations in sync between players. This traffic goes only to our
 server — never through a third party.</p>
 
+<h3>i. Advertising (Google AdMob)</h3>
+<p>The App shows two kinds of ads served by Google AdMob: full-screen ads at natural pauses
+(after some finished games and between some puzzles) and optional "rewarded" ads you choose
+to watch in exchange for in-game chips or an extra spin/daily-bonus boost. Never during a
+live game. To serve and measure ads, the Google Mobile Ads SDK on your device collects and
+sends to Google: your device's advertising ID (which you can reset or opt out of in your
+device's Android settings), IP address, device and OS information, and ad interaction data.
+When you watch a rewarded ad, Google also calls our server to confirm the ad was watched;
+that callback carries your account's internal player ID, the ad's identifier and a
+transaction ID, and we store it only to prevent a reward being claimed twice.</p>
+<p>If you are in the EEA or UK, the App first shows Google's consent form (Google's User
+Messaging Platform) and requests ads only according to your choice; you can change that
+choice at any time in Settings → Privacy &amp; Ad Choices. Ads are requested as
+general-audience, not child-directed. Google acts as an independent controller for the
+data it collects through the SDK — see
+<a href="https://policies.google.com/technologies/partner-sites">how Google uses data from
+apps that use its services</a>. A one-time "Remove Ads" purchase in the Shop turns off the
+full-screen ads; optional rewarded ads remain available.</p>
+
 <h2 id="information-we-do-not-collect">3. Information We Do Not Collect</h2>
 <p>To be explicit, RockStyle Chess does <strong>not</strong> contain:</p>
 <ul>
-  <li>Any advertising SDK — the App shows no ads.</li>
+  <li>Any advertising SDK other than Google AdMob (Section 2i).</li>
   <li>Any analytics or product-usage tracking SDK (e.g. no Firebase Analytics, no Mixpanel,
   no Amplitude, no Segment).</li>
   <li>Any crash-reporting SDK (e.g. no Sentry, no Crashlytics).</li>
@@ -224,23 +245,35 @@ everyone (Art. 6(1)(f))</td></tr>
 <tr><td>Responding to you when you contact support</td>
 <td><strong>Legitimate interests</strong> in providing support, and/or
 <strong>performance of a contract</strong> (Art. 6(1)(b)/(f))</td></tr>
+<tr><td>Showing ads and confirming rewarded ads (Section 2i)</td>
+<td><strong>Consent</strong> for players in the EEA/UK, collected through Google's consent
+form (Art. 6(1)(a)); <strong>legitimate interests</strong> in funding the free game
+elsewhere (Art. 6(1)(f)). Preventing a reward from being claimed twice:
+<strong>legitimate interests</strong></td></tr>
 <tr><td>Your optional country flag</td>
 <td><strong>Consent</strong> — this field is optional and only set if you choose to add it
 (Art. 6(1)(a)); you can remove it at any time in Settings</td></tr>
 </table>
-<p>We do not use your data to build an advertising profile, engage in automated
+<p>We do not use your account data (name, email, matches, messages) to build an advertising
+profile — ad targeting is done by Google through its SDK (Section 2i), not by us. We do not
+engage in automated
 decision-making that produces legal or similarly significant effects on you, and we do not
 use it for any purpose beyond operating the App as described above.</p>
 
 <h2 id="how-information-is-shared">5. How Information Is Shared</h2>
-<p>We do not sell your personal information, and we do not share it with advertisers
-(we have none). We share limited data with the following service providers, solely to
-operate the App:</p>
+<p>We do not sell your personal information, and we do not give advertisers any of your
+account data. We share limited data with the following service providers, solely to
+operate the App and show ads:</p>
 <table>
 <tr><th>Provider</th><th>Purpose</th><th>What they receive</th></tr>
 <tr><td>Google Play Billing / Google Play Developer API</td><td>Processing purchases and
 verifying them server-side</td><td>Purchase tokens and product IDs — never your payment
 card details, which Google Play collects directly and independently of us</td></tr>
+<tr><td>Google AdMob / Google Mobile Ads SDK</td><td>Serving and measuring ads; confirming
+that a rewarded ad was watched</td><td>Collected directly by the SDK on your device:
+advertising ID, IP address, device/OS information and ad interactions. Sent to our server
+by Google when you watch a rewarded ad: your internal player ID and an ad transaction
+ID</td></tr>
 <tr><td>Railway</td><td>Hosts our backend application server</td><td>All server-side data
 described above, as our infrastructure provider</td></tr>
 <tr><td>Neon</td><td>Hosts our production database</td><td>All server-side data described
@@ -296,7 +329,8 @@ handle your request under the law that applies to you.</p>
 <p>Under Article 8 GDPR, the age at which a child can consent to an online service without
 parental approval ranges from 13 to 16 depending on your EU member state. If you are below
 that age in your country of residence, you may only use RockStyle Chess with the consent of
-a parent or legal guardian. RockStyle Chess is not directed at young children, and we do not
+a parent or legal guardian. RockStyle Chess is not directed at young children (ads are
+requested as general-audience content, rated PG at most), and we do not
 knowingly collect personal information from a child below the applicable age of consent
 without such consent having been given. If you believe a child has provided us with personal
 information without appropriate consent, contact us at
@@ -314,9 +348,11 @@ protect your information, as required by Article 32 GDPR.</p>
 <p>The App does not use browser cookies, and the on-device storage it does use (your
 authentication token, and local preferences like sound settings) is <strong>strictly
 necessary</strong> to sign you in and let you play — it is not used for tracking, profiling,
-or advertising. Under the EU ePrivacy rules, storage that is strictly necessary for a
-service you've requested is exempt from cookie-style consent requirements, so no consent
-banner is shown.</p>
+or advertising by us. Under the EU ePrivacy rules, storage that is strictly necessary for a
+service you've requested is exempt from cookie-style consent requirements. The separate
+storage and device identifiers used by the Google Mobile Ads SDK (Section 2i) are not
+strictly necessary, which is why players in the EEA/UK are shown Google's consent form
+before any ads are requested.</p>
 
 <h2 id="international-transfers">11. International Data Transfers</h2>
 <p>Our infrastructure providers host your data in the United States: Railway runs our

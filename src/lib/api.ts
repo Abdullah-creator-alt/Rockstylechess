@@ -65,7 +65,7 @@ export function verifyPurchase(
   token: string,
   packId: string,
   purchaseToken: string,
-): Promise<{ ok: true; chips: number; gems: number }> {
+): Promise<{ ok: true; chips: number; gems: number; adsRemoved?: boolean }> {
   return request('/me/purchases/verify', { method: 'POST', body: { packId, purchaseToken }, token });
 }
 
@@ -101,6 +101,9 @@ export interface PlayerProfile {
   equippedPieceId: string | null;
   equippedAvatarCosmeticId: string | null;
   ownedCosmeticIds: string[];
+  // True once the player bought Remove Ads (server-set only, never writable
+  // through PATCH /me/profile). Switches off interstitials; rewarded ads stay.
+  adsRemoved: boolean;
 }
 
 export function getMyProfile(token: string): Promise<{ profile: PlayerProfile }> {
@@ -141,8 +144,16 @@ export interface DailyBonusClaimResult {
 // Rejects with Error('already-claimed-today') on a same-UTC-day repeat call
 // (the request() helper throws data.error on non-2xx) -- callers catch that
 // specifically to show a "come back tomorrow" state instead of a generic error.
-export function claimDailyBonus(token: string): Promise<DailyBonusClaimResult> {
-  return request('/me/daily-bonus/claim', { method: 'POST', token });
+//
+// `doubleWithAd`: claim x2 after the player watched a rewarded ad. Also rejects
+// with Error('ad-daily-cap-reached' | 'ad-not-verified') -- in both cases
+// nothing was claimed, so the player can still claim the normal amount.
+export function claimDailyBonus(token: string, options: { doubleWithAd?: boolean } = {}): Promise<DailyBonusClaimResult> {
+  return request('/me/daily-bonus/claim', {
+    method: 'POST',
+    body: options.doubleWithAd ? { doubleWithAd: true } : undefined,
+    token,
+  });
 }
 
 export interface SpinStatus {
@@ -167,8 +178,35 @@ export interface SpinResult {
 // the client only animates the wheel to whichever prizeId comes back, it
 // never decides the outcome itself. Rejects with Error('already-spun-today')
 // on a same-UTC-day repeat call.
-export function spinWheel(token: string): Promise<SpinResult> {
-  return request('/me/spin', { method: 'POST', token });
+//
+// `withAd`: the one extra daily spin, earned by a rewarded ad. Also rejects
+// with Error('ad-daily-cap-reached' | 'ad-not-verified').
+export function spinWheel(token: string, options: { withAd?: boolean } = {}): Promise<SpinResult> {
+  return request('/me/spin', {
+    method: 'POST',
+    body: options.withAd ? { withAd: true } : undefined,
+    token,
+  });
+}
+
+// Rewarded ads. The server owns the placements, caps and reward sizes (see
+// server/src/adRewards.ts); this is display state for the button labels.
+export interface AdPlacementStatus {
+  dailyCap: number;
+  remaining: number;
+}
+export interface AdStatus {
+  placements: Record<'free-chips' | 'extra-spin' | 'daily-double', AdPlacementStatus>;
+  ssvRequired: boolean;
+}
+
+export function getAdStatus(token: string): Promise<AdStatus> {
+  return request('/me/ads/status', { method: 'GET', token });
+}
+
+// Free-chips placement. Rejects with Error('ad-daily-cap-reached' | 'ad-not-verified').
+export function redeemFreeChipsAd(token: string): Promise<{ ok: true; chipsGranted: number; chips: number; gems: number }> {
+  return request('/me/ads/redeem', { method: 'POST', body: { placement: 'free-chips' }, token });
 }
 
 export interface QuestStatus {

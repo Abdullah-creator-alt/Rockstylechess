@@ -1,4 +1,4 @@
-import { useIAP, type Product, type Purchase, type PurchaseError } from 'react-native-iap';
+import { getAvailablePurchases, useIAP, type Product, type Purchase, type PurchaseError } from 'react-native-iap';
 
 export interface UseShopIAPOptions {
   onPurchaseSuccess: (purchase: Purchase) => void | Promise<void>;
@@ -11,6 +11,9 @@ export interface UseShopIAPResult {
   fetchProducts: (args: { skus: string[]; type: 'in-app' }) => Promise<unknown>;
   requestPurchase: (args: { request: { google: { skus: string[] } }; type: 'in-app' }) => Promise<unknown>;
   finishTransaction: (args: { purchase: Purchase; isConsumable: boolean }) => Promise<unknown>;
+  // Purchases the store still considers owned (non-consumables like Remove Ads;
+  // consumed chip/gem packs never appear). Used by "Restore purchase".
+  getOwnedPurchases: () => Promise<Purchase[]>;
 }
 
 // Thin pass-through on native. A separate useShopIAP.web.ts (Metro picks it
@@ -20,5 +23,6 @@ export interface UseShopIAPResult {
 // react-native internals with no web shim, which crashes the whole app the
 // moment this file is evaluated, not just when a purchase is attempted.
 export function useShopIAP(options: UseShopIAPOptions): UseShopIAPResult {
-  return useIAP(options);
+  const iap = useIAP(options);
+  return { ...iap, getOwnedPurchases: () => getAvailablePurchases() };
 }

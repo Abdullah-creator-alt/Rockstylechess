@@ -81,7 +81,12 @@ files without adding `/play` to the URL/deep-link path.
   it only appeared with the first capture, the row would grow then and the board
   would jump (and, when height-capped, resize) mid-game.
 - `result-placeholder.tsx` — stub destination for Resign until the real Win/Loss
-  screen is built.
+  screen is built. Its single exit (`goHome`, used by the Home button *and* hardware
+  back) is where the post-match **interstitial ad** may appear — every 3rd finished
+  match, never the first two, min 4 minutes apart, only if an ad is already loaded,
+  and never for a Remove Ads buyer. Navigation always follows whether or not an ad
+  showed. (`puzzle-match.tsx`'s "Next Puzzle" does the same every 5th solve.)
+  No ads ever appear on `/match`, `/puzzle-match` or `/matchmaking`.
 - `bots.tsx` — AI opponent gallery, built from `bots_pro_stage_animated`. Each
   bot has a fixed `difficulty` (`src/lib/botEngine.ts`'s `BotDifficulty`):
   Roadie Rick=easy (1-ply heuristic), Valkyrie Riff/Old School Roy=medium

@@ -6,7 +6,10 @@ import { FREE_AVATAR_IDS, getPremiumAvatar, UNLOCK_ALL_AVATARS } from './avatars
 import { requireAuth } from './authMiddleware.js';
 import { BOARD_THEMES } from './boardThemes.js';
 import { isValidCountryCode } from './countryCodes.js';
+import { ADS_REQUIRE_SSV, AD_PLACEMENTS } from './adRewards.js';
+import { verifyAdMobSsv } from './adsSsv.js';
 import { chargeForAnalysis } from './db/analysisCharge.js';
+import { getAdStatus, recordVerifiedAdView, redeemAdReward } from './db/adEvents.js';
 import {
   claimAchievement,
   getAchievementsStatus,
@@ -17,9 +20,9 @@ import { deleteUserAccount } from './db/accountDeletion.js';
 import { purchaseCosmetic } from './db/cosmetics.js';
 import { getMessages, listConversations, markRead } from './db/directMessages.js';
 import { blockUser, isValidReportReason, listBlocked, submitReport, unblockUser } from './db/moderation.js';
-import { creditVerifiedPurchase } from './db/purchases.js';
-import { acknowledgeAndConsume, verifyProductPurchase } from './googlePlay.js';
-import { getPackById } from './iapCatalog.js';
+import { creditVerifiedPurchase, grantEntitlement } from './db/purchases.js';
+import { acknowledgeAndConsume, acknowledgePurchase, verifyProductPurchase } from './googlePlay.js';
+import { getEntitlementProductById, getPackById } from './iapCatalog.js';
 import {
   getNotifications,
   getUnreadNotificationCount,
@@ -259,6 +262,37 @@ authRouter.post(
       res.status(400).json({ error: 'invalid-request' });
       return;
     }
+    // One-time entitlement (Remove Ads) -- verified the same way, but flips a
+    // profile flag instead of crediting currency and is acknowledged, NEVER
+    // consumed (consuming would make Play let the player buy it again).
+    const entitlementProduct = getEntitlementProductById(packId);
+    if (entitlementProduct) {
+      let entitlementVerification;
+      try {
+        entitlementVerification = await verifyProductPurchase(entitlementProduct.androidProductId, purchaseToken);
+      } catch (error) {
+        console.log('Google Play purchase verification failed', error);
+        res.status(502).json({ error: 'verification-unavailable' });
+        return;
+      }
+      if (entitlementVerification.status !== 'valid') {
+        res.status(400).json({ error: 'purchase-not-valid' });
+        return;
+      }
+      const granted = await grantEntitlement(userId, entitlementProduct, purchaseToken);
+      if (granted.status === 'token-owned-by-other-user') {
+        res.status(409).json({ error: 'purchase-belongs-to-another-account' });
+        return;
+      }
+      try {
+        await acknowledgePurchase(entitlementProduct.androidProductId, purchaseToken);
+      } catch (error) {
+        console.log('Google Play acknowledge failed', error);
+      }
+      res.json({ ok: true, adsRemoved: true });
+      return;
+    }
+
     const pack = getPackById(packId);
     if (!pack) {
       res.status(400).json({ error: 'unknown-pack' });
@@ -383,7 +417,12 @@ authRouter.post(
   '/me/daily-bonus/claim',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const result = await claimDailyBonus(req.userId as string);
+    // `doubleWithAd`: claim x2 after watching a rewarded ad (see adRewards.ts).
+    const result = await claimDailyBonus(req.userId as string, { doubleWithAd: req.body?.doubleWithAd === true });
+    if ('adBlocked' in result) {
+      res.status(409).json({ error: result.adBlocked === 'not-verified' ? 'ad-not-verified' : 'ad-daily-cap-reached' });
+      return;
+    }
     if (result.alreadyClaimed) {
       res.status(409).json({ error: 'already-claimed-today', day: result.day, streak: result.streak });
       return;
@@ -412,7 +451,12 @@ authRouter.post(
   '/me/spin',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const result = await performSpin(req.userId as string);
+    // `withAd`: the one extra daily spin earned by a rewarded ad.
+    const result = await performSpin(req.userId as string, { withAd: req.body?.withAd === true });
+    if ('adBlocked' in result) {
+      res.status(409).json({ error: result.adBlocked === 'not-verified' ? 'ad-not-verified' : 'ad-daily-cap-reached' });
+      return;
+    }
     if (result.alreadySpun) {
       res.status(409).json({ error: 'already-spun-today' });
       return;
@@ -426,6 +470,73 @@ authRouter.post(
       chips: result.chips,
       gems: result.gems,
     });
+  }),
+);
+
+// Rewarded ads (see adRewards.ts for the placements, caps and reward sizes).
+// Display-only status so the client can show "Watch ad" vs "Come back tomorrow";
+// redeemAdReward() inside each reward path is the real enforcement.
+authRouter.get(
+  '/me/ads/status',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json({ placements: await getAdStatus(req.userId as string), ssvRequired: ADS_REQUIRE_SSV });
+  }),
+);
+
+// Free-chips placement. extra-spin / daily-double ride on POST /me/spin and
+// POST /me/daily-bonus/claim instead, inside those routes' own transactions.
+authRouter.post(
+  '/me/ads/redeem',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userId = req.userId as string;
+    if (req.body?.placement !== 'free-chips') {
+      res.status(400).json({ error: 'invalid-placement' });
+      return;
+    }
+    const rule = AD_PLACEMENTS['free-chips'];
+    const result = await db.transaction(async (tx) => {
+      const outcome = await redeemAdReward(tx, userId, 'free-chips');
+      if (outcome !== 'ok') return { outcome } as const;
+      const [profile] = await tx
+        .update(playerProfiles)
+        .set({ chips: sql`${playerProfiles.chips} + ${rule.rewardChips}`, updatedAt: new Date() })
+        .where(eq(playerProfiles.userId, userId))
+        .returning({ chips: playerProfiles.chips, gems: playerProfiles.gems });
+      return { outcome, chips: profile.chips, gems: profile.gems } as const;
+    });
+    if (result.outcome === 'daily-cap-reached') {
+      res.status(409).json({ error: 'ad-daily-cap-reached' });
+      return;
+    }
+    if (result.outcome === 'not-verified') {
+      res.status(409).json({ error: 'ad-not-verified' });
+      return;
+    }
+    res.json({ ok: true, chipsGranted: rule.rewardChips, chips: result.chips, gems: result.gems });
+  }),
+);
+
+// AdMob server-side-verification callback -- called by Google (no auth header),
+// authenticated instead by the ECDSA signature over the query string.
+authRouter.get(
+  '/ads/ssv',
+  asyncHandler(async (req, res) => {
+    const rawQuery = req.originalUrl.split('?')[1] ?? '';
+    const verified = await verifyAdMobSsv(rawQuery);
+    if (!verified) {
+      res.status(403).json({ error: 'invalid-signature' });
+      return;
+    }
+    try {
+      await recordVerifiedAdView(verified.userId, verified.transactionId);
+    } catch (error) {
+      // Unknown user id / malformed uuid: nothing to retry, so still answer 200
+      // (a non-200 makes Google keep re-sending the same callback).
+      console.log('Ad SSV callback could not be recorded', error);
+    }
+    res.sendStatus(200);
   }),
 );
 

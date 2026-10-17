@@ -42,3 +42,23 @@ export function getPackById(packId: string): IapPack | undefined {
 export function getPackByAndroidProductId(androidProductId: string): IapPack | undefined {
   return BY_ANDROID_PRODUCT_ID.get(androidProductId);
 }
+
+// One-time, NON-consumable purchases that unlock an account feature instead of
+// granting currency. Kept apart from IAP_CATALOG so nothing that iterates the
+// currency packs can mistake one for a pack. Must be created in Play Console
+// as a one-time product with the exact id below. Mirrored (display-only) by
+// src/constants/iapProducts.ts.
+export interface EntitlementProduct {
+  id: string;
+  androidProductId: string;
+  entitlement: 'adsRemoved';
+  priceUsdCents: number;
+}
+
+export const ENTITLEMENT_PRODUCTS: EntitlementProduct[] = [
+  { id: 'remove-ads', androidProductId: 'remove_ads', entitlement: 'adsRemoved', priceUsdCents: 499 },
+];
+
+export function getEntitlementProductById(id: string): EntitlementProduct | undefined {
+  return ENTITLEMENT_PRODUCTS.find((p) => p.id === id);
+}

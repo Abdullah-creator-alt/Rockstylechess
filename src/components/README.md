@@ -4,7 +4,9 @@ Shared, reusable UI building blocks — not full screens.
 
 - `ui/` — design-system primitives every screen pulls from `@/constants/theme`
   instead of hardcoding colors/fonts: `RockButton`, `RockCard`, `CurrencyPill`,
-  `PlayerAvatar`, `SectionLabel`, `ProgressBar`, `BottomNav`, `ChessBoard`.
+  `PlayerAvatar`, `SectionLabel`, `ProgressBar`, `BottomNav`, `ChessBoard`,
+  `RewardedAdButton` (one rewarded-ad reward: handles guest/sign-in, daily-cap and
+  not-ready states and the redeem retry; built on `RockButton`).
   Import from `@/components/ui`.
 - `layout/` — headers, modal chrome (not built yet — `BottomNav` lives in
   `ui/` since it's a reusable primitive on its own, not page layout)

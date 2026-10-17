@@ -110,3 +110,24 @@ export function stopMenuMusic(): void {
   wantsToPlay = false;
   players.forEach((p) => p?.pause());
 }
+
+// An ad took over the screen (and brings its own audio). Pauses whatever is
+// playing but, unlike stopMenuMusic(), leaves `wantsToPlay` alone -- so if the
+// player navigates to gameplay while the ad is up, resumeMenuMusicAfterAd()
+// correctly stays silent.
+let pausedForAd = false;
+
+export function pauseMenuMusicForAd(): void {
+  if (!wantsToPlay || enabledCache === false) return;
+  pausedForAd = true;
+  players.forEach((p) => p?.pause());
+}
+
+export function resumeMenuMusicAfterAd(): void {
+  if (!pausedForAd) return;
+  pausedForAd = false;
+  if (wantsToPlay && enabledCache !== false) {
+    const p = getPlayer(currentIndex);
+    if (!p.playing) p.play();
+  }
+}

@@ -101,6 +101,34 @@ premium-and-unowned (`avatar-not-owned`); `POST /me/cosmetics/:id/unlock` adds
 `required`/`current`, gate read from `player_profiles.rating` at purchase time) and
 `not-purchasable` (price 0). Once owned an avatar is kept even if rating drops.
 
+## Ads (AdMob rewarded ads + Remove Ads)
+
+Rewards for rewarded ads are decided here, never by the client. `src/adRewards.ts` holds
+the placements, daily caps (UTC day) and reward sizes (`free-chips` 100 chips x3/day,
+`extra-spin` 1/day, `daily-double` 1/day — a day's free chips stays under one match
+win). Every reward path calls `redeemAdReward` (`src/db/adEvents.ts`) *inside its own
+transaction* — `POST /me/ads/redeem` (free chips), `POST /me/spin {withAd}` and
+`POST /me/daily-bonus/claim {doubleWithAd}` — so a failed reward never costs the ad. A
+per-user/placement advisory lock makes the cap race-free. `GET /me/ads/status` is display
+state only.
+
+**Test phase vs. real:** `ADS_REQUIRE_SSV` (env, default off) decides what proves an ad
+was watched. Off (test ad units): the client's "finished" report is trusted but capped.
+On (once real ad units + the callback URL exist in AdMob): a reward is only redeemable
+against a row inserted by Google's signed server-side-verification callback
+`GET /ads/ssv` (`src/adsSsv.ts` verifies the ECDSA signature against Google's published
+keys; the ad's `user_id` is our player id). Whether *test* ads trigger the callback is
+unverified — confirm when switching on.
+
+**Remove Ads** is an entitlement, not a pack: `ENTITLEMENT_PRODUCTS` in
+`src/iapCatalog.ts` (`remove_ads`, $4.99). `POST /me/purchases/verify` verifies it with
+the Play API, records a `purchases` row (`entitlement` set, currency/amount null),
+sets `player_profiles.ads_removed` and **acknowledges only** (`acknowledgePurchase`) —
+consuming it would let Play sell it again. A purchase token already recorded for another
+account is refused (`purchase-belongs-to-another-account`). `ads_removed` is not in
+`PATCH /me/profile`'s whitelist. Migration `0011` adds `ad_events`, `ads_removed` and the
+`purchases` changes.
+
 ## Local development vs. production
 
 Postgres 16 runs locally on this machine as a system service (not Docker --

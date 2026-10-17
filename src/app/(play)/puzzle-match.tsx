@@ -9,7 +9,10 @@ import { getPieceSprites } from '@/components/ui/pieceSprites';
 import { getBoardTheme } from '@/constants/boardThemes';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
 import { useChessGame } from '@/hooks/useChessGame';
+import { useAdsEnabled } from '@/hooks/useAdsEnabled';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { recordPuzzleSolved } from '@/lib/ads/adFrequency';
+import { maybeShowInterstitial } from '@/lib/ads/maybeShowInterstitial';
 import { reportPuzzleSolvedForQuests } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import { goUp } from '@/lib/navigation';
@@ -72,12 +75,15 @@ function PuzzleMatchInner({
   // -- resetPuzzle()/retrying after a failed attempt must never re-report a
   // solve that already landed. A plain ref is enough because this component
   // remounts per puzzle (see PuzzleMatchScreen's key).
+  const adsEnabled = useAdsEnabled();
+  const leavingRef = useRef(false);
   const reportedSolvedRef = useRef(false);
   useEffect(() => {
     if (game.puzzleStatus !== 'solved' || !entry || reportedSolvedRef.current) return;
     reportedSolvedRef.current = true;
     // Local, auth-independent -- guests get progress tracking too.
     void markPuzzleSolved(entry.id);
+    void recordPuzzleSolved(); // interstitial pacing: every 5th solve
     (async () => {
       const token = await getAuthToken();
       if (!token) return;
@@ -118,7 +124,14 @@ function PuzzleMatchInner({
           ? Colors.crimson
           : Colors.cyan;
 
-  const handleNextPuzzle = () => {
+  // The natural pause between puzzles is the only place a puzzle interstitial
+  // may appear (never while a position is on the board). Navigation always
+  // follows, ad or not; leavingRef ignores a double tap while an ad is up.
+  const handleNextPuzzle = async () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    await maybeShowInterstitial('puzzle-next', adsEnabled);
+    leavingRef.current = false;
     const next = nextPuzzle(entry.id, { tier, tacticId });
     if (next && next.id !== entry.id) {
       router.replace({ pathname: '/puzzle-match', params: { puzzleId: next.id, tier, tacticId } });

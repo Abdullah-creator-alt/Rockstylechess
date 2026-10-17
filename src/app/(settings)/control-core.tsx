@@ -9,6 +9,7 @@ import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
 import { useNotifications } from '@/hooks/useNotifications';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { initAds, isPrivacyOptionsRequired, openPrivacyOptions } from '@/lib/ads';
 import { loadMusicPreference, setMusicEnabled } from '@/lib/backgroundMusic';
 import { clearAuthToken } from '@/lib/authStorage';
 import { setGuestMode } from '@/lib/guestMode';
@@ -116,10 +117,26 @@ export default function ControlCoreScreen() {
 
   const { unreadCount: unreadNotifications } = useNotifications({ countOnly: true });
 
+  // Only players in a region that requires it (EEA/UK) get the row; the answer
+  // is known once the ads SDK has finished its consent check. Always false on web.
+  const [privacyOptionsVisible, setPrivacyOptionsVisible] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void initAds().then(() => {
+      if (alive) setPrivacyOptionsVisible(isPrivacyOptionsRequired());
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const gameRows: GameRow[] = [
     { id: 'notifications', icon: 'notifications', label: 'Notifications', subtitle: 'Match, reward, and social alerts', badge: unreadNotifications, action: () => router.push('/backstage-alerts') },
     { id: 'language', icon: 'menu_book', label: 'Language', subtitle: 'Display language', trailing: 'English', action: () => console.log('Language pressed') },
     { id: 'terms', icon: 'style', label: 'Terms of Service', subtitle: 'Legal & privacy', action: () => console.log('Terms of Service pressed') },
+    ...(privacyOptionsVisible
+      ? [{ id: 'ad-choices', icon: 'visibility' as const, label: 'Privacy & Ad Choices', subtitle: 'Review your ad consent', action: () => void openPrivacyOptions() }]
+      : []),
     { id: 'support', icon: 'support_agent', label: 'Help & Support', subtitle: 'Get help from the crew', action: () => router.push('/roadie-support') },
   ];
 

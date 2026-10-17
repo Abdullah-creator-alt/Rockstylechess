@@ -204,6 +204,21 @@ routes added directly to `server/src/auth.ts`'s single `authRouter` —
 there's no per-feature router file. UTC-calendar-day reset logic (daily
 bonus, daily spin, daily quests) shares `server/src/db/utcDay.ts`.
 
+### Ads — `src/lib/ads/` / `server/src/adRewards.ts`
+
+AdMob (`react-native-google-mobile-ads`, pinned 16.x for RN 0.81) behind one wrapper:
+`src/lib/ads/index.ts` is the only file that imports the SDK (`index.web.ts` is the
+web stub — never import the SDK elsewhere, it breaks the web bundle like
+react-native-iap does). Placements are a whitelist in `src/lib/ads/types.ts`: rewarded
+(Shop free chips, extra spin, daily-bonus x2) and interstitial (leaving the result
+screen, "Next Puzzle"); **no banners, nothing during `/match`, `/puzzle-match` or
+`/matchmaking`**. The server decides every reward: caps and amounts in `adRewards.ts`,
+redeemed inside the reward's own transaction via `db/adEvents.ts`; `ADS_REQUIRE_SSV`
+switches from trusting the client (test ids) to Google's signed SSV callback. Test ad
+ids are the default until real ones are set — a Play Store build must not ship with
+them. "Remove Ads" is a non-consumable entitlement (`ads_removed`, acknowledge-only
+verify path). Full detail: root `README.md` → "Ads", `server/README.md` → "Ads".
+
 ### Sound — `src/lib/soundEffects.ts` / `src/lib/backgroundMusic.ts`
 
 Five short SFX (move/capture/castle/check/checkmate/illegal), each a

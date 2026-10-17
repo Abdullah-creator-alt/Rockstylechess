@@ -1,8 +1,9 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 
+import { redeemAdReward } from './adEvents.js';
 import { db } from './client.js';
 import { playerProfiles, spinPrizes, userSpinLog } from './schema/index.js';
-import { utcDayDiff } from './utcDay.js';
+import { utcDayDiff, utcDayStart } from './utcDay.js';
 
 export async function getSpinStatus(userId: string) {
   const [latest] = await db
@@ -27,7 +28,12 @@ function pickWeighted<T extends { weight: number }>(rows: T[]): T {
 
 // No row lock (see dailyBonus.ts's claimDailyBonus for the same accepted
 // tradeoff on the double-request race window).
-export async function performSpin(userId: string) {
+//
+// `withAd`: the player watched a rewarded ad for their one extra daily spin.
+// Only honoured when they have ALREADY spun today (a player who can spin for
+// free never burns an ad), at most one extra per day, and the ad is redeemed
+// inside this same transaction so a failed spin never costs the ad.
+export async function performSpin(userId: string, options: { withAd?: boolean } = {}) {
   return db.transaction(async (tx) => {
     const [latest] = await tx
       .select({ spunAt: userSpinLog.spunAt })
@@ -37,7 +43,14 @@ export async function performSpin(userId: string) {
       .limit(1);
     const now = new Date();
     if (latest && utcDayDiff(latest.spunAt, now) === 0) {
-      return { alreadySpun: true as const };
+      if (!options.withAd) return { alreadySpun: true as const };
+      const [{ n: spinsToday }] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(userSpinLog)
+        .where(and(eq(userSpinLog.userId, userId), gte(userSpinLog.spunAt, utcDayStart(now))));
+      if (spinsToday >= 2) return { alreadySpun: true as const };
+      const outcome = await redeemAdReward(tx, userId, 'extra-spin', now);
+      if (outcome !== 'ok') return { adBlocked: outcome };
     }
 
     const prizes = await tx.select().from(spinPrizes);

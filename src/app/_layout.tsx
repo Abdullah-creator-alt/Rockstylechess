@@ -21,6 +21,7 @@ import { Colors } from '@/constants/theme';
 import { ChallengesProvider } from '@/hooks/useChallenges';
 import { FriendsProvider } from '@/hooks/useFriends';
 import { PlayerProfileProvider } from '@/hooks/usePlayerProfile';
+import { initAds } from '@/lib/ads';
 import { loadMusicPreference, playMenuMusic, stopMenuMusic } from '@/lib/backgroundMusic';
 import { BLOCKED_BACK, goUp, ROOT_ROUTES } from '@/lib/navigation';
 import { loadSoundFxPreference } from '@/lib/soundEffects';
@@ -64,6 +65,13 @@ export default function RootLayout() {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }
+  }, [fontsLoaded, fontError]);
+
+  // Ads (consent form + SDK start) wait until the splash is gone so a UMP
+  // consent dialog never appears over the splash, and are fire-and-forget: a
+  // failure inside initAds() is caught there and can never block the app.
+  useEffect(() => {
+    if (fontsLoaded || fontError) void initAds();
   }, [fontsLoaded, fontError]);
 
   // Not gated on splash-hide (unlike fonts) -- a quick local AsyncStorage

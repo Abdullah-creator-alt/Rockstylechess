@@ -51,6 +51,10 @@ export const playerProfiles = pgTable('player_profiles', {
   equippedBoardId: varchar('equipped_board_id', { length: 40 }),
   equippedPieceId: varchar('equipped_piece_id', { length: 40 }),
   equippedAvatarCosmeticId: varchar('equipped_avatar_cosmetic_id', { length: 40 }),
+  // Set only by the server when a Remove Ads purchase is verified
+  // (db/purchases.ts) -- deliberately NOT in PATCH /me/profile's whitelist.
+  // Switches off interstitials; rewarded ads stay (the player opts into those).
+  adsRemoved: boolean('ads_removed').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

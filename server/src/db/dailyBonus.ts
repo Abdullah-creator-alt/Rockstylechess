@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 
 import { DAILY_BONUS_REWARDS } from '../dailyBonusRewards.js';
+import { redeemAdReward } from './adEvents.js';
 import { reportDailyStreakForAchievements } from './achievements.js';
 import { db } from './client.js';
 import { dailyRewardClaims, playerProfiles } from './schema/index.js';
@@ -40,7 +41,12 @@ export async function getDailyBonusStatus(userId: string) {
 // tradeoff already made on POST /me/match-reward (chips/gems aren't
 // redeemable for anything real anywhere in the app). The client disables its
 // claim button for the in-flight request as the practical mitigation.
-export async function claimDailyBonus(userId: string) {
+//
+// `doubleWithAd`: the player watched a rewarded ad to claim x2 today. Redeemed
+// inside the claim transaction (only once a claim is actually going to happen),
+// so a rejected ad leaves the day unclaimed and the player can still claim
+// normally.
+export async function claimDailyBonus(userId: string, options: { doubleWithAd?: boolean } = {}) {
   const result = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
@@ -56,7 +62,14 @@ export async function claimDailyBonus(userId: string) {
       return { alreadyClaimed: true as const, day, streak: currentStreak };
     }
 
-    const reward = DAILY_BONUS_REWARDS[day - 1];
+    let multiplier = 1;
+    if (options.doubleWithAd) {
+      const outcome = await redeemAdReward(tx, userId, 'daily-double', now);
+      if (outcome !== 'ok') return { adBlocked: outcome };
+      multiplier = 2;
+    }
+    const baseReward = DAILY_BONUS_REWARDS[day - 1];
+    const reward = { chips: baseReward.chips * multiplier, gems: baseReward.gems * multiplier };
 
     if (existing) {
       await tx
@@ -91,6 +104,8 @@ export async function claimDailyBonus(userId: string) {
   // Outside the claim transaction, same pattern persistMatchResult.ts uses
   // for its own achievement reports -- a separate, best-effort statement
   // rather than nested inside the claim itself.
+  if ('adBlocked' in result) return result;
+
   if (!result.alreadyClaimed) {
     await reportDailyStreakForAchievements(userId, result.streak);
   }

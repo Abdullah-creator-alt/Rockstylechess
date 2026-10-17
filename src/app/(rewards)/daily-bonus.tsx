@@ -5,10 +5,11 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIcon, CurrencyIcon, CurrencyPill, ProgressBar, RockButton } from '@/components/ui';
+import { AppIcon, CurrencyIcon, CurrencyPill, ProgressBar, RewardedAdButton, RockButton } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
+import { useAdStatus } from '@/hooks/useAdStatus';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { claimDailyBonus, getDailyBonusStatus, type DailyBonusStatus } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
@@ -36,6 +37,7 @@ export default function DailyBonusScreen() {
   const { status: profileStatus, gems, refresh } = usePlayerProfile();
   const [bonusStatus, setBonusStatus] = useState<DailyBonusStatus | null>(null);
   const [claiming, setClaiming] = useState(false);
+  const { adStatus, refetch: refetchAdStatus } = useAdStatus();
 
   useEffect(() => {
     if (profileStatus !== 'ready') return;
@@ -69,6 +71,18 @@ export default function DailyBonusScreen() {
     } finally {
       setClaiming(false);
     }
+  }
+
+  // Rewarded-ad variant: same claim, paid out x2 (the server redeems the ad
+  // inside the claim, so a rejected ad leaves today's bonus unclaimed). Throws
+  // on failure -- RewardedAdButton turns that into the alert.
+  async function handleClaimDoubled() {
+    const token = await getAuthToken();
+    if (!token) return;
+    const result = await claimDailyBonus(token, { doubleWithAd: true });
+    setBonusStatus({ currentStreak: result.streak, canClaimToday: false, nextClaimDay: result.day });
+    refresh();
+    void refetchAdStatus();
   }
 
   const cycleDay = bonusStatus?.nextClaimDay ?? 1;
@@ -156,6 +170,14 @@ export default function DailyBonusScreen() {
               );
             })}
           </View>
+
+          {canClaimToday ? (
+            <RewardedAdButton
+              label="Watch ad · claim x2"
+              remaining={adStatus?.placements['daily-double'].remaining ?? null}
+              onEarned={handleClaimDoubled}
+            />
+          ) : null}
 
           <LinearGradient
             colors={['#3a2c0b', Colors.bgPanel, Colors.bgBase]}

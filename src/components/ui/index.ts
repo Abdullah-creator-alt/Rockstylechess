@@ -1,4 +1,5 @@
 export { RockButton } from './RockButton';
+export { RewardedAdButton } from './RewardedAdButton';
 export type { RockButtonVariant } from './RockButton';
 
 export { RockCard } from './RockCard';

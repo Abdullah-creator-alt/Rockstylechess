@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 
-import type { IapPack } from '../iapCatalog.js';
+import type { EntitlementProduct, IapPack } from '../iapCatalog.js';
 import { db } from './client.js';
 import { playerProfiles, purchases, userCosmetics } from './schema/index.js';
 
@@ -59,5 +59,50 @@ export async function creditVerifiedPurchase(
     }
 
     return { status: 'ok', chips: updated.chips, gems: updated.gems };
+  });
+}
+
+export type GrantEntitlementResult = { status: 'ok' | 'already-processed' } | { status: 'token-owned-by-other-user' };
+
+// Records a verified Remove Ads purchase and flips player_profiles.ads_removed.
+// Same insert-with-conflict-guard idempotency as creditVerifiedPurchase. A
+// replay by the SAME user is fine (and re-asserts the flag, which is what makes
+// "Restore purchase" work); a Play purchase token already recorded against a
+// DIFFERENT account must never unlock this one.
+export async function grantEntitlement(
+  userId: string,
+  product: EntitlementProduct,
+  providerTransactionId: string,
+): Promise<GrantEntitlementResult> {
+  return db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(purchases)
+      .values({
+        userId,
+        packId: product.id,
+        entitlement: product.entitlement,
+        priceUsdCents: product.priceUsdCents,
+        provider: 'google_play',
+        providerTransactionId,
+        status: 'completed',
+      })
+      .onConflictDoNothing({ target: purchases.providerTransactionId })
+      .returning({ id: purchases.id });
+
+    if (inserted.length === 0) {
+      const [existing] = await tx
+        .select({ userId: purchases.userId })
+        .from(purchases)
+        .where(eq(purchases.providerTransactionId, providerTransactionId))
+        .limit(1);
+      if (existing?.userId !== userId) return { status: 'token-owned-by-other-user' };
+    }
+
+    await tx
+      .update(playerProfiles)
+      .set({ adsRemoved: true, updatedAt: new Date() })
+      .where(eq(playerProfiles.userId, userId));
+
+    return { status: inserted.length === 0 ? 'already-processed' : 'ok' };
   });
 }

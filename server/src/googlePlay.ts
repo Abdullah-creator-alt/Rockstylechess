@@ -64,3 +64,17 @@ export async function acknowledgeAndConsume(productId: string, purchaseToken: st
   }
   await client.request({ url: `${base}:consume`, method: 'POST', data: {} });
 }
+
+// Acknowledge ONLY -- for a non-consumable entitlement (Remove Ads). Consuming
+// it, as acknowledgeAndConsume() does for chip/gem packs, would make Play treat
+// it as not owned and let the player buy (and lose) it again.
+export async function acknowledgePurchase(productId: string, purchaseToken: string): Promise<void> {
+  const client = await getAuth().getClient();
+  const url = `${API_BASE}/applications/${PACKAGE_NAME}/purchases/products/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}:acknowledge`;
+  try {
+    await client.request({ url, method: 'POST', data: {} });
+  } catch (error) {
+    // 400 when already acknowledged (a retried call / Play's own auto-ack) is fine.
+    console.log('Purchase acknowledge failed', error);
+  }
+}

@@ -5,9 +5,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
-import { AppIcon, CurrencyPill, RockButton, RockCard } from '@/components/ui';
+import { AppIcon, CurrencyPill, RewardedAdButton, RockButton, RockCard } from '@/components/ui';
 import { SubPageHeader } from '@/components/layout';
 import { Colors, withOpacity } from '@/constants/theme';
+import { useAdStatus } from '@/hooks/useAdStatus';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { getSpinStatus, spinWheel, type SpinResult } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
@@ -32,6 +33,7 @@ export default function SpinScreen() {
   const [canSpin, setCanSpin] = useState<boolean | null>(null); // null = not loaded yet
   const [isSpinning, setIsSpinning] = useState(false);
   const [result, setResult] = useState<SpinSegment | null>(null);
+  const { adStatus, refetch: refetchAdStatus } = useAdStatus();
 
   useEffect(() => {
     if (profileStatus !== 'ready') return;
@@ -58,8 +60,11 @@ export default function SpinScreen() {
     refresh();
   }
 
-  async function handleSpin() {
-    if (isSpinning || !canSpin) return;
+  // `withAd`: the one extra daily spin earned by a rewarded ad. On that path a
+  // failed request is rethrown so RewardedAdButton can explain it; the normal
+  // path keeps the original swallow-and-disable behaviour.
+  async function runSpin(withAd: boolean) {
+    if (isSpinning || (!withAd && !canSpin)) return;
     const token = await getAuthToken();
     if (!token) return;
 
@@ -68,13 +73,15 @@ export default function SpinScreen() {
 
     let spinResult: SpinResult;
     try {
-      spinResult = await spinWheel(token);
+      spinResult = await spinWheel(token, { withAd });
     } catch (error) {
       console.log('Spin failed', error);
       setIsSpinning(false);
       setCanSpin(false);
+      if (withAd) throw error;
       return;
     }
+    if (withAd) void refetchAdStatus();
 
     const segmentIndex = Math.max(
       0,
@@ -101,6 +108,8 @@ export default function SpinScreen() {
       },
     );
   }
+
+  const handleSpin = () => runSpin(false);
 
   const wheelStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
@@ -189,6 +198,14 @@ export default function SpinScreen() {
               disabled={!canSpin}
               onPress={handleSpin}
             />
+            {!canSpin && !isSpinning ? (
+              <RewardedAdButton
+                label="Watch ad · 1 extra spin"
+                remaining={adStatus?.placements['extra-spin'].remaining ?? null}
+                onEarned={() => runSpin(true)}
+                style={{ marginTop: 10 }}
+              />
+            ) : null}
           </View>
 
           {result ? (

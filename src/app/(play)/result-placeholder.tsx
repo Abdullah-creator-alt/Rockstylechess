@@ -1,12 +1,15 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, BackHandler, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, CurrencyIcon, CurrencyPill, RockButton, RockCard, VenueBackdrop } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
+import { useAdsEnabled } from '@/hooks/useAdsEnabled';
 import { useFriends } from '@/hooks/useFriends';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { recordMatchCompleted } from '@/lib/ads/adFrequency';
+import { maybeShowInterstitial } from '@/lib/ads/maybeShowInterstitial';
 import { chargeForAnalysis } from '@/lib/api';
 import { ANALYSIS_COST } from '@/lib/analysisCost';
 import { getAuthToken } from '@/lib/authStorage';
@@ -96,18 +99,40 @@ export default function ResultScreen() {
   const { chips: currentChips, refresh: refreshPlayerProfile } = usePlayerProfile();
   const friends = useFriends();
 
+  const adsEnabled = useAdsEnabled();
+  const leavingRef = useRef(false);
+
+  // Counts toward the interstitial pacing (every 3rd finished match).
+  useEffect(() => {
+    void recordMatchCompleted();
+  }, []);
+
+  // The one exit from this screen: the player has seen the result and chosen to
+  // leave, which is the natural pause for an interstitial (never mid-game, never
+  // between handleGameOver and this screen -- match.tsx's reward claims depend on
+  // that timing). Navigation ALWAYS happens, ad or not; leavingRef stops a
+  // double tap from queueing two exits while an ad is up.
+  const goHome = useCallback(async () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    await maybeShowInterstitial('result-exit', adsEnabled);
+    // Explicit "going back" -- the one point the temporary bot/local replay
+    // data gets deleted (no-ops harmlessly if there was none).
+    clearPendingLocalReplay();
+    router.replace('/home');
+  }, [adsEnabled, router]);
+
   // The match is gone from the stack (match.tsx used router.replace to get
   // here), so there's nothing valid to go "back" to -- hardware back goes
   // straight Home, same as the Home button.
   useEffect(() => {
     const onBack = () => {
-      clearPendingLocalReplay();
-      router.replace('/home');
+      void goHome();
       return true;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [router]);
+  }, [goHome]);
   const [addFriendState, setAddFriendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   const canAddOpponent =
@@ -260,10 +285,7 @@ export default function ResultScreen() {
           icon={<AppIcon name="home" size={20} color={Colors.bgBase} />}
           onPress={() => {
             console.log('Home pressed from result screen');
-            // Explicit "going back" -- the one point the temporary bot/local
-            // replay data gets deleted (no-ops harmlessly if there was none).
-            clearPendingLocalReplay();
-            router.replace('/home');
+            void goHome();
           }}
         />
       </View>

@@ -14,5 +14,6 @@ export function useShopIAP(_options: UseShopIAPOptions): UseShopIAPResult {
       throw new Error('Purchases are not available on web.');
     },
     finishTransaction: async () => {},
+    getOwnedPurchases: async () => [],
   };
 }

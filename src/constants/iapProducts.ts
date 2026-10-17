@@ -24,3 +24,10 @@ export function androidProductIdForPack(packId: string): string | undefined {
 export function packIdForAndroidProductId(androidProductId: string): string | undefined {
   return Object.keys(IAP_PRODUCT_IDS).find((packId) => IAP_PRODUCT_IDS[packId] === androidProductId);
 }
+
+// One-time, NON-consumable "Remove Ads" -- kept out of IAP_PRODUCT_IDS above on
+// purpose so nothing that lists/fetches the chip & gem packs (or finishes their
+// transactions as consumable) can pick it up by accident. Mirrors
+// server/src/iapCatalog.ts's ENTITLEMENT_PRODUCTS (display-only on this side).
+export const REMOVE_ADS_PACK_ID = 'remove-ads';
+export const REMOVE_ADS_ANDROID_PRODUCT_ID = 'remove_ads';
