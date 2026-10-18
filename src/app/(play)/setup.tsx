@@ -1,6 +1,5 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,26 +8,28 @@ import { CurrencyPill, RockButton, RockCard } from '@/components/ui';
 import { BoardAssetPrewarm } from '@/components/ui/BoardAssetPrewarm';
 import { SubPageHeader } from '@/components/layout';
 import { Colors, withOpacity } from '@/constants/theme';
-import { VENUES, formatChips, getVenue, isVenueLocked, type Venue } from '@/constants/venues';
+import { VENUES, formatChips, getVenue, type Venue } from '@/constants/venues';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { useVenueEntry } from '@/hooks/useVenueEntry';
 import { DURATIONS, DURATION_LABELS, type Duration } from '@/lib/onlineMatch';
 
 export default function PlaySetupScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { chips, profile } = usePlayerProfile();
-  const [selectedVenueId, setSelectedVenueId] = useState('arena');
+  const { requirementFor, explain, tryPlay } = useVenueEntry();
+  // Garage first: stakes are something you choose, never the default.
+  const [selectedVenueId, setSelectedVenueId] = useState('garage');
   const [duration, setDuration] = useState<Duration>('5m');
 
   const selectedVenue = getVenue(selectedVenueId);
 
   function handleVenuePress(venue: Venue) {
-    if (isVenueLocked(venue, chips)) {
-      console.log('Venue locked - insufficient chips', venue.name);
+    const requirement = requirementFor(venue);
+    if (requirement) {
+      explain(venue, requirement);
       return;
     }
     setSelectedVenueId(venue.id);
-    console.log('Venue selected', venue.name);
   }
 
   return (
@@ -41,7 +42,7 @@ export default function PlaySetupScreen() {
           <Text className="font-section-header text-section-header uppercase tracking-widest text-text-muted">Venue &amp; Stakes</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-md pb-1">
             {VENUES.map((venue) => {
-              const locked = isVenueLocked(venue, chips);
+              const locked = requirementFor(venue) !== null;
               const isActive = !locked && selectedVenueId === venue.id;
               return (
                 <Pressable
@@ -143,9 +144,7 @@ export default function PlaySetupScreen() {
               label="Play Now"
               variant="primary"
               icon={<MaterialCommunityIcons name="play" size={20} color={Colors.bgBase} />}
-              onPress={() => {
-                router.push({ pathname: '/matchmaking', params: { venueTier: selectedVenue.id, duration } });
-              }}
+              onPress={() => tryPlay(selectedVenue, duration)}
             />
           </View>
         </RockCard>

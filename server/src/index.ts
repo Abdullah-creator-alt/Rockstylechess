@@ -3,6 +3,7 @@ import './env.js';
 import { toNodeHandler } from 'better-auth/node';
 import cors from 'cors';
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 
@@ -20,6 +21,15 @@ import { persistMessage } from './db/directMessages.js';
 import { areFriends, friendIdsOf } from './db/friends.js';
 import { insertNotification } from './db/notifications.js';
 import { persistMatchResult } from './db/persistMatchResult.js';
+import {
+  escrowWager,
+  getEntryProfile,
+  settleWagerWithRetry,
+  stakeFor,
+  sweepStaleWagers,
+  type SettledWager,
+} from './db/wagers.js';
+import { ECONOMY } from './economy.generated.js';
 import { playerProfiles } from './db/schema/index.js';
 import {
   addUserSocket,
@@ -39,10 +49,19 @@ import {
   getMatch,
   liveClockRemaining,
   opponentColor,
+  seatColor,
   type MatchState,
   type PieceColor,
 } from './match.js';
-import { isDuration, joinQueue, leaveQueue, type Duration, type QueuedPlayer, type VenueTier } from './matchmaking.js';
+import {
+  isDuration,
+  joinQueue,
+  leaveQueue,
+  removeFromQueues,
+  type Duration,
+  type QueuedPlayer,
+  type VenueTier,
+} from './matchmaking.js';
 
 const PORT = Number(process.env.PORT) || 4000;
 // How long a disconnected player's match stays alive waiting for them to
@@ -168,29 +187,207 @@ async function buildChallengePlayer(
   };
 }
 
-// Fires when a side's clock deadline elapses without them moving -- mirrors
-// the disconnect/forfeit callback below exactly (broadcast match:ended,
-// persist, endMatch), just for a different trigger. match.ts can't own this
-// itself: it has no Socket.IO `io` access, so index.ts (which does) is
-// responsible for arming/clearing/rescheduling match.clock.deadlineTimer at
-// every point the active side changes (see notifyMatched below and
+type EndType = 'checkmate' | 'stalemate' | 'draw' | 'resignation' | 'forfeit' | 'timeout';
+
+// Settlements still in flight, so a SIGTERM can wait for them (see shutdown below).
+const pendingSettlements = new Set<Promise<void>>();
+
+// THE one place a match ends (it replaced seven copies of the same
+// emit/persist/endMatch sequence). Order matters and is deliberate:
+//   1. broadcast `match:ended` (only for endings clients cannot derive from a
+//      move -- checkmate/stalemate/rule draws pass no `emit`),
+//   2. endMatchClean() SYNCHRONOUSLY -- Node's single thread means the first
+//      ending to reach this line wins and every later event finds no match, which
+//      is what stops two endings (e.g. a move and a flag-fall) both settling,
+//   3. only then the async part: settle the wager, tell the players, persist.
+// Never rejects: the database must never take down live gameplay.
+function finishMatch(
+  match: MatchState,
+  type: EndType,
+  winnerColor: PieceColor | null,
+  opts: { emit?: Record<string, unknown>; forceRefund?: boolean } = {},
+): Promise<void> {
+  if (opts.emit) io.to(match.id).emit('match:ended', { matchId: match.id, result: opts.emit });
+  endMatchClean(match.id);
+  const task: Promise<void> = settleAndPersist(match, type, winnerColor, opts.forceRefund === true)
+    .catch((err) => console.error('match persistence failed', err))
+    .finally(() => pendingSettlements.delete(task));
+  pendingSettlements.add(task);
+  return task;
+}
+
+async function settleAndPersist(
+  match: MatchState,
+  type: EndType,
+  winnerColor: PieceColor | null,
+  forceRefund: boolean,
+): Promise<void> {
+  if (!match.wager) {
+    await persistMatchResult(match, type, winnerColor);
+    return;
+  }
+
+  const winnerUserId = winnerColor ? match.players[winnerColor].userId : null;
+  const settled = await settleWagerWithRetry(match.id, {
+    resultType: type,
+    winnerUserId,
+    plies: match.chess.history().length,
+    forceRefund,
+  });
+  // Settlement failed even after retries: the wager stays 'held' and the sweeper
+  // refunds it. Record nothing (no rating change against unsettled chips).
+  if (!settled) return;
+
+  for (const color of ['w', 'b'] as PieceColor[]) {
+    const userId = match.players[color].userId;
+    const mine = userId ? settled.players[userId] : undefined;
+    if (!userId || !mine) continue;
+    emitToUser(userId, 'wager:settled', wagerSettledPayload(match, settled, mine));
+  }
+
+  // A void match (someone left in the first moves) leaves no trace: no rating,
+  // no XP, no history row -- the stakes were simply returned.
+  if (settled.outcome === 'void') return;
+
+  await persistMatchResult(match, type, winnerColor, {
+    wagered: true,
+    chipsDeltaByUser: Object.fromEntries(Object.entries(settled.players).map(([uid, p]) => [uid, p.net])),
+  });
+}
+
+function wagerSettledPayload(
+  match: MatchState,
+  settled: SettledWager,
+  mine: { net: number; chipsAfter: number; payout: number },
+) {
+  return {
+    matchId: match.id,
+    venueTier: settled.venueTier,
+    outcome: settled.outcome, // 'win' pays someone; 'draw' and 'void' refund both
+    buyIn: settled.buyIn,
+    pot: settled.buyIn * 2,
+    rake: settled.rake,
+    payout: mine.payout,
+    net: mine.net,
+    chipsAfter: mine.chipsAfter,
+    refunded: settled.outcome !== 'win',
+  };
+}
+
+// Starts the reconnect-grace countdown for a seat whose socket is gone: the
+// match stays alive so a rejoin within the window picks it back up (see
+// match:rejoin), otherwise the other side wins by forfeit.
+function startForfeitCountdown(match: MatchState, color: PieceColor): void {
+  if (match.forfeitTimers[color]) return;
+  io.to(match.id).emit('match:opponentDisconnected', { color });
+  match.forfeitTimers[color] = setTimeout(() => {
+    void finishMatch(match, 'forfeit', opponentColor(color), {
+      emit: { type: 'forfeit', winner: opponentColor(color) },
+    });
+  }, RECONNECT_GRACE_MS);
+}
+
+// Fires when a side's clock deadline elapses without them moving. match.ts
+// can't own this itself: it has no Socket.IO `io` access, so index.ts (which
+// does) is responsible for arming/clearing/rescheduling match.clock.deadlineTimer
+// at every point the active side changes (see notifyMatched below and
 // move:make's handler further down).
 function fireTimeout(match: MatchState, flaggedColor: PieceColor): void {
   const winner = opponentColor(flaggedColor);
   // FIDE 6.9: a flag-fall is only a loss if the other side could still
   // checkmate. Bare king / K+N / K+B on time -> draw.
   if (!canDeliverMate(match.chess, winner)) {
-    io.to(match.id).emit('match:ended', {
-      matchId: match.id,
-      result: { type: 'draw', winner: null, reason: 'insufficientVsTimeout' },
-    });
-    persistMatchResult(match, 'draw', null).catch((err) => console.error('match persistence failed', err));
-    endMatchClean(match.id);
+    void finishMatch(match, 'draw', null, { emit: { type: 'draw', winner: null, reason: 'insufficientVsTimeout' } });
     return;
   }
-  io.to(match.id).emit('match:ended', { matchId: match.id, result: { type: 'timeout', winner } });
-  persistMatchResult(match, 'timeout', winner).catch((err) => console.error('match persistence failed', err));
-  endMatchClean(match.id);
+  void finishMatch(match, 'timeout', winner, { emit: { type: 'timeout', winner } });
+}
+
+const isSocketLive = (socketId: string): boolean => io.sockets.sockets.get(socketId)?.connected === true;
+
+// Puts a still-connected player back in a tier's queue after a pairing fell
+// through (their opponent left or could not afford the buy-in), pairing them
+// again immediately if someone else is already waiting.
+function requeue(player: QueuedPlayer, tier: VenueTier): void {
+  if (!isSocketLive(player.socketId)) return;
+  const next = joinQueue(tier, player);
+  if (next) void startPairedMatch(next, player, tier);
+}
+
+// A pair just formed in a venue queue. Free venues (Garage) go straight to a
+// match. Wagered venues first ESCROW both buy-ins -- before the match exists --
+// and only then create it, so there is never a live match whose stake was not
+// secured. Anything that goes wrong after the money moves refunds it.
+async function startPairedMatch(waiting: QueuedPlayer, joiner: QueuedPlayer, tier: VenueTier): Promise<void> {
+  // The player who was already waiting sets the clock -- see QueuedPlayer.duration.
+  const baseMs = DURATION_MS[waiting.duration];
+  const stake = stakeFor(tier);
+  if (!stake) {
+    notifyMatched(createMatch(waiting, joiner, baseMs, 0, { venueTier: tier }));
+    return;
+  }
+
+  const waitingLive = isSocketLive(waiting.socketId);
+  const joinerLive = isSocketLive(joiner.socketId);
+  if (!waitingLive || !joinerLive) {
+    // A socket died between queuing and pairing (e.g. during the identity
+    // lookup): never charge anyone for a match that cannot start.
+    if (waitingLive) requeue(waiting, tier);
+    if (joinerLive) requeue(joiner, tier);
+    return;
+  }
+
+  const matchId = randomUUID();
+  const whiteIsWaiting = Math.random() < 0.5;
+  const [white, black] = whiteIsWaiting ? [waiting, joiner] : [joiner, waiting];
+  let escrow;
+  try {
+    escrow = await escrowWager(matchId, tier, white.userId as string, black.userId as string);
+  } catch (error) {
+    console.error('wager escrow failed', error);
+    for (const p of [waiting, joiner]) io.to(p.socketId).emit('queue:error', { reason: 'unavailable' });
+    return;
+  }
+  if (escrow.status === 'insufficient-chips') {
+    // Their balance dropped since they joined (spent elsewhere / another match).
+    const short = escrow.userId === waiting.userId ? waiting : joiner;
+    const other = short === waiting ? joiner : waiting;
+    io.to(short.socketId).emit('queue:error', { reason: 'insufficient-chips', required: stake.buyIn });
+    requeue(other, tier);
+    return;
+  }
+
+  let match: MatchState;
+  try {
+    match = createMatch(waiting, joiner, baseMs, 0, {
+      id: matchId,
+      whiteIsA: whiteIsWaiting,
+      venueTier: tier,
+      wager: { venueTier: tier, buyIn: stake.buyIn, prize: stake.prize },
+    });
+  } catch (error) {
+    console.error('createMatch failed after escrow -- refunding', error);
+    await settleWagerWithRetry(matchId, { resultType: 'draw', winnerUserId: null, plies: 0, forceRefund: true });
+    for (const p of [waiting, joiner]) io.to(p.socketId).emit('queue:error', { reason: 'unavailable' });
+    return;
+  }
+
+  // A socket that dropped during the escrow await may have reconnected on a new
+  // socket id (and queued again) -- rebind the seat to its live socket instead of
+  // starting a forfeit clock against a player who is actually still here.
+  for (const color of ['w', 'b'] as PieceColor[]) {
+    const seat = match.players[color];
+    if (isSocketLive(seat.socketId) || !seat.userId) continue;
+    const alternative = socketIdsForUser(seat.userId).find(isSocketLive);
+    if (alternative) {
+      seat.socketId = alternative;
+      removeFromQueues((p) => p.userId === seat.userId);
+    }
+  }
+  notifyMatched(match);
+  for (const color of ['w', 'b'] as PieceColor[]) {
+    if (!isSocketLive(match.players[color].socketId)) startForfeitCountdown(match, color);
+  }
 }
 
 // Joins both sockets to the match's Socket.IO room and tells each color's
@@ -200,6 +397,12 @@ function fireTimeout(match: MatchState, flaggedColor: PieceColor): void {
 // White's clock deadline -- White's clock is already running from move 1,
 // standard chess-clock convention -- since createMatch itself can't (no io
 // access, see fireTimeout's comment).
+// What the client needs to show the stakes: which venue this really is (it used
+// to trust its own route param) and the buy-in / prize at stake (0 = unwagered).
+function venueFields(match: MatchState): { venueTier: string; buyIn: number; prize: number } {
+  return { venueTier: match.venueTier ?? 'garage', buyIn: match.wager?.buyIn ?? 0, prize: match.wager?.prize ?? 0 };
+}
+
 function notifyMatched(match: MatchState): void {
   io.sockets.sockets.get(match.players.w.socketId)?.join(match.id);
   io.sockets.sockets.get(match.players.b.socketId)?.join(match.id);
@@ -216,6 +419,7 @@ function notifyMatched(match: MatchState): void {
       fen: match.chess.fen(),
       clocks: match.clock.remainingMs,
       incrementMs: match.clock.incrementMs,
+      ...venueFields(match),
     });
   }
 }
@@ -344,11 +548,49 @@ io.on('connection', (socket: Socket) => {
   socket.on(
     'queue:join',
     async (payload: { guestId?: string; displayName?: string; venueTier?: string; duration?: string }) => {
-      if (!payload?.guestId || !isVenueTier(payload.venueTier)) return;
+      if (!payload?.guestId || !isVenueTier(payload.venueTier)) {
+        socket.emit('queue:error', { reason: 'bad-tier' });
+        return;
+      }
+      const tier = payload.venueTier;
       guestIdBySocket.set(socket.id, payload.guestId);
 
       const userId = (socket.data.userId as string | undefined) ?? null;
+
+      // Wagered venues: signed-in only, enough rating, enough chips, and not already
+      // seated in a live match. Garage skips all of it. The pairing step re-checks
+      // the balance atomically (escrowWager) -- this is the early, friendly answer.
+      const stake = stakeFor(tier);
+      if (stake) {
+        if (!userId) {
+          socket.emit('queue:error', { reason: 'auth-required' });
+          return;
+        }
+        const entry = await getEntryProfile(userId);
+        if (!socket.connected) return; // gone during the lookup -- never queue a dead socket
+        if (!entry) {
+          socket.emit('queue:error', { reason: 'auth-required' });
+          return;
+        }
+        const required = (ECONOMY.venues as Record<string, { minRating: number }>)[tier].minRating;
+        if (entry.rating < required) {
+          socket.emit('queue:error', { reason: 'rating-too-low', required, current: entry.rating });
+          return;
+        }
+        if (entry.chips < stake.buyIn) {
+          socket.emit('queue:error', { reason: 'insufficient-chips', required: stake.buyIn, current: entry.chips });
+          return;
+        }
+        for (const live of allMatches()) {
+          if (live.players.w.userId === userId || live.players.b.userId === userId) {
+            socket.emit('queue:error', { reason: 'already-in-match' });
+            return;
+          }
+        }
+      }
+
       const identity = await getPlayerIdentity(userId);
+      if (!socket.connected) return;
       const player: QueuedPlayer = {
         socketId: socket.id,
         guestId: payload.guestId,
@@ -358,11 +600,22 @@ io.on('connection', (socket: Socket) => {
         country: identity.country,
         duration: resolveDuration(payload.duration),
       };
-      const opponent = joinQueue(payload.venueTier, player);
-      if (!opponent) return; // now waiting in queue
 
-      // The waiting player's duration wins -- see QueuedPlayer.duration's comment.
-      notifyMatched(createMatch(opponent, player, DURATION_MS[opponent.duration]));
+      // ONE queue entry per socket, per guest and per account: an account on a
+      // second device replaces its first entry (so it can never be paired against
+      // itself for a wager), and a socket can't sit in two tiers at once.
+      const replaced = removeFromQueues(
+        (p) => p.socketId === socket.id || p.guestId === payload.guestId || (userId !== null && p.userId === userId),
+      );
+      for (const old of replaced) {
+        if (old.socketId !== socket.id && isSocketLive(old.socketId)) {
+          io.to(old.socketId).emit('queue:error', { reason: 'replaced' });
+        }
+      }
+
+      const opponent = joinQueue(tier, player);
+      if (!opponent) return; // now waiting in queue
+      await startPairedMatch(opponent, player, tier);
     },
   );
 
@@ -423,7 +676,7 @@ io.on('connection', (socket: Socket) => {
     const guestId = guestIdBySocket.get(socket.id);
     const match = payload?.matchId ? getMatch(payload.matchId) : undefined;
     if (!match || !guestId || !payload?.from || !payload?.to) return;
-    const color = colorOf(match, guestId);
+    const color = seatColor(match, guestId, socket.data.userId as string | undefined);
     if (!color) return;
 
     const chess = applyMove(match, color, { from: payload.from, to: payload.to, promotion: payload.promotion });
@@ -477,12 +730,10 @@ io.on('connection', (socket: Socket) => {
       } else {
         resultType = 'draw';
       }
-      // Fire-and-forget -- persistence never gates or delays the realtime
-      // flow above, which has already completed by this point.
-      persistMatchResult(match, resultType, winnerColor).catch((err) =>
-        console.error('match persistence failed', err),
-      );
-      endMatchClean(match.id);
+      // No `emit`: clients derive checkmate/stalemate/rule draws from
+      // move:applied.isGameOver. Settlement and persistence never gate or delay
+      // the realtime flow above, which has already completed by this point.
+      void finishMatch(match, resultType, winnerColor);
     }
   });
 
@@ -490,21 +741,19 @@ io.on('connection', (socket: Socket) => {
     const guestId = guestIdBySocket.get(socket.id);
     const match = payload?.matchId ? getMatch(payload.matchId) : undefined;
     if (!match || !guestId) return;
-    const color = colorOf(match, guestId);
+    const color = seatColor(match, guestId, socket.data.userId as string | undefined);
     if (!color) return;
 
-    io.to(match.id).emit('match:ended', { matchId: match.id, result: { type: 'resignation', winner: opponentColor(color) } });
-    persistMatchResult(match, 'resignation', opponentColor(color)).catch((err) =>
-      console.error('match persistence failed', err),
-    );
-    endMatchClean(match.id);
+    void finishMatch(match, 'resignation', opponentColor(color), {
+      emit: { type: 'resignation', winner: opponentColor(color) },
+    });
   });
 
   socket.on('draw:offer', (payload: { matchId?: string }) => {
     const guestId = guestIdBySocket.get(socket.id);
     const match = payload?.matchId ? getMatch(payload.matchId) : undefined;
     if (!match || !guestId) return;
-    const color = colorOf(match, guestId);
+    const color = seatColor(match, guestId, socket.data.userId as string | undefined);
     if (!color || match.drawOfferBy || match.chess.isGameOver()) return;
 
     match.drawOfferBy = color;
@@ -515,14 +764,12 @@ io.on('connection', (socket: Socket) => {
     const guestId = guestIdBySocket.get(socket.id);
     const match = payload?.matchId ? getMatch(payload.matchId) : undefined;
     if (!match || !guestId) return;
-    const color = colorOf(match, guestId);
+    const color = seatColor(match, guestId, socket.data.userId as string | undefined);
     // Only the player who DIDN'T offer can answer.
     if (!color || !match.drawOfferBy || match.drawOfferBy === color) return;
 
     if (payload.accept) {
-      io.to(match.id).emit('match:ended', { matchId: match.id, result: { type: 'draw', winner: null } });
-      persistMatchResult(match, 'draw', null).catch((err) => console.error('match persistence failed', err));
-      endMatchClean(match.id);
+      void finishMatch(match, 'draw', null, { emit: { type: 'draw', winner: null } });
       return;
     }
     match.drawOfferBy = undefined;
@@ -581,7 +828,7 @@ io.on('connection', (socket: Socket) => {
   socket.on('match:rejoin', (payload: { matchId?: string; guestId?: string }) => {
     const match = payload?.matchId ? getMatch(payload.matchId) : undefined;
     if (!match || !payload?.guestId) return;
-    const color = colorOf(match, payload.guestId);
+    const color = seatColor(match, payload.guestId, socket.data.userId as string | undefined);
     if (!color) return;
 
     guestIdBySocket.set(socket.id, payload.guestId);
@@ -609,6 +856,7 @@ io.on('connection', (socket: Socket) => {
       // running the whole time this player was disconnected.
       clocks: liveClockRemaining(match),
       incrementMs: match.clock.incrementMs,
+      ...venueFields(match),
     });
   });
 
@@ -647,17 +895,46 @@ io.on('connection', (socket: Socket) => {
       const color = colorOf(match, guestId);
       if (!color || match.players[color].socketId !== socket.id) continue;
 
-      io.to(match.id).emit('match:opponentDisconnected', { color });
-      match.forfeitTimers[color] = setTimeout(() => {
-        io.to(match.id).emit('match:ended', { matchId: match.id, result: { type: 'forfeit', winner: opponentColor(color) } });
-        persistMatchResult(match, 'forfeit', opponentColor(color)).catch((err) =>
-          console.error('match persistence failed', err),
-        );
-        endMatchClean(match.id);
-      }, RECONNECT_GRACE_MS);
+      startForfeitCountdown(match, color);
     }
   });
 });
+
+// Matches live only in memory, so a restart would silently strand every escrowed
+// stake. Two safety nets:
+//  1. On SIGTERM (a normal Railway deploy) end every wagered match as a refunded
+//     draw and wait briefly for the refunds to commit before exiting.
+//  2. A sweeper refunds any wager still 'held' 35 minutes after it started and
+//     owned by no live match -- covers a hard crash or a settlement that kept
+//     failing (35 min outlasts the longest match plus the reconnect grace).
+const STALE_WAGER_MS = 35 * 60_000;
+const sweeper = setInterval(() => {
+  sweepStaleWagers(STALE_WAGER_MS, (matchId) => getMatch(matchId) !== undefined)
+    .then((refunded) => {
+      if (refunded > 0) console.log(`Refunded ${refunded} stale wager(s)`);
+    })
+    .catch((err) => console.error('wager sweep failed', err));
+}, 2 * 60_000);
+sweeper.unref();
+
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received -- refunding live wagers before exit`);
+  for (const match of [...allMatches()]) {
+    if (!match.wager) continue;
+    void finishMatch(match, 'draw', null, {
+      emit: { type: 'draw', winner: null, reason: 'serverRestart' },
+      forceRefund: true,
+    });
+  }
+  await Promise.race([Promise.allSettled([...pendingSettlements]), new Promise((resolve) => setTimeout(resolve, 8_000))]);
+  httpServer.close();
+  process.exit(0);
+}
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
 
 httpServer.listen(PORT, () => {
   console.log(`RockStyle Chess server listening on :${PORT}`);

@@ -34,7 +34,7 @@ import { getPieceSprites, type PieceSpriteMap } from '@/components/ui/pieceSprit
 import { getBoardTheme } from '@/constants/boardThemes';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
-import { getVenue, getVenueIntensity } from '@/constants/venues';
+import { formatChips, getVenue, getVenueIntensity } from '@/constants/venues';
 import { useChessClock, type ClockTimes } from '@/hooks/useChessClock';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
 import { useMatchChat } from '@/hooks/useMatchChat';
@@ -46,8 +46,9 @@ import { capturedPoints, materialLead } from '@/lib/pieceValues';
 import { getSocket } from '@/lib/socket';
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 import { setPendingLocalReplay, type LocalMatchReplay } from '@/lib/localMatchReplayStore';
-import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
+import { botChipReward, MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 import { DURATION_MS, isDuration, isVenueTier } from '@/lib/onlineMatch';
+import { ensureWagerListener } from '@/lib/wagerResult';
 
 
 // Bot/local always default to this (matches setup.tsx's own default duration
@@ -133,6 +134,8 @@ export default function MatchScreen() {
     incrementMs: incrementMsParam,
     duration: durationParam,
     venueTier: venueTierParam,
+    buyIn: buyInParam,
+    prize: prizeParam,
   } = useLocalSearchParams<{
     mode?: string;
     difficulty?: string;
@@ -155,6 +158,10 @@ export default function MatchScreen() {
     // back to Garage when absent (local pass-and-play, private room, friend
     // challenge -- none of those flows carry a venue today).
     venueTier?: string;
+    // Online only, from the server's queue:matched: the stake riding on this match
+    // (0 / absent = unwagered).
+    buyIn?: string;
+    prize?: string;
   }>();
   const mode: GameMode = modeParam === 'bot' ? 'bot' : modeParam === 'online' ? 'online' : 'local';
   const difficulty: BotDifficulty =
@@ -220,6 +227,9 @@ export default function MatchScreen() {
   // driven purely by the player's equipped Forge cosmetic regardless of venue.
   const venueTier = isVenueTier(venueTierParam) ? venueTierParam : 'garage';
   const venue = getVenue(venueTier);
+  const buyIn = Number(buyInParam) || 0;
+  const prize = Number(prizeParam) || 0;
+  const wagered = mode === 'online' && buyIn > 0;
   const venueIntensity = getVenueIntensity(venueTier);
   const menuButtonStyle = useMemo(
     () => ({
@@ -280,7 +290,9 @@ export default function MatchScreen() {
     }
     console.log('Game over', outcome, reason);
 
-    const chipsGranted = MATCH_CHIP_REWARDS[outcome];
+    // Online pays the flat online table; bot/local pays by bot strength (server
+    // does the same math in POST /me/match-reward -- this is the display value).
+    const chipsGranted = mode === 'online' ? MATCH_CHIP_REWARDS[outcome] : botChipReward(difficulty, outcome);
     if (mode !== 'online') {
       // Bot/local matches never reach the server otherwise (pure
       // client-side chess.js) -- this is the only point a reward gets
@@ -291,7 +303,7 @@ export default function MatchScreen() {
       const token = await getAuthToken();
       if (token) {
         try {
-          await claimMatchReward(token, outcome);
+          await claimMatchReward(token, outcome, difficulty);
         } catch (error) {
           console.log('Failed to claim match reward', error);
         }
@@ -357,6 +369,9 @@ export default function MatchScreen() {
           reason,
           chipsGranted: String(chipsGranted),
           venueTier,
+          // A wagered match shows the server's settlement instead of the flat
+          // reward (see wagerResult.ts / result-placeholder.tsx).
+          ...(wagered && matchId ? { wagerMatchId: matchId, buyIn: String(buyIn), prize: String(prize) } : {}),
           // Piece values each side captured (display only, result screen).
           myPoints: String(capturedPoints(playerColor === 'w' ? game.capturedByWhite : game.capturedByBlack)),
           oppPoints: String(capturedPoints(playerColor === 'w' ? game.capturedByBlack : game.capturedByWhite)),
@@ -400,6 +415,12 @@ export default function MatchScreen() {
   // both setPlyIndex calls into one render, so there's no visible flash of
   // move 0.
   const wasPeekActiveRef = useRef(peekActive);
+  // Make sure the shared wager:settled listener is attached for the whole online
+  // match, so the settlement is cached even if it lands after we navigate away.
+  useEffect(() => {
+    if (mode === 'online') ensureWagerListener();
+  }, [mode]);
+
   useEffect(() => {
     if (peekActive && !wasPeekActiveRef.current) replay.goTo(replay.totalPlies);
     wasPeekActiveRef.current = peekActive;
@@ -538,9 +559,13 @@ export default function MatchScreen() {
 
       <View className="flex-row items-center justify-between px-lg pb-sm" style={headerPad}>
         <View className="flex-row items-center" style={{ gap: Spacing.sm }}>
-          <Text className="font-display-hero text-cyan" style={styles.wordmark}>
-            RockStyle Chess
-          </Text>
+          {/* The wordmark gives way to the pot pill in a wagered match: both
+              together would not fit a 360px header next to the menu button. */}
+          {wagered ? null : (
+            <Text className="font-display-hero text-cyan" style={styles.wordmark}>
+              RockStyle Chess
+            </Text>
+          )}
           <View
             className="flex-row items-center rounded-full px-sm"
             style={{
@@ -557,6 +582,23 @@ export default function MatchScreen() {
               {venue.name.toUpperCase()}
             </Text>
           </View>
+          {wagered ? (
+            <View
+              className="flex-row items-center rounded-full px-sm"
+              style={{
+                gap: 4,
+                paddingVertical: 3,
+                borderWidth: 1,
+                backgroundColor: withOpacity(Colors.gold, 0.12),
+                borderColor: withOpacity(Colors.gold, 0.6),
+              }}
+            >
+              <MaterialCommunityIcons name="poker-chip" size={11} color={Colors.gold} />
+              <Text className="font-heading" style={{ fontSize: 9, color: Colors.gold }}>
+                WIN {formatChips(prize)}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <Pressable
           onPress={openResign}

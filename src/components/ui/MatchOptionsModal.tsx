@@ -3,8 +3,7 @@ import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { RockButton } from '@/components/ui/RockButton';
 import { Colors, Spacing, withOpacity } from '@/constants/theme';
-import { VENUES, isVenueLocked } from '@/constants/venues';
-import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { VENUES } from '@/constants/venues';
 import { DURATIONS, DURATION_LABELS, type Duration } from '@/lib/onlineMatch';
 
 interface MatchOptionsModalProps {
@@ -35,8 +34,6 @@ export function MatchOptionsModal({
   onVenue,
   onClose,
 }: MatchOptionsModalProps) {
-  const { chips } = usePlayerProfile();
-
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       <Pressable
@@ -141,7 +138,9 @@ export function MatchOptionsModal({
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-sm pb-1">
                 {VENUES.map((venue) => {
-                  const locked = isVenueLocked(venue, chips);
+                  // A bot match's venue is only the backdrop -- nothing is wagered, so
+                  // nothing is gated by chips or rating here.
+                  const locked = false;
                   const active = !locked && venueId === venue.id;
                   const tint = locked ? Colors.chromeMid : active ? Colors.cyan : Colors.textMuted;
                   return (

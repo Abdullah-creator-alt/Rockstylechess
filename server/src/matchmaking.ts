@@ -73,6 +73,20 @@ export function joinQueue(tier: VenueTier, player: QueuedPlayer): QueuedPlayer |
   return null;
 }
 
+// Drops every queue entry matching `predicate` (across all tiers) and returns
+// them, so a caller can tell the owners. Used to keep ONE entry per socket and
+// per signed-in account -- a second device replaces the first instead of the
+// account being able to play itself for a wager.
+export function removeFromQueues(predicate: (player: QueuedPlayer) => boolean): QueuedPlayer[] {
+  const removed: QueuedPlayer[] = [];
+  for (const queue of queues.values()) {
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (predicate(queue[i])) removed.push(...queue.splice(i, 1));
+    }
+  }
+  return removed;
+}
+
 export function leaveQueue(socketId: string): void {
   for (const queue of queues.values()) {
     const index = queue.findIndex((p) => p.socketId === socketId);

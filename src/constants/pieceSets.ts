@@ -27,6 +27,8 @@
  * server-side equip validation -- keep in sync if sets are added/removed/
  * re-priced.
  */
+import { COSMETIC_PRICES } from '@/lib/economy.generated';
+
 import { Colors } from './theme';
 
 export interface PieceSet {
@@ -61,8 +63,8 @@ export const PIECE_SETS: PieceSet[] = [
     id: 'graphite-tour',
     name: 'Graphite Tour',
     locked: true,
-    gemPrice: 120,
-    chipPrice: 2_400,
+    gemPrice: COSMETIC_PRICES['graphite-tour'].gems,
+    chipPrice: COSMETIC_PRICES['graphite-tour'].chips ?? 0,
     accentColor: Colors.chromeDark,
   },
   {
@@ -73,8 +75,8 @@ export const PIECE_SETS: PieceSet[] = [
     id: 'molten-gold',
     name: 'Molten Gold',
     locked: true,
-    gemPrice: 320,
-    chipPrice: 6_400,
+    gemPrice: COSMETIC_PRICES['molten-gold'].gems,
+    chipPrice: COSMETIC_PRICES['molten-gold'].chips ?? 0,
     accentColor: Colors.gold,
   },
   {
@@ -85,8 +87,8 @@ export const PIECE_SETS: PieceSet[] = [
     id: 'crimson-reaper',
     name: 'Crimson Reaper',
     locked: true,
-    gemPrice: 420,
-    chipPrice: 8_400,
+    gemPrice: COSMETIC_PRICES['crimson-reaper'].gems,
+    chipPrice: COSMETIC_PRICES['crimson-reaper'].chips ?? 0,
     accentColor: Colors.crimson,
   },
 ];

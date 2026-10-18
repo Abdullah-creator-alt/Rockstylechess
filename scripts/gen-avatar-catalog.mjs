@@ -14,24 +14,30 @@
  * Usage (from repo root):  node scripts/gen-avatar-catalog.mjs
  * Re-run after editing BANDS or the id lists below, then commit the outputs.
  */
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = process.cwd();
 
-// gems : chips is held at 1:20 like boards/pieces (Hall of Fame has no chip
-// price at all -- gems only).
+// PRICES are no longer written here: every band maps to a tier of the shared
+// ladder in economy.config.json (1 gem = 40 chips; Hall of Fame tiers are
+// gems-only). Only the rating gates live in this file.
+const econ = JSON.parse(readFileSync(join(ROOT, 'economy.config.json'), 'utf8'));
+const band = (klass, rarity, minRating) => {
+  const tier = econ.tiers[econ.avatarTiers[klass][rarity]];
+  return { gemPrice: tier.gems, chipPrice: tier.gemsOnly ? null : tier.gems * econ.gemToChip, minRating };
+};
 const BANDS = {
   main_stage: {
-    common: { gemPrice: 100, chipPrice: 2_000, minRating: null },
-    rare: { gemPrice: 200, chipPrice: 4_000, minRating: null },
-    legendary: { gemPrice: 300, chipPrice: 6_000, minRating: null },
+    common: band('main_stage', 'common', null),
+    rare: band('main_stage', 'rare', null),
+    legendary: band('main_stage', 'legendary', null),
   },
   // Rating gates reuse src/lib/tierLabel.ts's thresholds (1400 / 1800 / 2200).
   hall_of_fame: {
-    gold: { gemPrice: 600, chipPrice: null, minRating: 1400 },
-    platinum: { gemPrice: 900, chipPrice: null, minRating: 1800 },
-    immortal: { gemPrice: 1200, chipPrice: null, minRating: 2200 },
+    gold: band('hall_of_fame', 'gold', 1400),
+    platinum: band('hall_of_fame', 'platinum', 1800),
+    immortal: band('hall_of_fame', 'immortal', 2200),
   },
 };
 

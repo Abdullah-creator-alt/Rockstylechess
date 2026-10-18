@@ -1,3 +1,5 @@
+import { COSMETIC_PRICES } from './economy.generated.js';
+
 export interface PieceSetCatalogEntry {
   id: string;
   name: string;
@@ -9,13 +11,18 @@ export interface PieceSetCatalogEntry {
 // Mirrors src/constants/pieceSets.ts on the client -- see
 // server/src/boardThemes.ts's header comment for the full reasoning
 // (authoritative for equip validation, the cosmetics seed script, and
-// purchase pricing; never carries color/accent data). Keep in sync if sets
-// are added/removed/re-priced.
+// purchase pricing; never carries color/accent data). Prices come from the
+// shared tier ladder in economy.config.json via COSMETIC_PRICES.
+function entry(id: string, name: string, locked: boolean): PieceSetCatalogEntry {
+  const price = COSMETIC_PRICES[id];
+  return { id, name, locked, gemPrice: price.gems, chipPrice: price.chips ?? 0 };
+}
+
 export const PIECE_SETS: PieceSetCatalogEntry[] = [
   // Id isn't 'classic-chrome' -- that's already BOARD_THEMES' free tier id,
   // and cosmeticItems.id is one global primary key across categories.
-  { id: 'classic-pieces', name: 'Classic Chrome', locked: false, gemPrice: 0, chipPrice: 0 },
-  { id: 'graphite-tour', name: 'Graphite Tour', locked: true, gemPrice: 120, chipPrice: 2_400 },
-  { id: 'molten-gold', name: 'Molten Gold', locked: true, gemPrice: 320, chipPrice: 6_400 },
-  { id: 'crimson-reaper', name: 'Crimson Reaper', locked: true, gemPrice: 420, chipPrice: 8_400 },
+  entry('classic-pieces', 'Classic Chrome', false),
+  entry('graphite-tour', 'Graphite Tour', true),
+  entry('molten-gold', 'Molten Gold', true),
+  entry('crimson-reaper', 'Crimson Reaper', true),
 ];

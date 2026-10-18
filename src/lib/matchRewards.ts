@@ -1,18 +1,19 @@
+import { ECONOMY } from '@/lib/economy.generated';
+
 export type MatchOutcome = 'win' | 'loss' | 'draw';
 
-// Mirrors server/src/matchRewards.ts's own copy (online matches are credited
+// Mirrors server/src/matchRewards.ts (online matches are credited
 // authoritatively in persistMatchResult.ts, bot/local matches via POST
-// /me/match-reward). These are the same numbers result-placeholder.tsx
-// already displayed as a purely decorative animation before this was wired
-// up to a real balance. Keep in sync with the server if the amounts change.
-export const MATCH_CHIP_REWARDS: Record<MatchOutcome, number> = {
-  win: 475,
-  loss: 0,
-  draw: 50,
-};
+// /me/match-reward). Both read economy.config.json, so these numbers cannot
+// drift from the server's. Display only (result-placeholder.tsx count-up).
+export const MATCH_CHIP_REWARDS: Record<MatchOutcome, number> = { ...ECONOMY.matchRewards.online };
 
-export const MATCH_XP_REWARDS: Record<MatchOutcome, number> = {
-  win: 500,
-  loss: 0,
-  draw: 50,
-};
+export const MATCH_XP_REWARDS: Record<MatchOutcome, number> = { ...ECONOMY.matchRewards.xp };
+
+// Bot matches pay by difficulty; mirrors server/src/matchRewards.ts's botChipReward.
+export function botChipReward(difficulty: keyof typeof ECONOMY.matchRewards.botWin, outcome: MatchOutcome): number {
+  const win = ECONOMY.matchRewards.botWin[difficulty];
+  if (outcome === 'win') return win;
+  if (outcome === 'draw') return Math.round(win * ECONOMY.matchRewards.botDrawFraction);
+  return 0;
+}

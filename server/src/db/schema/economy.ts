@@ -99,3 +99,34 @@ export const botUnlocks = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.botId] })],
 );
+
+// Chip wagers on online venues (Club and up). One row per wagered match, keyed
+// by the in-memory match id (the `matches` row only exists once a match has
+// ENDED, so it cannot hold an in-flight stake). The row is the escrow record:
+// 'held' from pairing until the match ends, then exactly one of
+//   'settled'  -- a winner took the pot minus the rake, or
+//   'refunded' -- a draw / void early exit / server restart returned both stakes.
+// The conditional status flip (held -> settled/refunded) is what makes
+// settlement idempotent; see db/wagers.ts.
+export const wagers = pgTable(
+  'wagers',
+  {
+    matchId: uuid('match_id').primaryKey(),
+    venueTier: text('venue_tier').notNull(),
+    buyIn: bigint('buy_in', { mode: 'number' }).notNull(),
+    // Nullable + set null (not cascade): deleting an account must not erase the
+    // escrow record of the opponent it was playing. A null seat is simply never
+    // credited (see db/wagers.ts).
+    whiteUserId: uuid('white_user_id').references(() => users.id, { onDelete: 'set null' }),
+    blackUserId: uuid('black_user_id').references(() => users.id, { onDelete: 'set null' }),
+    status: text('status').notNull().default('held'),
+    resultType: text('result_type'),
+    winnerUserId: uuid('winner_user_id'),
+    payout: bigint('payout', { mode: 'number' }),
+    rake: bigint('rake', { mode: 'number' }),
+    plies: integer('plies'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => [index('wagers_status_idx').on(t.status, t.createdAt)],
+);

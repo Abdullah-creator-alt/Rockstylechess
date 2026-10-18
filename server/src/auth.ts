@@ -49,7 +49,7 @@ import { claimQuest, getQuestsStatus, reportMatchForQuests, reportPuzzleSolvedFo
 import { matchParticipants, matches, playerProfiles, userCosmetics, users } from './db/schema/index.js';
 import { getSpinStatus, performSpin } from './db/spin.js';
 import { emitToUser, onlineAmong } from './realtime.js';
-import { MATCH_CHIP_REWARDS, MATCH_XP_REWARDS, type MatchOutcome } from './matchRewards.js';
+import { botChipReward, isBotDifficulty, MATCH_XP_REWARDS, type MatchOutcome } from './matchRewards.js';
 
 // Query-param limit shared by /me/matches and /leaderboard -- clamps to a
 // sane range so a client can't ask for an unbounded result set.
@@ -368,13 +368,17 @@ authRouter.post(
   '/me/match-reward',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { outcome } = req.body ?? {};
+    const { outcome, difficulty } = req.body ?? {};
     if (outcome !== 'win' && outcome !== 'loss' && outcome !== 'draw') {
       res.status(400).json({ error: 'invalid-outcome' });
       return;
     }
+    // Bot payout scales with the bot's strength (see matchRewards.ts). An
+    // absent/unknown difficulty (older app build, local mode) pays as the
+    // weakest bot, so a bad value can never pay MORE than a real one.
+    const botDifficulty = isBotDifficulty(difficulty) ? difficulty : 'easy';
 
-    const chipsGranted = MATCH_CHIP_REWARDS[outcome as MatchOutcome];
+    const chipsGranted = botChipReward(botDifficulty, outcome as MatchOutcome);
     const xpGranted = MATCH_XP_REWARDS[outcome as MatchOutcome];
     const [updated] = await db
       .update(playerProfiles)
@@ -667,6 +671,8 @@ authRouter.get(
         ratingBefore: matchParticipants.ratingBefore,
         ratingAfter: matchParticipants.ratingAfter,
         ratingDelta: matchParticipants.ratingDelta,
+        chipsDelta: matchParticipants.chipsDelta,
+        venueTier: matches.venueTier,
         playedAt: matches.endedAt,
         mode: matches.mode,
         resultType: matches.resultType,
@@ -714,6 +720,9 @@ authRouter.get(
           ratingBefore: row.ratingBefore,
           ratingAfter: row.ratingAfter,
           ratingDelta: row.ratingDelta,
+          // Net chips from the wager (null on unwagered/Garage matches).
+          chipsDelta: row.chipsDelta,
+          venueTier: row.venueTier,
           opponentDisplayName: opponentProfile?.displayName || 'Unknown',
           opponentCountry: opponentProfile?.country ?? null,
           opponentUserId: opponentUserId ?? null,

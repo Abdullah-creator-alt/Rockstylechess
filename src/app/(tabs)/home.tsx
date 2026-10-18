@@ -9,8 +9,8 @@ import { AppIcon, RockButton, RockCard } from '@/components/ui';
 import { TopAppBar } from '@/components/layout';
 import type { ICONS } from '@/constants/icons';
 import { Colors, withOpacity } from '@/constants/theme';
-import { VENUES, formatChips, getVenue, isVenueLocked, type Venue } from '@/constants/venues';
-import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { VENUES, formatChips, getVenue, type Venue } from '@/constants/venues';
+import { useVenueEntry } from '@/hooks/useVenueEntry';
 import { DURATIONS, type Duration } from '@/lib/onlineMatch';
 
 // Bento grid -- from new_ui (tabs)/index.tsx (icons, labels, sub-labels,
@@ -35,19 +35,20 @@ const HOME_TILES: HomeTile[] = [
 export default function HomeLobbyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { chips } = usePlayerProfile();
-  const [selectedVenueId, setSelectedVenueId] = useState('arena');
+  const { requirementFor, explain, tryPlay } = useVenueEntry();
+  // Garage first: stakes are something you choose, never the default.
+  const [selectedVenueId, setSelectedVenueId] = useState('garage');
   const [duration, setDuration] = useState<Duration>('5m');
 
   const selectedVenue = getVenue(selectedVenueId);
 
   function handleVenuePress(venue: Venue) {
-    if (isVenueLocked(venue, chips)) {
-      console.log('Venue locked - insufficient chips', venue.name);
+    const requirement = requirementFor(venue);
+    if (requirement) {
+      explain(venue, requirement);
       return;
     }
     setSelectedVenueId(venue.id);
-    console.log('Venue selected', venue.name);
   }
 
   return (
@@ -62,11 +63,11 @@ export default function HomeLobbyScreen() {
 
       <ScrollView className="flex-1" contentContainerClassName="gap-xl px-lg" contentContainerStyle={{ paddingTop: 20, paddingBottom: 130 + insets.bottom }} showsVerticalScrollIndicator={false}>
         {/* Venue picker -- icon + name only (the atmospheric photo lives on the
-            hero card below). Tapping a venue re-skins that card. Locked purely
-            by affordability, same rule as (play)/setup.tsx. */}
+            hero card below). Tapping a venue re-skins that card. Locked by sign-in /
+            rating / affordability (useVenueEntry), same rule as (play)/setup.tsx. */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-sm" contentContainerStyle={{ paddingVertical: 2 }}>
           {VENUES.map((venue) => {
-            const locked = isVenueLocked(venue, chips);
+            const locked = requirementFor(venue) !== null;
             const isActive = !locked && selectedVenueId === venue.id;
             const tint = locked ? Colors.chromeMid : isActive ? Colors.cyan : Colors.textMuted;
             return (
@@ -115,7 +116,7 @@ export default function HomeLobbyScreen() {
                 </View>
                 <View style={{ width: 1, height: 28, backgroundColor: withOpacity(Colors.chromeDark, 0.5) }} />
                 <View>
-                  <Text className="font-heading-md text-caption uppercase tracking-wide text-text-muted">Grand Prize</Text>
+                  <Text className="font-heading-md text-caption uppercase tracking-wide text-text-muted">Winner Takes</Text>
                   <Text className="font-display-hero" style={{ fontSize: 18, color: Colors.emberLight }}>
                     {formatChips(selectedVenue.prize)}
                   </Text>
@@ -151,9 +152,7 @@ export default function HomeLobbyScreen() {
               label="Play Now"
               variant="primary"
               icon={<MaterialCommunityIcons name="play" size={20} color={Colors.bgBase} />}
-              onPress={() => {
-                router.push({ pathname: '/matchmaking', params: { venueTier: selectedVenue.id, duration } });
-              }}
+              onPress={() => tryPlay(selectedVenue, duration)}
             />
           </View>
           </View>

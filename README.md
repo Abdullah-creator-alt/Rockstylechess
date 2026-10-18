@@ -299,6 +299,18 @@ real release keystore before shipping to the Play Store.
   Express route handler is similarly wrapped (`server/src/asyncHandler.ts`)
   so a database outage can't take the whole process down.
 
+## Economy
+
+All prices and payouts come from `economy.config.json` (see `server/README.md` → "Economy"). After editing it run `node scripts/gen-economy.mjs && node scripts/gen-avatar-catalog.mjs && node scripts/check-economy.mjs`, then re-seed the server (`seed:cosmetics`, `seed:spin`, `seed:quests`). The Play Console products must use the SKU ids in the config (`chips_starter`, `chips_roadie`, `chips_headliner`, `chips_bonus`, `gems_100`, `gems_550`, `gems_1200`, `remove_ads`).
+
+## Venues and wagers
+
+Venues from Club up are played for real chips (buy-in escrowed from both players, winner
+takes 1.8x, 10% rake, early exits refunded) with rating gates on the top three; Garage is
+free. Numbers: `economy.config.json` (`venues`, `venueRake`, `wagerVoidPlies`). Rules and
+recovery behaviour: `server/README.md` → "Wagers". Deploy order: migration `0013`
+(`db:migrate:remote`) then the Railway server, then the app.
+
 ## Ads
 
 AdMob via `react-native-google-mobile-ads` (pinned to the 16.x line — 17.x needs React

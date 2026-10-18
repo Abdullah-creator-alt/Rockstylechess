@@ -1,23 +1,31 @@
+import { ECONOMY, type BotRewardDifficulty } from './economy.generated.js';
+
 export type MatchOutcome = 'win' | 'loss' | 'draw';
 
 // Mirrors src/lib/matchRewards.ts on the client (used there for the
 // result-placeholder.tsx count-up display). This copy is the authoritative
 // one -- both persistMatchResult.ts (online matches) and POST
 // /me/match-reward (bot/local matches) credit chips and xp using these
-// amounts, never a client-supplied number. Keep the two files in sync if
-// these change.
-export const MATCH_CHIP_REWARDS: Record<MatchOutcome, number> = {
-  win: 475,
-  loss: 0,
-  draw: 50,
-};
+// amounts, never a client-supplied number. The numbers themselves live in
+// economy.config.json.
+export const MATCH_CHIP_REWARDS: Record<MatchOutcome, number> = { ...ECONOMY.matchRewards.online };
+
+// Bot matches pay by difficulty (an easy-bot win is not worth a win over the
+// strongest engine). Draws pay a fixed fraction of that bot's win; losses 0.
+export const BOT_DIFFICULTIES = Object.keys(ECONOMY.matchRewards.botWin) as BotRewardDifficulty[];
+
+export function isBotDifficulty(value: unknown): value is BotRewardDifficulty {
+  return typeof value === 'string' && (BOT_DIFFICULTIES as string[]).includes(value);
+}
+
+export function botChipReward(difficulty: BotRewardDifficulty, outcome: MatchOutcome): number {
+  const win = ECONOMY.matchRewards.botWin[difficulty];
+  if (outcome === 'win') return win;
+  if (outcome === 'draw') return Math.round(win * ECONOMY.matchRewards.botDrawFraction);
+  return 0;
+}
 
 // Pacing against server/src/leveling.ts's curve (300*L^2): at 500 xp/win,
-// L2 (1,200 total) takes ~3 wins, L10 (30,000) ~60, L50 (750,000) ~1,500,
-// L100 (3,000,000) ~6,000. loss:0 mirrors the chip philosophy exactly;
-// draw is a small consolation, same ~10%-of-win ratio chips uses.
-export const MATCH_XP_REWARDS: Record<MatchOutcome, number> = {
-  win: 500,
-  loss: 0,
-  draw: 50,
-};
+// L2 (1,200 total) takes ~3 wins, L10 (30,000) ~60, L50 (750,000) ~1,500.
+// XP is unchanged by the economy pass -- it is progression, not currency.
+export const MATCH_XP_REWARDS: Record<MatchOutcome, number> = { ...ECONOMY.matchRewards.xp };

@@ -80,6 +80,15 @@ files without adding `/play` to the URL/deep-link path.
   of piece type. The slot is *always* rendered at its full height, even empty: if
   it only appeared with the first capture, the row would grow then and the board
   would jump (and, when height-capped, resize) mid-game.
+- **Wagers:** `home.tsx` and `setup.tsx` share `useVenueEntry` (`src/hooks/`): locked venues
+  explain themselves (sign in / rating / chips) and "Play Now" on a venue with a buy-in asks
+  for confirmation first; the default venue is Garage. `matchmaking.tsx` handles the server's
+  `queue:error` (its own error state) and forwards the venue/stake the *server* matched
+  (`queue:matched` carries `venueTier`, `buyIn`, `prize`). `match.tsx` shows a "WIN N" pill
+  next to the venue pill in the header row (replacing the wordmark, so the fixed player-row
+  heights and board sizing are untouched). `result-placeholder.tsx` shows the server's
+  `wager:settled` (cached by `src/lib/wagerResult.ts`) as a signed net, "Settling…" until it
+  arrives, and "No Contest" for a voided early exit. Rules: `server/README.md` → "Wagers".
 - `result-placeholder.tsx` — stub destination for Resign until the real Win/Loss
   screen is built. Its single exit (`goHome`, used by the Home button *and* hardware
   back) is where the post-match **interstitial ad** may appear — every 3rd finished

@@ -23,10 +23,22 @@ function scoreFor(color: PieceColor, resultType: ResultType, winnerColor: PieceC
 // gameplay. Only records anything when BOTH seats are real, server-verified
 // accounts (see MatchPlayer.userId in match.ts); a guest-involving match
 // plays identically to today and simply isn't persisted.
+//
+// `opts` (wagered matches only -- see db/wagers.ts): the flat per-win chip reward
+// is skipped (a wagered win pays the pot instead, never both), and each
+// player's net wager result is recorded on their participant row for history.
+// A VOID wagered match (someone left in the first 3 moves) is never persisted
+// at all -- the caller skips this function, so there is no rating, XP or row.
+export interface PersistOptions {
+  wagered?: boolean;
+  chipsDeltaByUser?: Record<string, number>;
+}
+
 export async function persistMatchResult(
   match: MatchState,
   resultType: ResultType,
   winnerColor: PieceColor | null,
+  opts: PersistOptions = {},
 ): Promise<void> {
   const white = match.players.w;
   const black = match.players.b;
@@ -61,6 +73,7 @@ export async function persistMatchResult(
       whiteUserId: white.userId,
       blackUserId: black.userId,
       mode: 'online',
+      venueTier: match.venueTier ?? null,
       resultType,
       winnerColor,
       pgn: match.chess.pgn(),
@@ -78,6 +91,7 @@ export async function persistMatchResult(
       ratingBefore: whiteProfile.rating,
       ratingAfter: whiteRatingAfter,
       ratingDelta: whiteRatingAfter - whiteProfile.rating,
+      chipsDelta: opts.chipsDeltaByUser?.[white.userId] ?? null,
     },
     {
       matchId: insertedMatch.id,
@@ -87,12 +101,13 @@ export async function persistMatchResult(
       ratingBefore: blackProfile.rating,
       ratingAfter: blackRatingAfter,
       ratingDelta: blackRatingAfter - blackProfile.rating,
+      chipsDelta: opts.chipsDeltaByUser?.[black.userId] ?? null,
     },
   ]);
 
   const [whiteStats, blackStats] = await Promise.all([
-    updateProfileStats(white.userId, whiteRatingAfter, whiteScore, whiteProfile.xp),
-    updateProfileStats(black.userId, blackRatingAfter, blackScore, blackProfile.xp),
+    updateProfileStats(white.userId, whiteRatingAfter, whiteScore, whiteProfile.xp, !opts.wagered),
+    updateProfileStats(black.userId, blackRatingAfter, blackScore, blackProfile.xp, !opts.wagered),
   ]);
 
   await Promise.all([
@@ -167,9 +182,11 @@ async function updateProfileStats(
   ratingAfter: number,
   score: number,
   currentXp: number,
+  grantFlatChips: boolean,
 ): Promise<{ winStreak: number }> {
   const outcome = outcomeFor(score);
-  const chipsGranted = MATCH_CHIP_REWARDS[outcome];
+  // Wagered matches pay through the escrow settlement (db/wagers.ts) instead.
+  const chipsGranted = grantFlatChips ? MATCH_CHIP_REWARDS[outcome] : 0;
   const { xp, level } = applyXpGain(currentXp, MATCH_XP_REWARDS[outcome]);
   const [row] = await db
     .update(playerProfiles)

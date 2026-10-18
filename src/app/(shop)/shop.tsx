@@ -19,6 +19,7 @@ import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { useShopIAP } from '@/hooks/useShopIAP';
 import { redeemFreeChipsAd, verifyPurchase } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
+import { ECONOMY } from '@/lib/economy.generated';
 import { goUp } from '@/lib/navigation';
 
 interface ChipPack {
@@ -34,19 +35,28 @@ interface ChipPack {
 // price loads via useIAP's fetchProducts -- see priceForPack below. Never
 // used to actually charge anything; server/src/iapCatalog.ts is the only
 // source of truth for what a purchase grants and costs.
-const CHIP_PACKS: ChipPack[] = [
-  { id: 'starter', amount: '1,000', name: 'Starter Pack', fallbackPrice: '$1.99' },
-  { id: 'roadie-box', amount: '10,000', name: 'Roadie Box', fallbackPrice: '$9.99' },
-  {
-    id: 'bonus-pack',
-    amount: '250,000',
-    name: '+ Bonus Pack',
-    fallbackPrice: '$49.99',
-    highlighted: true,
-    badge: 'HOT',
-  },
-  { id: 'headliner-chest', amount: '50,000', name: 'Headliner Chest', fallbackPrice: '$24.99' },
-];
+// Amounts and USD prices come from economy.config.json (shared with the server's
+// iapCatalog.ts); only the names/badges are presentation.
+const CHIP_PACK_COPY: Record<string, { name: string; highlighted?: boolean; badge?: string }> = {
+  starter: { name: 'Starter Pack' },
+  'roadie-box': { name: 'Roadie Box' },
+  'bonus-pack': { name: '+ Bonus Pack', highlighted: true, badge: 'HOT' },
+  'headliner-chest': { name: 'Headliner Chest' },
+};
+// Display order: small to large, with the big "hot" pack as a full-width row.
+const CHIP_PACK_ORDER = ['starter', 'roadie-box', 'bonus-pack', 'headliner-chest'];
+
+const formatUsd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+const CHIP_PACKS: ChipPack[] = CHIP_PACK_ORDER.map((id) => {
+  const pack = ECONOMY.iap.chipPacks.find((p) => p.id === id)!;
+  return {
+    id,
+    amount: pack.amount.toLocaleString('en-US'),
+    fallbackPrice: formatUsd(pack.priceUsdCents),
+    ...CHIP_PACK_COPY[id],
+  };
+});
 
 interface GemPack {
   id: string;
@@ -54,11 +64,11 @@ interface GemPack {
   fallbackPrice: string;
 }
 
-const GEM_PACKS: GemPack[] = [
-  { id: 'gem-100', amount: 100, fallbackPrice: '$0.99' },
-  { id: 'gem-550', amount: 550, fallbackPrice: '$4.99' },
-  { id: 'gem-1200', amount: 1200, fallbackPrice: '$9.99' },
-];
+const GEM_PACKS: GemPack[] = ECONOMY.iap.gemPacks.map((p) => ({
+  id: p.id,
+  amount: p.amount,
+  fallbackPrice: formatUsd(p.priceUsdCents),
+}));
 
 const VIP_PERKS = ['+20% Chip Bonus on every win', 'Exclusive avatar skin', 'Daily Bonus x2', 'Ad-free matchmaking'];
 
@@ -305,7 +315,7 @@ export default function RockShopScreen() {
 
             <RemoveAdsCard
               owned={adsRemoved}
-              price={priceForPack(REMOVE_ADS_PACK_ID, '$4.99')}
+              price={priceForPack(REMOVE_ADS_PACK_ID, formatUsd(ECONOMY.iap.removeAds.priceUsdCents))}
               purchasing={purchasingPackId === REMOVE_ADS_PACK_ID}
               onBuy={handleBuyRemoveAds}
               onRestore={handleRestoreRemoveAds}
@@ -415,6 +425,8 @@ function VipBanner({ compact, onUpgrade }: { compact: boolean; onUpgrade: () => 
   );
 }
 
+const FREE_CHIPS_REWARD = ECONOMY.ads['free-chips'].rewardChips;
+
 function FreeChipsCard({ remaining, onEarned }: { remaining: number | null; onEarned: () => Promise<void> }) {
   return (
     <RockCard glowColor={Colors.chromeDark} innerGlow={Colors.cyan}>
@@ -431,11 +443,11 @@ function FreeChipsCard({ remaining, onEarned }: { remaining: number | null; onEa
               Free Chips
             </Text>
             <Text className="mt-xs font-body-sm text-body-sm text-text-muted">
-              Watch a short ad for 100 chips{remaining !== null ? ` · ${remaining} left today` : ''}
+              Watch a short ad for {FREE_CHIPS_REWARD} chips{remaining !== null ? ` · ${remaining} left today` : ''}
             </Text>
           </View>
         </View>
-        <RewardedAdButton label="Watch ad · +100 chips" variant="primary" remaining={remaining} onEarned={onEarned} />
+        <RewardedAdButton label={`Watch ad · +${FREE_CHIPS_REWARD} chips`} variant="primary" remaining={remaining} onEarned={onEarned} />
       </View>
     </RockCard>
   );

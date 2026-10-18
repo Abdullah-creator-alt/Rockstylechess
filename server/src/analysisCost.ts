@@ -1,6 +1,7 @@
-// Mirrored read-only client-side in src/lib/analysisCost.ts (same pattern
-// as matchRewards.ts) -- keep both in sync if this changes. Chips is the
-// abundant currency (10M starting balance, ~475K/win), gems the scarce one
-// (starts at 0, earned via spin/daily bonus or purchased) -- the gem price
-// is deliberately much smaller in absolute terms since gems are worth more.
-export const ANALYSIS_COST = { chips: 250, gems: 15 } as const;
+import { ECONOMY } from './economy.generated.js';
+
+// Mirrored read-only client-side in src/lib/analysisCost.ts (same pattern as
+// matchRewards.ts); both read economy.config.json. One review costs about one
+// online win (200 chips) or 5 gems -- the same 40:1 chip-to-gem rate as every
+// other price -- so analysing a game is a real decision, not pocket change.
+export const ANALYSIS_COST = { ...ECONOMY.analysis } as const;

@@ -6,8 +6,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, CurrencyIcon, RockButton } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
+import { ECONOMY } from '@/lib/economy.generated';
 
-const REWARD_CHIPS = 10_000;
+const REWARD_CHIPS = ECONOMY.welcomeChips;
 const DURATION_MS = 2500;
 const FRAME_MS = 30;
 

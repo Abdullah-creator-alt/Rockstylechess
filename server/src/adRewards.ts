@@ -2,10 +2,12 @@
 // live ONLY here; the client (src/lib/ads/types.ts) just names the placements
 // and shows whatever the server returns. Same pattern as questCatalog.ts.
 //
-// Sizing: kept well under one match win (MATCH_CHIP_REWARDS.win = 475) per ad,
-// and a day's worth of free-chips ads (3 x 100 = 300) stays under a single win,
-// so watching ads never out-earns actually playing. extra-spin and daily-double
-// reward the *existing* spin/daily-bonus tables rather than a number here.
+// Sizing (numbers in economy.config.json): a free-chips ad pays 60, three a day
+// is 180 -- under one online win (200) -- so watching ads never out-earns
+// actually playing. extra-spin and daily-double reward the *existing*
+// spin/daily-bonus tables rather than a number here.
+import { ECONOMY } from './economy.generated.js';
+
 export type AdPlacement = 'free-chips' | 'extra-spin' | 'daily-double';
 
 export interface AdPlacementRule {
@@ -16,9 +18,9 @@ export interface AdPlacementRule {
 }
 
 export const AD_PLACEMENTS: Record<AdPlacement, AdPlacementRule> = {
-  'free-chips': { dailyCap: 3, rewardChips: 100 },
-  'extra-spin': { dailyCap: 1, rewardChips: 0 },
-  'daily-double': { dailyCap: 1, rewardChips: 0 },
+  'free-chips': { ...ECONOMY.ads['free-chips'] },
+  'extra-spin': { ...ECONOMY.ads['extra-spin'] },
+  'daily-double': { ...ECONOMY.ads['daily-double'] },
 };
 
 export function isAdPlacement(value: unknown): value is AdPlacement {

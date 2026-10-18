@@ -204,6 +204,25 @@ routes added directly to `server/src/auth.ts`'s single `authRouter` —
 there's no per-feature router file. UTC-calendar-day reset logic (daily
 bonus, daily spin, daily quests) shares `server/src/db/utcDay.ts`.
 
+### Economy — `economy.config.json`
+
+Every price and payout (cosmetic tiers, match/bot rewards, daily bonus, spin, quests, ads,
+IAP packs, analysis, welcome bonus, venue stakes) is in the root `economy.config.json`;
+`scripts/gen-economy.mjs` generates the server and client mirrors and
+`scripts/check-economy.mjs` asserts the rules (1 gem = 40 chips, tier ladder, no
+chip-pack arbitrage, days-to-earn). Never hardcode a price or reward in a screen or
+catalog file — read it from `economy.generated.ts`. Details: `server/README.md` → "Economy".
+
+### Wagers — `server/src/db/wagers.ts`
+
+Online matches at venues with a buy-in (Club and up) are played for chips: both buy-ins
+are escrowed in one transaction at pairing (before the match exists), every ending goes
+through `finishMatch` in `server/src/index.ts`, and settlement is an idempotent
+conditional UPDATE (winner takes `prize`, 10% rake leaves the economy, draws and
+under-6-ply resign/draw/forfeit refund). Never add a new match-ending path that skips
+`finishMatch`; never move chips outside `wagers.ts`'s transactions. Details:
+`server/README.md` → "Wagers".
+
 ### Ads — `src/lib/ads/` / `server/src/adRewards.ts`
 
 AdMob (`react-native-google-mobile-ads`, pinned 16.x for RN 0.81) behind one wrapper:

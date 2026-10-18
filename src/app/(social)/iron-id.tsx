@@ -360,6 +360,12 @@ export default function IronIdScreen() {
                           </Text>
                           <Text className="font-caption text-caption" style={{ color: Colors.textMuted, marginTop: 2 }}>
                             {formatRelativeTime(match.playedAt)} • {RESULT_LABEL[match.resultType]}
+                            {match.chipsDelta !== null && match.chipsDelta !== 0 ? (
+                              <Text style={{ color: match.chipsDelta > 0 ? Colors.gold : Colors.crimson }}>
+                                {' '}• {match.chipsDelta > 0 ? '+' : '-'}
+                                {Math.abs(match.chipsDelta).toLocaleString('en-US')} chips
+                              </Text>
+                            ) : null}
                           </Text>
                         </View>
                         <View className="items-end">

@@ -1,0 +1,1 @@
+ALTER TABLE "player_profiles" ALTER COLUMN "chips" SET DEFAULT 4000;

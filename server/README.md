@@ -101,11 +101,70 @@ premium-and-unowned (`avatar-not-owned`); `POST /me/cosmetics/:id/unlock` adds
 `required`/`current`, gate read from `player_profiles.rating` at purchase time) and
 `not-purchasable` (price 0). Once owned an avatar is kept even if rating drops.
 
+## Economy (prices and payouts)
+
+Every price and payout lives in **one file**: `../economy.config.json`. Edit it, then run
+`node scripts/gen-economy.mjs && node scripts/gen-avatar-catalog.mjs && node scripts/check-economy.mjs`
+from the repo root. The first writes `src/economy.generated.ts` (this server) and
+`../src/lib/economy.generated.ts` (the app) so the two cannot drift; `check-economy.mjs`
+asserts the rules below and prints how many casual days each tier takes to earn
+(an *estimate* -- see `incomeModel` in the config, not telemetry).
+
+Rules: **1 gem = 40 chips** everywhere. One tier ladder for all cosmetics (Common 100 gems /
+4,000 chips, Rare 250 / 10,000, Epic 450 / 18,000, Legendary 750 / 30,000; Hall of Fame
+900 / 1,350 / 1,800 gems only + rating gate). No chip pack may give more chips per dollar
+than gems give chip-equivalent. Online win 200 / draw 40 / loss 0; bot wins pay by
+difficulty (20 / 40 / 80 / 120 / 200, `POST /me/match-reward` takes `difficulty`);
+welcome bonus 4,000 (one Common); analysis 200 chips or 5 gems. After a price change
+re-seed: `seed:cosmetics`, `seed:spin`, `seed:quests` (`:remote` for Neon). Venue buy-ins,
+prizes and rating gates in the config are REAL since the wagers phase (next section).
+Known open gap:
+`POST /me/match-reward` is still client-reported (no server match record), so payouts
+describe an honest player.
+
+## Wagers (chips at stake on online venues)
+
+Online matches at Club and above (`ECONOMY.venues`, buy-in > 0) are played for chips.
+Garage is free, open to guests, and keeps the flat 200/40/0 reward. Friend challenges and
+game rooms are unwagered. All the money logic is `src/db/wagers.ts`; the lifecycle:
+
+1. **Entry (`queue:join`, `src/index.ts`)**: guests, a rating under the venue's `minRating`,
+   a balance under the buy-in, or an account already seated in a live match are refused with
+   a new `queue:error {reason}` (it used to fail silently). One queue entry per socket,
+   guest and account (a second device replaces the first, so an account can never be paired
+   against itself).
+2. **Escrow at pairing, before the match exists** (`startPairedMatch`): `escrowWager` debits
+   BOTH buy-ins and inserts the `wagers` row in one transaction (conditional
+   `chips >= buyIn` UPDATE; either side short rolls back both). A dead socket or a
+   now-short balance puts the other player back in the queue instead.
+3. **One ending path**: every way a match ends (mate/draw rules, resign, agreed draw, flag
+   fall, forfeit, server restart) goes through `finishMatch` in `index.ts`: broadcast,
+   `endMatchClean` synchronously (first ending wins), then `settleWager` (retried), then a
+   per-player `wager:settled` event, then `persistMatchResult`.
+4. **Settlement** is idempotent (the `held` -> `settled`/`refunded` flip is conditional) and
+   conserves chips: winner gets `prize` (1.8x buy-in), `rake` (10% of the pot) leaves the
+   economy, a draw refunds both. **Void rule:** a resignation, agreed draw or disconnect
+   forfeit before 6 plies (3 moves each) refunds both and leaves no rating, XP or history
+   row; checkmate and flag-fall always settle. Wagered wins pay NO flat chip reward
+   (`persistMatchResult` `wagered` option), only XP and rating.
+5. **Recovery**: SIGTERM (a normal deploy) ends live wagered matches as refunded draws
+   (`reason: 'serverRestart'`) and waits for the refunds to commit; a sweeper every 2 min
+   refunds any wager still `held` 35 min after it started and owned by no live match
+   (hard crash / failed settlement). Account deletion nulls a seat on the `wagers` row
+   (`ON DELETE SET NULL`) rather than erasing the opponent's record.
+6. **Seats** of a wagered match are authorized by the authenticated `userId` as well as
+   the client's `guestId` (`seatColor` in `match.ts`).
+
+`queue:matched` now carries `venueTier`, `buyIn`, `prize`; `match_participants.chips_delta`
+and `matches.venue_tier` are recorded and returned by `GET /me/matches`. Known gaps (Phase
+3): checkmate/timeout under 6 plies still settle, so colluding accounts can move chips
+slowly; no per-pair limits.
+
 ## Ads (AdMob rewarded ads + Remove Ads)
 
 Rewards for rewarded ads are decided here, never by the client. `src/adRewards.ts` holds
-the placements, daily caps (UTC day) and reward sizes (`free-chips` 100 chips x3/day,
-`extra-spin` 1/day, `daily-double` 1/day — a day's free chips stays under one match
+the placements, daily caps (UTC day) and reward sizes (`free-chips` 60 chips x3/day,
+`extra-spin` 1/day, `daily-double` 1/day — a day's free chips stays under one online
 win). Every reward path calls `redeemAdReward` (`src/db/adEvents.ts`) *inside its own
 transaction* — `POST /me/ads/redeem` (free chips), `POST /me/spin {withAd}` and
 `POST /me/daily-bonus/claim {doubleWithAd}` — so a failed reward never costs the ad. A

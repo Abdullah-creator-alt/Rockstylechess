@@ -36,8 +36,21 @@ export interface ClockState {
   deadlineTimer: NodeJS.Timeout | null;
 }
 
+// The stake riding on a match (Club and up). Held in escrow from pairing until
+// the match ends -- see db/wagers.ts. Absent on Garage, friend-challenge and
+// game-room matches, which are unwagered.
+export interface MatchWager {
+  venueTier: string;
+  buyIn: number;
+  prize: number;
+}
+
 export interface MatchState {
   id: string;
+  // Which venue queue produced this match; undefined for friend challenges and
+  // game rooms (they have no venue).
+  venueTier?: string;
+  wager?: MatchWager;
   chess: Chess;
   players: Record<PieceColor, MatchPlayer>;
   createdAt: Date;
@@ -86,11 +99,31 @@ const matches = new Map<string, MatchState>();
 // trusted as a raw client-supplied ms value). incrementMs defaults to 0 --
 // no picker exposes a nonzero value yet, but the parameter is real end to
 // end so turning one on later needs no engine change.
-export function createMatch(playerA: QueuedPlayer, playerB: QueuedPlayer, baseMs: number, incrementMs = 0): MatchState {
+//
+// `opts` is for wagered pairings, where the stake has to be escrowed BEFORE the
+// match exists: the caller picks the id and which player is White (so the escrow
+// row can name the seats), then hands the same values back here.
+export interface CreateMatchOptions {
+  id?: string;
+  whiteIsA?: boolean;
+  venueTier?: string;
+  wager?: MatchWager;
+}
+
+export function createMatch(
+  playerA: QueuedPlayer,
+  playerB: QueuedPlayer,
+  baseMs: number,
+  incrementMs = 0,
+  opts: CreateMatchOptions = {},
+): MatchState {
   // Coin flip for colors -- neither queued player picked a side.
-  const [white, black] = Math.random() < 0.5 ? [playerA, playerB] : [playerB, playerA];
+  const whiteIsA = opts.whiteIsA ?? Math.random() < 0.5;
+  const [white, black] = whiteIsA ? [playerA, playerB] : [playerB, playerA];
   const match: MatchState = {
-    id: randomUUID(),
+    id: opts.id ?? randomUUID(),
+    venueTier: opts.venueTier,
+    wager: opts.wager,
     chess: new Chess(),
     players: {
       w: {
@@ -151,6 +184,16 @@ export function endMatch(matchId: string): void {
     if (match.clock.deadlineTimer) clearTimeout(match.clock.deadlineTimer);
   }
   matches.delete(matchId);
+}
+
+// Who sits where is decided by the client-supplied guestId for ordinary matches.
+// For a wagered match the seat must ALSO belong to the authenticated socket's
+// account: a guestId is only a bearer secret, and chips are riding on it.
+export function seatColor(match: MatchState, guestId: string, socketUserId: string | undefined): PieceColor | null {
+  const color = colorOf(match, guestId);
+  if (!color) return null;
+  if (match.wager && match.players[color].userId !== (socketUserId ?? null)) return null;
+  return color;
 }
 
 export function colorOf(match: MatchState, guestId: string): PieceColor | null {

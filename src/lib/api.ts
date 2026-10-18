@@ -117,8 +117,9 @@ export function getMyProfile(token: string): Promise<{ profile: PlayerProfile }>
 export function claimMatchReward(
   token: string,
   outcome: 'win' | 'loss' | 'draw',
+  difficulty?: string,
 ): Promise<{ ok: true; chipsGranted: number; chips: number; xpGranted: number; xp: number; level: number }> {
-  return request('/me/match-reward', { method: 'POST', body: { outcome }, token });
+  return request('/me/match-reward', { method: 'POST', body: { outcome, difficulty }, token });
 }
 
 export interface DailyBonusStatus {
@@ -301,6 +302,10 @@ export interface MatchHistoryEntry {
   ratingBefore: number;
   ratingAfter: number;
   ratingDelta: number;
+  // Net chips from the wager on this match (null = unwagered, e.g. Garage) and
+  // the venue it was played in.
+  chipsDelta: number | null;
+  venueTier: string | null;
   opponentDisplayName: string;
   opponentCountry: string | null;
   opponentUserId: string | null;

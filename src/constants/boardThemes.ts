@@ -15,6 +15,8 @@
  * equip validation -- keep the two in sync if themes are added/removed/
  * re-priced.
  */
+import { COSMETIC_PRICES } from '@/lib/economy.generated';
+
 import { BoardSquares, Colors, mixHex } from './theme';
 
 // Muted, weathered accents for the board variants below -- deliberately
@@ -51,8 +53,8 @@ function deriveSquares(
 }
 
 // Only classic-chrome is free/unlocked by default. The rest are ordered and
-// priced as an ascending ladder (gems:chips held at a constant 1:20
-// ratio throughout) -- keep in sync with server/src/boardThemes.ts.
+// priced from the shared tier ladder in economy.config.json (1 gem = 40 chips)
+// via COSMETIC_PRICES -- keep in sync with server/src/boardThemes.ts.
 export const BOARD_THEMES: BoardTheme[] = [
   {
     id: 'classic-chrome',
@@ -67,8 +69,8 @@ export const BOARD_THEMES: BoardTheme[] = [
     id: 'cyan-storm',
     name: 'Cyan Storm',
     locked: true,
-    gemPrice: 100,
-    chipPrice: 2_000,
+    gemPrice: COSMETIC_PRICES['cyan-storm'].gems,
+    chipPrice: COSMETIC_PRICES['cyan-storm'].chips ?? 0,
     squares: deriveSquares(SLATE_STONE, 0.15, SLATE_STONE, 0.35),
     glowColor: SLATE_STONE,
   },
@@ -76,8 +78,8 @@ export const BOARD_THEMES: BoardTheme[] = [
     id: 'gold-rush',
     name: 'Gold Rush',
     locked: true,
-    gemPrice: 200,
-    chipPrice: 4_000,
+    gemPrice: COSMETIC_PRICES['gold-rush'].gems,
+    chipPrice: COSMETIC_PRICES['gold-rush'].chips ?? 0,
     squares: deriveSquares(BRONZE_STONE, 0.15, BRONZE_STONE, 0.35),
     glowColor: BRONZE_STONE,
   },
@@ -85,8 +87,8 @@ export const BOARD_THEMES: BoardTheme[] = [
     id: 'crimson-stage',
     name: 'Crimson Stage',
     locked: true,
-    gemPrice: 300,
-    chipPrice: 6_000,
+    gemPrice: COSMETIC_PRICES['crimson-stage'].gems,
+    chipPrice: COSMETIC_PRICES['crimson-stage'].chips ?? 0,
     squares: deriveSquares(RUST_STONE, 0.15, RUST_STONE, 0.35),
     glowColor: RUST_STONE,
   },
@@ -94,8 +96,8 @@ export const BOARD_THEMES: BoardTheme[] = [
     id: 'obsidian-void',
     name: 'Obsidian Void',
     locked: true,
-    gemPrice: 350,
-    chipPrice: 7_000,
+    gemPrice: COSMETIC_PRICES['obsidian-void'].gems,
+    chipPrice: COSMETIC_PRICES['obsidian-void'].chips ?? 0,
     squares: deriveSquares(Colors.chromeMid, 0.25, Colors.bgBase, 0.5),
     glowColor: Colors.chromeMid,
   },

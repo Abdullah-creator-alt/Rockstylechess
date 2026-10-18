@@ -1,3 +1,4 @@
+import { ECONOMY } from '../../economy.generated.js';
 import { bigint, boolean, char, integer, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 // Doubles as better-auth's `user` model (see betterAuth.ts's drizzleAdapter
@@ -41,8 +42,10 @@ export const playerProfiles = pgTable('player_profiles', {
   wins: integer('wins').notNull().default(0),
   losses: integer('losses').notNull().default(0),
   draws: integer('draws').notNull().default(0),
-  // Matches sign-up.tsx's displayed "Welcome Bonus: 10,000 Chips".
-  chips: bigint('chips', { mode: 'number' }).notNull().default(10_000),
+  // Welcome bonus: exactly one Common cosmetic (economy.config.json), so a new
+  // player's first decision is "buy it now or save". Shown by sign-up.tsx and
+  // welcome-reward.tsx from the same config.
+  chips: bigint('chips', { mode: 'number' }).notNull().default(ECONOMY.welcomeChips),
   gems: bigint('gems', { mode: 'number' }).notNull().default(0),
   country: char('country', { length: 2 }),
   // Cosmetic catalogs (forge.tsx) stay client-side constants, same pattern

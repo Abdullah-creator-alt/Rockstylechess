@@ -1,3 +1,5 @@
+import { ECONOMY } from './economy.generated.js';
+
 // Authoritative real-money pack catalog -- the client's shop.tsx display data
 // (id/amount/badge/bonus copy) is display-only and must never be trusted for
 // price or reward amount; this is the only source of truth the server credits
@@ -22,14 +24,13 @@ export interface IapPack {
   bonusCosmeticId: string | null;
 }
 
+// Amounts, prices and product ids live in economy.config.json. Rule enforced by
+// scripts/check-economy.mjs: no chip pack gives more chips per dollar than the
+// gem packs give chip-equivalent (gems x 40), so chips are never the cheap way
+// to buy what gems buy.
 export const IAP_CATALOG: IapPack[] = [
-  { id: 'starter', androidProductId: 'chips_starter_1000', currency: 'chips', amount: 1_000, priceUsdCents: 199, bonusCosmeticId: null },
-  { id: 'roadie-box', androidProductId: 'chips_roadie_10000', currency: 'chips', amount: 10_000, priceUsdCents: 999, bonusCosmeticId: null },
-  { id: 'bonus-pack', androidProductId: 'chips_bonus_250000', currency: 'chips', amount: 250_000, priceUsdCents: 4999, bonusCosmeticId: null },
-  { id: 'headliner-chest', androidProductId: 'chips_headliner_50000', currency: 'chips', amount: 50_000, priceUsdCents: 2499, bonusCosmeticId: null },
-  { id: 'gem-100', androidProductId: 'gems_100', currency: 'gems', amount: 100, priceUsdCents: 99, bonusCosmeticId: null },
-  { id: 'gem-550', androidProductId: 'gems_550', currency: 'gems', amount: 550, priceUsdCents: 499, bonusCosmeticId: null },
-  { id: 'gem-1200', androidProductId: 'gems_1200', currency: 'gems', amount: 1_200, priceUsdCents: 999, bonusCosmeticId: null },
+  ...ECONOMY.iap.chipPacks.map((p) => ({ ...p, currency: 'chips' as const, bonusCosmeticId: null })),
+  ...ECONOMY.iap.gemPacks.map((p) => ({ ...p, currency: 'gems' as const, bonusCosmeticId: null })),
 ];
 
 const BY_ID = new Map(IAP_CATALOG.map((pack) => [pack.id, pack]));
@@ -56,7 +57,7 @@ export interface EntitlementProduct {
 }
 
 export const ENTITLEMENT_PRODUCTS: EntitlementProduct[] = [
-  { id: 'remove-ads', androidProductId: 'remove_ads', entitlement: 'adsRemoved', priceUsdCents: 499 },
+  { ...ECONOMY.iap.removeAds, entitlement: 'adsRemoved' },
 ];
 
 export function getEntitlementProductById(id: string): EntitlementProduct | undefined {

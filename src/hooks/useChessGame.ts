@@ -36,7 +36,7 @@ const NO_TARGETS: Square[] = [];
 // `agreed` marks a negotiated draw; `reason` names a chess.js-detected one
 // (or the FIDE 6.9 "flag fell but the opponent can't mate" case) so the
 // result screen can show the specific cause instead of a bare "Draw".
-export type DrawReason = 'repetition' | 'fiftyMove' | 'insufficient' | 'insufficientVsTimeout';
+export type DrawReason = 'repetition' | 'fiftyMove' | 'insufficient' | 'insufficientVsTimeout' | 'serverRestart';
 
 export type ChessGameResult =
   | { type: 'checkmate'; winner: 'w' | 'b' }

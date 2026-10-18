@@ -12,6 +12,7 @@ import { ScreenArt } from '@/constants/screenArt';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { signUpWithEmail } from '@/lib/authClient';
+import { ECONOMY } from '@/lib/economy.generated';
 import { setAuthToken } from '@/lib/authStorage';
 import { reauthenticateSocket } from '@/lib/socket';
 
@@ -127,7 +128,7 @@ export default function SignUpScreen() {
             </View>
             <View>
               <Text className="font-section-header text-section-header uppercase tracking-widest text-gold">Welcome Bonus</Text>
-              <Text className="font-heading-md text-heading-md text-text-primary">10,000 CHIPS</Text>
+              <Text className="font-heading-md text-heading-md text-text-primary">{ECONOMY.welcomeChips.toLocaleString('en-US')} CHIPS</Text>
               <Text className="font-caption text-caption text-text-muted">FOR NEW ROCKSTARS</Text>
             </View>
           </LinearGradient>

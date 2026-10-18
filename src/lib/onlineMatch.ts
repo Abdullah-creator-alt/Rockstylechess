@@ -22,6 +22,38 @@ export interface QueueMatchedPayload {
   fen: string;
   clocks: { w: number; b: number };
   incrementMs: number;
+  // The venue the SERVER matched them in (the client used to trust its own route
+  // param) and the stake riding on it: buyIn 0 = unwagered (Garage, friend
+  // challenges, game rooms). prize = what the winner receives.
+  venueTier: VenueTier;
+  buyIn: number;
+  prize: number;
+}
+
+// Server -> client when a queue:join is refused (previously it failed silently).
+export interface QueueErrorPayload {
+  reason: 'auth-required' | 'insufficient-chips' | 'rating-too-low' | 'already-in-match' | 'bad-tier' | 'replaced' | 'unavailable';
+  required?: number;
+  current?: number;
+}
+
+// Server -> each player of a WAGERED match once it has ended and the stake has
+// been settled. Also sent for the endings clients derive from a move
+// (checkmate/stalemate), which have no match:ended of their own.
+//  win    -> someone took the pot minus the rake
+//  draw   -> a real draw: stakes returned
+//  void   -> left in the first 3 moves (or the server restarted): stakes returned
+export interface WagerSettledPayload {
+  matchId: string;
+  venueTier: VenueTier;
+  outcome: 'win' | 'draw' | 'void';
+  buyIn: number;
+  pot: number;
+  rake: number;
+  payout: number; // what THIS player received
+  net: number; // payout - buyIn: +800, -1000, or 0
+  chipsAfter: number;
+  refunded: boolean;
 }
 
 export interface MoveAppliedPayload {
@@ -39,7 +71,7 @@ export interface MatchEndedPayload {
     | { type: 'resignation' | 'forfeit' | 'timeout'; winner: 'w' | 'b' }
     // `reason` is only set for a non-negotiated broadcast draw -- today just
     // a flag-fall where the winner had no mating material (FIDE 6.9).
-    | { type: 'draw'; winner: null; reason?: 'insufficientVsTimeout' };
+    | { type: 'draw'; winner: null; reason?: 'insufficientVsTimeout' | 'serverRestart' };
 }
 
 // Server -> the mover only, when it re-validates their move and rejects it.

@@ -54,4 +54,7 @@ export const matchParticipants = pgTable('match_participants', {
   ratingBefore: integer('rating_before').notNull(),
   ratingAfter: integer('rating_after').notNull(),
   ratingDelta: integer('rating_delta').notNull(),
+  // Net chips this player won (+) or lost (-) from the wager on this match;
+  // null for an unwagered (Garage) match. See db/wagers.ts.
+  chipsDelta: integer('chips_delta'),
 });

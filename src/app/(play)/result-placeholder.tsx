@@ -15,7 +15,8 @@ import { ANALYSIS_COST } from '@/lib/analysisCost';
 import { getAuthToken } from '@/lib/authStorage';
 import { clearPendingLocalReplay, getPendingLocalReplay } from '@/lib/localMatchReplayStore';
 import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
-import { isVenueTier } from '@/lib/onlineMatch';
+import { isVenueTier, type WagerSettledPayload } from '@/lib/onlineMatch';
+import { getWagerResult, subscribeWagerResult } from '@/lib/wagerResult';
 
 type Outcome = 'win' | 'loss' | 'draw';
 
@@ -39,6 +40,8 @@ const REASON_LABEL: Record<string, string> = {
   fiftyMove: 'by the 50-Move Rule',
   insufficient: 'by Insufficient Material',
   insufficientTimeout: 'Time Out vs. Insufficient Material',
+  forfeit: 'by Forfeit',
+  serverRestart: 'Server Restarted',
 };
 
 function useCountUp(target: number, durationMs = 1200) {
@@ -77,6 +80,9 @@ export default function ResultScreen() {
     opponentUserId,
     opponentName,
     venueTier: venueTierParam,
+    wagerMatchId,
+    buyIn: buyInParam,
+    prize: prizeParam,
   } = useLocalSearchParams<{
     outcome?: string;
     reason?: string;
@@ -86,6 +92,11 @@ export default function ResultScreen() {
     opponentUserId?: string;
     opponentName?: string;
     venueTier?: string;
+    // Set by match.tsx for a WAGERED online match: the settlement arrives from the
+    // server as wager:settled (see lib/wagerResult.ts).
+    wagerMatchId?: string;
+    buyIn?: string;
+    prize?: string;
   }>();
   const venueTier = isVenueTier(venueTierParam) ? venueTierParam : 'garage';
   const outcome: Outcome = outcomeParam === 'loss' || outcomeParam === 'draw' ? outcomeParam : 'win';
@@ -98,6 +109,35 @@ export default function ResultScreen() {
   const [localReplay] = useState(() => getPendingLocalReplay());
   const { chips: currentChips, refresh: refreshPlayerProfile } = usePlayerProfile();
   const friends = useFriends();
+
+  // Wagered match: show the server's settlement, not the flat reward. It usually
+  // landed before we got here (cached), otherwise it arrives within moments; if it
+  // has not after a few seconds say so and refresh the balance instead of hanging.
+  const [wager, setWager] = useState<WagerSettledPayload | undefined>(() =>
+    wagerMatchId ? getWagerResult(wagerMatchId) : undefined,
+  );
+  const [wagerTimedOut, setWagerTimedOut] = useState(false);
+  useEffect(() => {
+    if (!wagerMatchId) return;
+    const cached = getWagerResult(wagerMatchId);
+    if (cached) setWager(cached);
+    const unsubscribe = subscribeWagerResult((payload) => {
+      if (payload.matchId !== wagerMatchId) return;
+      setWager(payload);
+      refreshPlayerProfile();
+    });
+    const timer = setTimeout(() => {
+      setWagerTimedOut(true);
+      refreshPlayerProfile();
+    }, 4000);
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [wagerMatchId, refreshPlayerProfile]);
+  const wagered = !!wagerMatchId;
+  const buyIn = Number(buyInParam) || 0;
+  const prize = Number(prizeParam) || 0;
 
   const adsEnabled = useAdsEnabled();
   const leavingRef = useRef(false);
@@ -193,14 +233,17 @@ export default function ResultScreen() {
   const showPoints = Number.isFinite(myPoints) && Number.isFinite(oppPoints);
   const parsedChipsGranted = Number(chipsGrantedParam);
   const chips = Number.isFinite(parsedChipsGranted) ? parsedChipsGranted : MATCH_CHIP_REWARDS[outcome];
-  const chipsWon = useCountUp(chips);
+  const chipsWon = useCountUp(wagered ? Math.abs(wager?.net ?? 0) : chips);
   const eloDelta = eloAfter - eloBefore;
   const reasonLabel = reason ? REASON_LABEL[reason] : undefined;
 
-  const bannerText = isVictory ? 'Victory' : isDraw ? 'Draw' : 'Defeat';
-  const bannerColor = isVictory ? Colors.gold : isDraw ? Colors.chrome : Colors.textMuted;
-  const bannerGlow = isVictory ? Colors.cyan : isDraw ? Colors.chrome : Colors.crimson;
-  const glowColor = isVictory ? Colors.gold : isDraw ? Colors.chrome : Colors.crimson;
+  // A wagered match that was voided (someone left in the first 3 moves) was not a
+  // contest at all: the stakes came back and nothing counted.
+  const isVoid = wager?.outcome === 'void';
+  const bannerText = isVoid ? 'No Contest' : isVictory ? 'Victory' : isDraw ? 'Draw' : 'Defeat';
+  const bannerColor = isVoid ? Colors.chrome : isVictory ? Colors.gold : isDraw ? Colors.chrome : Colors.textMuted;
+  const bannerGlow = isVoid ? Colors.chrome : isVictory ? Colors.cyan : isDraw ? Colors.chrome : Colors.crimson;
+  const glowColor = isVoid ? Colors.chrome : isVictory ? Colors.gold : isDraw ? Colors.chrome : Colors.crimson;
 
   return (
     <View className="flex-1 items-center justify-center gap-xl bg-bg-base px-xl" style={{ paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }}>
@@ -218,12 +261,46 @@ export default function ResultScreen() {
           <View className="h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.chromeDark, 0.2), borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.4) }}>
             <CurrencyIcon type="chips" size={26} />
           </View>
-          <Text className="font-display-hero" style={{ fontSize: 28, color: Colors.gold, textShadowColor: withOpacity(Colors.gold, 0.5), textShadowRadius: 10, textShadowOffset: { width: 0, height: 0 } }}>
-            +{chipsWon.toLocaleString('en-US')}
-          </Text>
+          {wagered ? (
+            wager ? (
+              <Text
+                className="font-display-hero"
+                style={{
+                  fontSize: 28,
+                  color: wager.refunded ? Colors.chrome : wager.net > 0 ? Colors.gold : Colors.crimson,
+                }}
+              >
+                {wager.refunded ? '±0' : wager.net > 0 ? '+' : '-'}
+                {wager.refunded ? '' : chipsWon.toLocaleString('en-US')}
+              </Text>
+            ) : (
+              <Text className="font-heading-md" style={{ fontSize: 16, color: Colors.textMuted }}>
+                {wagerTimedOut ? 'Stake settled' : 'Settling…'}
+              </Text>
+            )
+          ) : (
+            <Text className="font-display-hero" style={{ fontSize: 28, color: Colors.gold, textShadowColor: withOpacity(Colors.gold, 0.5), textShadowRadius: 10, textShadowOffset: { width: 0, height: 0 } }}>
+              +{chipsWon.toLocaleString('en-US')}
+            </Text>
+          )}
         </View>
 
-        <View className="mt-md flex-row items-center gap-sm">
+        {wagered ? (
+          <Text className="mt-xs text-center font-caption text-caption text-text-muted">
+            {wager
+              ? isVoid
+                ? 'You left in the first 3 moves. Both buy-ins were returned and nothing counted.'
+                : wager.refunded
+                  ? `Draw. Your ${wager.buyIn.toLocaleString('en-US')} buy-in was returned.`
+                  : `Pot ${wager.pot.toLocaleString('en-US')} · 10% house cut · balance ${wager.chipsAfter.toLocaleString('en-US')}`
+              : wagerTimedOut
+                ? `Your ${buyIn.toLocaleString('en-US')} buy-in is settled — check your balance.`
+                : `Buy-in ${buyIn.toLocaleString('en-US')} · winner takes ${prize.toLocaleString('en-US')}`}
+          </Text>
+        ) : null}
+
+        {/* A voided wager changed no rating, so the (sample) rating row is hidden. */}
+        <View className="mt-md flex-row items-center gap-sm" style={isVoid ? { display: 'none' } : undefined}>
           <Text className="font-heading-md" style={{ fontSize: 16, color: Colors.textPrimary }}>
             {eloBefore}
           </Text>
@@ -262,6 +339,8 @@ export default function ResultScreen() {
             <View className="flex-row items-center justify-center gap-xs">
               <Text className="font-body-sm text-caption uppercase tracking-wide text-text-muted">Costs</Text>
               <CurrencyPill type="chips" value={ANALYSIS_COST.chips} />
+              <Text className="font-body-sm text-caption uppercase tracking-wide text-text-muted">or</Text>
+              <CurrencyPill type="gems" value={ANALYSIS_COST.gems} />
             </View>
           </View>
         ) : null}
