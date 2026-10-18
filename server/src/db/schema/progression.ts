@@ -1,4 +1,4 @@
-import { boolean, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import { users } from './users.js';
 
@@ -160,4 +160,74 @@ export const userCards = pgTable(
     obtainedAt: timestamp('obtained_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.cardId] })],
+);
+
+// ---- Fame / level progression (see db/progression.ts) ----------------------
+
+// One row per user per UTC day: what the daily rules need to remember. `botFame`
+// counts toward the daily bot-Fame cap (grind guard); `firstWinDone` is the
+// "Opening Night" x2 bonus (first win of the day, any source).
+export const dailyProgress = pgTable(
+  'daily_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    dayStart: timestamp('day_start', { withTimezone: true }).notNull(),
+    botFame: integer('bot_fame').notNull().default(0),
+    firstWinDone: boolean('first_win_done').notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.dayStart] })],
+);
+
+// A level reward is paid exactly once per (user, level): the insert's primary
+// key is the idempotency guard (ON CONFLICT DO NOTHING; credit only if inserted).
+export const levelRewardsGranted = pgTable(
+  'level_rewards_granted',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    level: integer('level').notNull(),
+    chips: integer('chips').notNull().default(0),
+    gems: integer('gems').notNull().default(0),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.level] })],
+);
+
+// Titles a player has earned (catalog in economy.config.json `levels.titles`).
+export const userTitles = pgTable(
+  'user_titles',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    titleId: varchar('title_id', { length: 40 }).notNull(),
+    unlockedAt: timestamp('unlocked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.titleId] })],
+);
+
+// The persisted "what just happened" after a match (Fame earned, level-ups,
+// rewards, titles, rating change). The live push (socket) can be missed by an
+// offline or backgrounded player, so every event is stored first; the client
+// shows celebrations for unseen events and marks them seen.
+export const progressionEvents = pgTable(
+  'progression_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(), // 'online' | 'bot'
+    matchId: text('match_id'),
+    payload: jsonb('payload').notNull(),
+    // True when something worth a celebration happened (level up / new title),
+    // so the unseen query can be a cheap indexed filter.
+    celebratory: boolean('celebratory').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    seenAt: timestamp('seen_at', { withTimezone: true }),
+  },
+  (t) => [index('progression_events_unseen_idx').on(t.userId, t.celebratory, t.seenAt)],
 );

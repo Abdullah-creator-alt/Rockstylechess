@@ -79,6 +79,52 @@ export function chargeForAnalysis(
   return request('/me/analysis/charge', { method: 'POST', body: { currency }, token });
 }
 
+// ---- Progression (Fame / level / titles) -- mirrors server/src/db/progression.ts ----
+export interface GoalProgress {
+  id: string;
+  title: string;
+  before: number;
+  after: number;
+  target: number;
+  completed: boolean;
+}
+
+export type RatingTier = 'rookie' | 'challenger' | 'master' | 'grandmaster';
+
+export interface ProgressionReport {
+  eventId: string;
+  source: 'online' | 'bot';
+  matchId: string | null;
+  outcome: 'win' | 'loss' | 'draw';
+  fame: {
+    base: number;
+    gained: number;
+    openingNight: boolean;
+    hotStreak: number;
+    streak: number;
+    capped: boolean;
+    botFameLeftToday: number | null;
+  };
+  xpBefore: number;
+  xpAfter: number;
+  levelBefore: number;
+  levelAfter: number;
+  levelProgress: { xpIntoLevel: number; xpForNextLevel: number; progress: number };
+  rewards: { chips: number; gems: number; byLevel: { level: number; chips: number; gems: number }[] };
+  titlesUnlocked: { id: string; name: string }[];
+  equippedTitle: { id: string; name: string } | null;
+  rating: null | { before: number; after: number; delta: number; tierBefore: RatingTier; tierAfter: RatingTier };
+  goals: GoalProgress[];
+}
+
+export function getUnseenProgression(token: string): Promise<{ events: ProgressionReport[] }> {
+  return request('/me/progression/unseen', { method: 'GET', token });
+}
+
+export function markProgressionSeen(token: string, eventId: string): Promise<{ ok: true }> {
+  return request(`/me/progression/${eventId}/seen`, { method: 'POST', token });
+}
+
 export interface PlayerProfile {
   userId: string;
   displayName: string | null;
@@ -104,6 +150,8 @@ export interface PlayerProfile {
   // True once the player bought Remove Ads (server-set only, never writable
   // through PATCH /me/profile). Switches off interstitials; rewarded ads stay.
   adsRemoved: boolean;
+  // Title shown under the name (id from economy.config.json levels.titles).
+  equippedTitleId: string | null;
 }
 
 export function getMyProfile(token: string): Promise<{ profile: PlayerProfile }> {
@@ -118,7 +166,16 @@ export function claimMatchReward(
   token: string,
   outcome: 'win' | 'loss' | 'draw',
   difficulty?: string,
-): Promise<{ ok: true; chipsGranted: number; chips: number; xpGranted: number; xp: number; level: number }> {
+): Promise<{
+  ok: true;
+  chipsGranted: number;
+  chips: number;
+  xpGranted: number;
+  xp: number;
+  level: number;
+  // What the Show Report needs: Fame earned (with bonuses/cap), level-ups, rewards, titles.
+  progression: ProgressionReport;
+}> {
   return request('/me/match-reward', { method: 'POST', body: { outcome, difficulty }, token });
 }
 
@@ -255,7 +312,7 @@ export function reportMatchOutcome(
     moveCount: number;
     isBot: boolean;
   },
-): Promise<{ ok: true }> {
+): Promise<{ ok: true; goals: GoalProgress[] }> {
   return request('/me/quests/report-match', { method: 'POST', body: report, token });
 }
 

@@ -115,6 +115,41 @@ const legendDays = (t.legendary.gems * R) / base;
 check('Common takes 2-5 casual days', commonDays >= 2 && commonDays <= 5, commonDays.toFixed(1));
 check('Legendary takes 20-35 casual days', legendDays >= 20 && legendDays <= 35, legendDays.toFixed(1));
 
+
+// ---- fame / levels -------------------------------------------------------
+const fame = cfg.fame;
+const botFames = ['easy', 'medium', 'stockfish-basic', 'stockfish-lite', 'stockfish-strong'].map((b) => fame.botWin[b]);
+check('bot Fame rises with difficulty', botFames.every((v, i) => i === 0 || v > botFames[i - 1]));
+check('no bot win pays more Fame than an online win', botFames.every((v) => v <= fame.online.win));
+check('daily bot Fame cap is a few strong-bot wins, not unlimited', fame.dailyBotFameCap >= fame.botWin['stockfish-strong'] && fame.dailyBotFameCap <= 6 * fame.online.win);
+check('hot-streak steps increase', fame.hotStreak.every((s, i) => i === 0 || (s.minStreak > fame.hotStreak[i - 1].minStreak && s.mult > fame.hotStreak[i - 1].mult)));
+check('Opening Night is a x2-x3 bonus', fame.openingNight >= 2 && fame.openingNight <= 3);
+const titles = cfg.levels.titles;
+check('level titles start at level 1 and strictly increase', titles[0].minLevel === 1 && titles.every((t, i) => i === 0 || t.minLevel > titles[i - 1].minLevel));
+check('title ids unique', new Set(titles.map((t) => t.id)).size === titles.length);
+
+// Level rewards, expanded the same way gen-economy does.
+const levelRewards = {};
+for (const r of cfg.levels.chipsPerLevel) for (let l = r.from; l <= r.to; l++) levelRewards[l] = { chips: r.chips, gems: 0 };
+for (const [l, e] of Object.entries(cfg.levels.milestones)) { const b = levelRewards[l] ?? { chips: 0, gems: 0 }; levelRewards[l] = { chips: b.chips + (e.chips ?? 0), gems: b.gems + (e.gems ?? 0) }; }
+const rewardTo = (n) => Object.entries(levelRewards).filter(([l]) => Number(l) <= n).reduce((a, [, r]) => ({ chips: a.chips + r.chips, gems: a.gems + r.gems }), { chips: 0, gems: 0 });
+const xpFor = (L) => (L <= 1 ? 0 : 300 * L * L);
+const fameDay = m.onlineGamesPerDay * (m.onlineWinRate * fame.online.win + m.onlineDrawRate * fame.online.draw) + m.openingNightRate * (fame.openingNight - 1) * fame.online.win + m.botGamesPerDay * m.botWinRate * m.botMixWinFame;
+console.log(`\nFame model (ESTIMATE): ~${fameDay.toFixed(0)} Fame/day for a casual player`);
+const daysTo = (L) => xpFor(L) / fameDay;
+for (const L of [2, 5, 10, 20, 30, 50]) {
+  const r = rewardTo(L);
+  console.log(`  level ${String(L).padStart(2)}: ${xpFor(L).toLocaleString().padStart(8)} Fame -> ${daysTo(L).toFixed(1).padStart(6)} days   (rewards so far: ${r.chips.toLocaleString()} chips + ${r.gems} gems)`);
+}
+check('level 2 arrives on the first or second day (hook)', daysTo(2) <= 2, daysTo(2).toFixed(1));
+check('level 5 within the first week', daysTo(5) <= 7, daysTo(5).toFixed(1));
+check('level 10 in about 2-5 weeks', daysTo(10) >= 14 && daysTo(10) <= 35, daysTo(10).toFixed(1));
+check('level 50 takes over a year', daysTo(50) >= 365, daysTo(50).toFixed(0));
+const r10 = rewardTo(10);
+check('chips from levels 1-10 are under 10% of the income earned meanwhile', r10.chips < 0.1 * base * daysTo(10), `${r10.chips} vs ${(0.1 * base * daysTo(10)).toFixed(0)}`);
+const r50 = rewardTo(50);
+check('all 50 levels of gems stay well under the achievement gem pool', r50.gems < 920, String(r50.gems));
+
 // achievements (one-time) -- read from the server catalog
 const ach = [...read('server/src/achievementCatalog.ts').matchAll(/rewardType: '(chips|gems)', rewardAmount: ([\d_]+)/g)];
 const achChips = ach.filter((a) => a[1] === 'chips').reduce((s, a) => s + Number(a[2].replace(/_/g, '')), 0);

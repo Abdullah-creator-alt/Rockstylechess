@@ -48,6 +48,7 @@ import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 import { setPendingLocalReplay, type LocalMatchReplay } from '@/lib/localMatchReplayStore';
 import { botChipReward, MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 import { DURATION_MS, isDuration, isVenueTier } from '@/lib/onlineMatch';
+import { ensureProgressionListener, getReport, putReport, titleName } from '@/lib/progression';
 import { ensureWagerListener } from '@/lib/wagerResult';
 
 
@@ -109,6 +110,15 @@ const MIN_BOARD_SIZE = 200;
 // piece dragged inward from the a/h files.
 const BOARD_SIDE_BLEED = 4;
 
+// Strength label shown in a bot's header line (same names as the bots screen).
+const BOT_TIER_LABEL: Record<BotDifficulty, string> = {
+  easy: 'NOVICE',
+  medium: 'AMATEUR',
+  'stockfish-basic': 'SKILLED',
+  'stockfish-lite': 'EXPERT',
+  'stockfish-strong': 'GRANDMASTER',
+};
+
 // Navigation params: bots.tsx passes mode=bot + difficulty (which of the
 // four bot engines to use) + color (the "Play As" pick); matchmaking.tsx
 // passes mode=online + matchId/color/fen/opponentName once the server has
@@ -136,6 +146,8 @@ export default function MatchScreen() {
     venueTier: venueTierParam,
     buyIn: buyInParam,
     prize: prizeParam,
+    opponentRating: opponentRatingParam,
+    opponentTitle: opponentTitleParam,
   } = useLocalSearchParams<{
     mode?: string;
     difficulty?: string;
@@ -162,6 +174,9 @@ export default function MatchScreen() {
     // (0 / absent = unwagered).
     buyIn?: string;
     prize?: string;
+    // Online only: the opponent's public standing from queue:matched.
+    opponentRating?: string;
+    opponentTitle?: string;
   }>();
   const mode: GameMode = modeParam === 'bot' ? 'bot' : modeParam === 'online' ? 'online' : 'local';
   const difficulty: BotDifficulty =
@@ -221,6 +236,21 @@ export default function MatchScreen() {
   // ~900ms hold. This latches the moment ANY ending fires so the clock freezes.
   const [matchEnded, setMatchEnded] = useState(false);
   const { profile, refresh: refreshPlayerProfile } = usePlayerProfile();
+  // Header rank lines are REAL: an online opponent shows their equipped title and
+  // rating, a bot its strength label, you your own title and rating. (They used to
+  // be the hardcoded "GRANDMASTER (2150)" / "PRO (2145)" for everyone.)
+  const opponentRank =
+    mode === 'online'
+      ? [opponentTitleParam?.toUpperCase(), opponentRatingParam ? opponentRatingParam : null].filter(Boolean).join(' · ') || 'GUEST'
+      : mode === 'bot'
+        ? `BOT · ${BOT_TIER_LABEL[difficulty]}`
+        : 'PLAYER 2';
+  const myRank =
+    mode === 'local'
+      ? 'PLAYER 1'
+      : profile
+        ? [titleName(profile.equippedTitleId)?.toUpperCase(), mode === 'online' ? String(profile.rating) : null].filter(Boolean).join(' · ') || `LVL ${profile.level}`
+        : 'GUEST';
   const boardTheme = getBoardTheme(profile?.equippedBoardId);
   const pieceSprites = getPieceSprites(profile?.equippedPieceId);
   // Atmosphere only -- never feeds boardTheme/pieceSprites above, which stay
@@ -292,8 +322,13 @@ export default function MatchScreen() {
 
     // Online pays the flat online table; bot/local pays by bot strength (server
     // does the same math in POST /me/match-reward -- this is the display value).
-    const chipsGranted = mode === 'online' ? MATCH_CHIP_REWARDS[outcome] : botChipReward(difficulty, outcome);
-    if (mode !== 'online') {
+    let chipsGranted = mode === 'online' ? MATCH_CHIP_REWARDS[outcome] : mode === 'bot' ? botChipReward(difficulty, outcome) : 0;
+    // Bot matches get their Show Report from the server's reply (online ones arrive
+    // over the socket as `progression:update`, keyed by the match id).
+    const reportKey = `bot-${Date.now()}`;
+    // Pass-and-play ('local') is not a contest against the game: it pays nothing and
+    // counts toward nothing (it used to pay as an easy bot and tick quests).
+    if (mode === 'bot') {
       // Bot/local matches never reach the server otherwise (pure
       // client-side chess.js) -- this is the only point a reward gets
       // persisted for those modes. Online matches are already credited
@@ -303,7 +338,9 @@ export default function MatchScreen() {
       const token = await getAuthToken();
       if (token) {
         try {
-          await claimMatchReward(token, outcome, difficulty);
+          const claimed = await claimMatchReward(token, outcome, difficulty);
+          chipsGranted = claimed.chipsGranted;
+          putReport(reportKey, claimed.progression);
         } catch (error) {
           console.log('Failed to claim match reward', error);
         }
@@ -312,7 +349,7 @@ export default function MatchScreen() {
             playerColor === 'w' ? game.capturedByWhite.length : game.capturedByBlack.length;
           const opponentCapturedCount =
             playerColor === 'w' ? game.capturedByBlack.length : game.capturedByWhite.length;
-          await reportMatchOutcome(token, {
+          const reported = await reportMatchOutcome(token, {
             won: outcome === 'win',
             checkmate: outcome === 'win' && reason === 'checkmate',
             capturedCount,
@@ -321,6 +358,9 @@ export default function MatchScreen() {
             moveCount: game.moveCount,
             isBot: mode === 'bot',
           });
+          // Merge the goals this match moved into the report the result screen shows.
+          const base = getReport(reportKey);
+          if (base) putReport(reportKey, { ...base, goals: reported.goals });
         } catch (error) {
           console.log('Failed to report match outcome', error);
         }
@@ -368,6 +408,9 @@ export default function MatchScreen() {
           outcome,
           reason,
           chipsGranted: String(chipsGranted),
+          matchMode: mode,
+          // Where the Show Report comes from: the online match id (socket push) or a bot report key.
+          ...(mode === 'online' && matchId ? { reportKey: matchId } : mode === 'bot' ? { reportKey } : {}),
           venueTier,
           // A wagered match shows the server's settlement instead of the flat
           // reward (see wagerResult.ts / result-placeholder.tsx).
@@ -418,7 +461,10 @@ export default function MatchScreen() {
   // Make sure the shared wager:settled listener is attached for the whole online
   // match, so the settlement is cached even if it lands after we navigate away.
   useEffect(() => {
-    if (mode === 'online') ensureWagerListener();
+    if (mode === 'online') {
+      ensureWagerListener();
+      ensureProgressionListener();
+    }
   }, [mode]);
 
   useEffect(() => {
@@ -615,7 +661,7 @@ export default function MatchScreen() {
           avatarId={opponentAvatarKey}
           avatarEmoji={opponentAvatarEmoji}
           countryCode={mode === 'online' ? (opponentCountry ?? null) : null}
-          rank="GRANDMASTER (2150)"
+          rank={opponentRank}
           getRemaining={clock.getRemaining}
           color={opponentColor}
           accent={Colors.crimson}
@@ -678,7 +724,7 @@ export default function MatchScreen() {
           name={profile?.displayName ?? 'AXL_CHESS'}
           avatarId={profile?.avatarId ?? null}
           countryCode={profile?.country ?? null}
-          rank="PRO (2145)"
+          rank={myRank}
           getRemaining={clock.getRemaining}
           color={playerColor}
           accent={Colors.cyan}

@@ -122,6 +122,33 @@ Known open gap:
 `POST /me/match-reward` is still client-reported (no server match record), so payouts
 describe an honest player.
 
+## Progression (Fame, levels, titles)
+
+"XP" is now **Fame**; the curve is unchanged (`300 x L^2`, `src/leveling.ts`) but everything
+that grants it goes through ONE transaction, `grantFame` in `src/db/progression.ts`
+(`economy.config.json` -> `fame`, `levels`):
+
+- **How much:** online win 500 / draw 50; **bot wins by difficulty** 100 / 200 / 300 / 400 /
+  500 (draw = 10%), with a **daily bot-Fame cap** (2,000 of base Fame, per UTC day; online is
+  never capped); **Opening Night** x2 on the first win of the UTC day (any source); **Hot
+  Streak** x1.2 at a 3-win streak and x1.5 at 5+ (online wins). A draw no longer breaks a win
+  streak (only a loss resets it). Multipliers apply to Fame only, never to chips.
+- **What it unlocks:** each level pays a small fixed chips/gems reward exactly once
+  (`level_rewards_granted` primary key, table in `economy.config.json`, expanded by
+  `gen-economy.mjs` into `LEVEL_REWARDS`), and crossing a title threshold unlocks and
+  auto-equips a title (`user_titles`, `player_profiles.equipped_title_id`; first grant also
+  backfills titles for existing players, level rewards are NOT retroactive).
+- **What the app is told:** `grantFame` returns (and stores in `progression_events`) a summary
+  `{fame{base,gained,openingNight,hotStreak,capped}, xp/level before+after, rewards, titles,
+  rating{before,after,delta,tier*}, goals}`. Online matches push it as the socket event
+  `progression:update` (from `persistMatchResult`), bot matches get it in the
+  `POST /me/match-reward` reply (`progression`), and `POST /me/quests/report-match` returns
+  the `goals` the match moved. Celebrations (level up / new title) that the player missed are
+  replayed from `GET /me/progression/unseen` until `POST /me/progression/:id/seen`.
+  `queue:matched` opponents carry `rating` and `title` for the match header.
+- Pass-and-play ('local') no longer pays or counts; `persistMatchResult` skips the flat chip
+  reward for wagered matches, as before. The daily-progress rows live in `daily_progress`.
+
 ## Wagers (chips at stake on online venues)
 
 Online matches at Club and above (`ECONOMY.venues`, buy-in > 0) are played for chips.

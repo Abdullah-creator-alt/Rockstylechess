@@ -9,6 +9,7 @@ import { SubPageHeader } from '@/components/layout';
 import { Colors, withOpacity } from '@/constants/theme';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { claimQuest, getQuestsStatus, type QuestStatus } from '@/lib/api';
+import { celebrate } from '@/lib/celebration';
 import { getAuthToken } from '@/lib/authStorage';
 
 // Server doesn't send UI colors (theme stays a client concern) -- keyed by
@@ -55,6 +56,7 @@ export default function QuestsScreen() {
       const token = await getAuthToken();
       if (!token) return;
       await claimQuest(token, questId);
+      celebrate('reward'); // claim moment: coin sound + haptic
       setQuests((prev) => prev?.map((q) => (q.id === questId ? { ...q, claimed: true } : q)) ?? prev);
       refresh();
     } catch (error) {
@@ -105,7 +107,7 @@ export default function QuestsScreen() {
           </View>
           <Text className="text-center font-headline-lg text-headline-lg uppercase tracking-wide text-text-primary">Weekly Challenges</Text>
           <Text className="mt-2 text-center font-body-base text-body-base text-text-muted" style={{ maxWidth: 280 }}>
-            Unlock higher tiers of rewards by reaching Level 10. The rock gods demand a stronger performance.
+            Bigger weekly goals are on the way. Keep playing to earn Fame and level up in the meantime.
           </Text>
         </View>
       )}

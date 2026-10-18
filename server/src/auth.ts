@@ -45,11 +45,12 @@ import { allMatches, liveClockRemaining } from './match.js';
 import { PIECE_SETS } from './pieceSets.js';
 import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
+import { diffGoals, getOwnedTitleIds, getUnseenCelebrations, grantFame, markProgressionSeen, TITLES } from './db/progression.js';
 import { claimQuest, getQuestsStatus, reportMatchForQuests, reportPuzzleSolvedForQuests } from './db/quests.js';
 import { matchParticipants, matches, playerProfiles, userCosmetics, users } from './db/schema/index.js';
 import { getSpinStatus, performSpin } from './db/spin.js';
 import { emitToUser, onlineAmong } from './realtime.js';
-import { botChipReward, isBotDifficulty, MATCH_XP_REWARDS, type MatchOutcome } from './matchRewards.js';
+import { botChipReward, isBotDifficulty, type MatchOutcome } from './matchRewards.js';
 
 // Query-param limit shared by /me/matches and /leaderboard -- clamps to a
 // sane range so a client can't ask for an unbounded result set.
@@ -379,33 +380,37 @@ authRouter.post(
     const botDifficulty = isBotDifficulty(difficulty) ? difficulty : 'easy';
 
     const chipsGranted = botChipReward(botDifficulty, outcome as MatchOutcome);
-    const xpGranted = MATCH_XP_REWARDS[outcome as MatchOutcome];
-    const [updated] = await db
+    const [credited] = await db
       .update(playerProfiles)
-      .set({
-        chips: sql`${playerProfiles.chips} + ${chipsGranted}`,
-        xp: sql`${playerProfiles.xp} + ${xpGranted}`,
-        updatedAt: new Date(),
-      })
+      .set({ chips: sql`${playerProfiles.chips} + ${chipsGranted}`, updatedAt: new Date() })
       .where(eq(playerProfiles.userId, req.userId as string))
-      .returning({ chips: playerProfiles.chips, xp: playerProfiles.xp });
-    if (!updated) {
+      .returning({ chips: playerProfiles.chips });
+    if (!credited) {
       res.status(404).json({ error: 'profile-not-found' });
       return;
     }
-    // level is purely derivative of xp -- recomputed from the post-increment
-    // value returned above rather than folded into the same SQL expression,
-    // so the curve formula (leveling.ts) has exactly one implementation, not
-    // a second copy embedded in a raw SQL expression. This is a second
-    // statement rather than one transaction: a race between two concurrent
-    // grants for the same user could leave level briefly behind what xp
-    // implies, which self-corrects on the next grant. Accepted deliberately,
-    // same tradeoff spin.ts/dailyBonus.ts already accept for grants (as
-    // opposed to purchaseCosmetic's transaction, which is a genuine spend
-    // that can't tolerate it).
-    const level = levelForXp(updated.xp);
-    await db.update(playerProfiles).set({ level }).where(eq(playerProfiles.userId, req.userId as string));
-    res.json({ ok: true, chipsGranted, chips: updated.chips, xpGranted, xp: updated.xp, level });
+    // Fame (XP), level, level rewards and titles: one transaction in
+    // db/progression.ts. Bot Fame scales with the bot's strength and is capped
+    // per day; the returned `progression` feeds the app's Show Report.
+    const progression = await grantFame(req.userId as string, {
+      source: 'bot',
+      outcome: outcome as MatchOutcome,
+      difficulty: botDifficulty,
+    });
+    const [after] = await db
+      .select({ chips: playerProfiles.chips })
+      .from(playerProfiles)
+      .where(eq(playerProfiles.userId, req.userId as string))
+      .limit(1);
+    res.json({
+      ok: true,
+      chipsGranted,
+      chips: after?.chips ?? credited.chips,
+      xpGranted: progression.fame.gained,
+      xp: progression.xpAfter,
+      level: progression.levelAfter,
+      progression,
+    });
   }),
 );
 
@@ -592,6 +597,9 @@ authRouter.post(
       return;
     }
     const safeCapturedCount = Math.max(0, Math.floor(capturedCount));
+    // Snapshot today's goals around the report so the Show Report can say which
+    // ones this match moved.
+    const questsBefore = await getQuestsStatus(req.userId as string);
     await Promise.all([
       reportMatchForQuests(req.userId as string, { won, checkmate, capturedCount: safeCapturedCount }),
       reportMatchForAchievements(req.userId as string, {
@@ -604,7 +612,44 @@ authRouter.post(
         isBot: isBot === true,
       }),
     ]);
+    const questsAfter = await getQuestsStatus(req.userId as string);
+    res.json({ ok: true, goals: diffGoals(questsBefore, questsAfter) });
+  }),
+);
+
+// Celebrations (level up / new title) the player has not seen yet -- the live
+// socket push (`progression:update`) can be missed while offline or backgrounded,
+// so every event is stored and replayed from here until it is marked seen.
+authRouter.get(
+  '/me/progression/unseen',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json({ events: await getUnseenCelebrations(req.userId as string) });
+  }),
+);
+
+authRouter.post(
+  '/me/progression/:eventId/seen',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const eventId = String(req.params.eventId);
+    // A malformed id (not a uuid) would make Postgres throw; treat it as not found.
+    if (!/^[0-9a-f-]{36}$/i.test(eventId)) {
+      res.status(404).json({ error: 'not-found' });
+      return;
+    }
+    await markProgressionSeen(req.userId as string, eventId);
     res.json({ ok: true });
+  }),
+);
+
+// Titles the player owns plus the full catalog (so the profile can show locked
+// ones). Equipping a chosen title is a later phase; today the newest is auto-equipped.
+authRouter.get(
+  '/me/titles',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json({ owned: await getOwnedTitleIds(req.userId as string), catalog: TITLES });
   }),
 );
 

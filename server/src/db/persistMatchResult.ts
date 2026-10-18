@@ -1,13 +1,14 @@
 import { eq, sql } from 'drizzle-orm';
 
-import { applyXpGain } from '../leveling.js';
 import type { MatchState, PieceColor } from '../match.js';
-import { MATCH_CHIP_REWARDS, MATCH_XP_REWARDS } from '../matchRewards.js';
+import { MATCH_CHIP_REWARDS } from '../matchRewards.js';
+import { emitToUser } from '../realtime.js';
 import { reportMatchForAchievements } from './achievements.js';
 import { db } from './client.js';
 import { expectedScore, updatedRating } from './elo.js';
 import { insertNotification } from './notifications.js';
-import { reportMatchForQuests } from './quests.js';
+import { diffGoals, grantFame } from './progression.js';
+import { getQuestsStatus, reportMatchForQuests } from './quests.js';
 import { matchParticipants, matches, playerProfiles } from './schema/index.js';
 
 type ResultType = 'checkmate' | 'stalemate' | 'draw' | 'resignation' | 'forfeit' | 'timeout';
@@ -106,21 +107,41 @@ export async function persistMatchResult(
   ]);
 
   const [whiteStats, blackStats] = await Promise.all([
-    updateProfileStats(white.userId, whiteRatingAfter, whiteScore, whiteProfile.xp, !opts.wagered),
-    updateProfileStats(black.userId, blackRatingAfter, blackScore, blackProfile.xp, !opts.wagered),
+    updateProfileStats(white.userId, whiteRatingAfter, whiteScore, !opts.wagered),
+    updateProfileStats(black.userId, blackRatingAfter, blackScore, !opts.wagered),
   ]);
 
+  // Quests first (so the Show Report can say which goals this match moved), then
+  // Fame. Fame / level / titles / rewards are one transaction per player (see
+  // db/progression.ts); a failure there must never lose the match record above.
+  const [questsBeforeW, questsBeforeB] = await Promise.all([getQuestsStatus(white.userId), getQuestsStatus(black.userId)]);
   await Promise.all([
-    reportMatchForQuests(white.userId, {
-      won: whiteScore === 1,
-      checkmate: whiteScore === 1 && resultType === 'checkmate',
-      capturedCount: whiteCaptures,
+    reportMatchForQuests(white.userId, { won: whiteScore === 1, checkmate: whiteScore === 1 && resultType === 'checkmate', capturedCount: whiteCaptures }),
+    reportMatchForQuests(black.userId, { won: blackScore === 1, checkmate: blackScore === 1 && resultType === 'checkmate', capturedCount: blackCaptures }),
+  ]);
+  const [questsAfterW, questsAfterB] = await Promise.all([getQuestsStatus(white.userId), getQuestsStatus(black.userId)]);
+  await Promise.all(
+    [
+      { userId: white.userId, score: whiteScore, stats: whiteStats, before: whiteProfile.rating, after: whiteRatingAfter, goals: diffGoals(questsBeforeW, questsAfterW) },
+      { userId: black.userId, score: blackScore, stats: blackStats, before: blackProfile.rating, after: blackRatingAfter, goals: diffGoals(questsBeforeB, questsAfterB) },
+    ].map(async (p) => {
+      try {
+        const summary = await grantFame(p.userId, {
+          source: 'online',
+          outcome: outcomeFor(p.score),
+          winStreak: p.stats.winStreak,
+          matchId: match.id,
+          rating: { before: p.before, after: p.after },
+          goals: p.goals,
+        });
+        emitToUser(p.userId, 'progression:update', summary);
+      } catch (error) {
+        console.error('fame grant failed', error);
+      }
     }),
-    reportMatchForQuests(black.userId, {
-      won: blackScore === 1,
-      checkmate: blackScore === 1 && resultType === 'checkmate',
-      capturedCount: blackCaptures,
-    }),
+  );
+
+  await Promise.all([
     reportMatchForAchievements(white.userId, {
       won: whiteScore === 1,
       checkmate: whiteScore === 1 && resultType === 'checkmate',
@@ -181,13 +202,12 @@ async function updateProfileStats(
   userId: string,
   ratingAfter: number,
   score: number,
-  currentXp: number,
   grantFlatChips: boolean,
 ): Promise<{ winStreak: number }> {
   const outcome = outcomeFor(score);
   // Wagered matches pay through the escrow settlement (db/wagers.ts) instead.
   const chipsGranted = grantFlatChips ? MATCH_CHIP_REWARDS[outcome] : 0;
-  const { xp, level } = applyXpGain(currentXp, MATCH_XP_REWARDS[outcome]);
+  // Fame/XP/level are granted separately by db/progression.ts's grantFame.
   const [row] = await db
     .update(playerProfiles)
     .set({
@@ -195,10 +215,10 @@ async function updateProfileStats(
       wins: sql`${playerProfiles.wins} + ${score === 1 ? 1 : 0}`,
       losses: sql`${playerProfiles.losses} + ${score === 0 ? 1 : 0}`,
       draws: sql`${playerProfiles.draws} + ${score === 0.5 ? 1 : 0}`,
-      winStreak: score === 1 ? sql`${playerProfiles.winStreak} + 1` : sql`0`,
+      // A draw no longer breaks a win streak (it neither extends nor resets it);
+      // only a loss does.
+      winStreak: score === 1 ? sql`${playerProfiles.winStreak} + 1` : score === 0 ? sql`0` : playerProfiles.winStreak,
       chips: sql`${playerProfiles.chips} + ${chipsGranted}`,
-      xp,
-      level,
       updatedAt: new Date(),
     })
     .where(eq(playerProfiles.userId, userId))

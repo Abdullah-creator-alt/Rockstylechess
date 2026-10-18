@@ -66,11 +66,130 @@ export const ECONOMY = {
       "stockfish-lite": 120,
       "stockfish-strong": 200
     },
-    "botDrawFraction": 0.1,
-    "xp": {
+    "botDrawFraction": 0.1
+  },
+  "fame": {
+    "online": {
       "win": 500,
       "draw": 50,
       "loss": 0
+    },
+    "botWin": {
+      "easy": 100,
+      "medium": 200,
+      "stockfish-basic": 300,
+      "stockfish-lite": 400,
+      "stockfish-strong": 500
+    },
+    "botDrawFraction": 0.1,
+    "dailyBotFameCap": 2000,
+    "openingNight": 2,
+    "hotStreak": [
+      {
+        "minStreak": 3,
+        "mult": 1.2
+      },
+      {
+        "minStreak": 5,
+        "mult": 1.5
+      }
+    ]
+  },
+  "levels": {
+    "titles": [
+      {
+        "id": "roadie",
+        "name": "Roadie",
+        "minLevel": 1
+      },
+      {
+        "id": "opening-act",
+        "name": "Opening Act",
+        "minLevel": 3
+      },
+      {
+        "id": "support-act",
+        "name": "Support Act",
+        "minLevel": 6
+      },
+      {
+        "id": "local-hero",
+        "name": "Local Hero",
+        "minLevel": 10
+      },
+      {
+        "id": "club-headliner",
+        "name": "Club Headliner",
+        "minLevel": 15
+      },
+      {
+        "id": "arena-act",
+        "name": "Arena Act",
+        "minLevel": 20
+      },
+      {
+        "id": "stadium-star",
+        "name": "Stadium Star",
+        "minLevel": 30
+      },
+      {
+        "id": "main-stage-icon",
+        "name": "Main Stage Icon",
+        "minLevel": 40
+      },
+      {
+        "id": "living-legend",
+        "name": "Living Legend",
+        "minLevel": 50
+      }
+    ],
+    "chipsPerLevel": [
+      {
+        "from": 2,
+        "to": 10,
+        "chips": 150
+      },
+      {
+        "from": 11,
+        "to": 50,
+        "chips": 100
+      }
+    ],
+    "milestones": {
+      "5": {
+        "gems": 5
+      },
+      "10": {
+        "gems": 15
+      },
+      "15": {
+        "gems": 10,
+        "chips": 200
+      },
+      "20": {
+        "gems": 25
+      },
+      "25": {
+        "gems": 15,
+        "chips": 200
+      },
+      "30": {
+        "gems": 40
+      },
+      "35": {
+        "gems": 20,
+        "chips": 200
+      },
+      "40": {
+        "gems": 60
+      },
+      "45": {
+        "gems": 25,
+        "chips": 200
+      },
+      "50": {
+        "gems": 100
+      }
     }
   },
   "dailyBonus": [
@@ -292,6 +411,8 @@ export const ECONOMY = {
     "onlineWinRate": 0.5,
     "onlineDrawRate": 0.1,
     "botMixWinChips": 45,
+    "botMixWinFame": 200,
+    "openingNightRate": 0.9,
     "botWinRate": 0.6
   }
 } as const;
@@ -333,6 +454,206 @@ export const COSMETIC_PRICES: Record<string, { gems: number; chips: number | nul
   "crimson-reaper": {
     "gems": 750,
     "chips": 30000
+  }
+};
+
+// Per-level reward (chips/gems) credited once when a player reaches the level.
+export const LEVEL_REWARDS: Record<number, { chips: number; gems: number }> = {
+  "2": {
+    "chips": 150,
+    "gems": 0
+  },
+  "3": {
+    "chips": 150,
+    "gems": 0
+  },
+  "4": {
+    "chips": 150,
+    "gems": 0
+  },
+  "5": {
+    "chips": 150,
+    "gems": 5
+  },
+  "6": {
+    "chips": 150,
+    "gems": 0
+  },
+  "7": {
+    "chips": 150,
+    "gems": 0
+  },
+  "8": {
+    "chips": 150,
+    "gems": 0
+  },
+  "9": {
+    "chips": 150,
+    "gems": 0
+  },
+  "10": {
+    "chips": 150,
+    "gems": 15
+  },
+  "11": {
+    "chips": 100,
+    "gems": 0
+  },
+  "12": {
+    "chips": 100,
+    "gems": 0
+  },
+  "13": {
+    "chips": 100,
+    "gems": 0
+  },
+  "14": {
+    "chips": 100,
+    "gems": 0
+  },
+  "15": {
+    "chips": 300,
+    "gems": 10
+  },
+  "16": {
+    "chips": 100,
+    "gems": 0
+  },
+  "17": {
+    "chips": 100,
+    "gems": 0
+  },
+  "18": {
+    "chips": 100,
+    "gems": 0
+  },
+  "19": {
+    "chips": 100,
+    "gems": 0
+  },
+  "20": {
+    "chips": 100,
+    "gems": 25
+  },
+  "21": {
+    "chips": 100,
+    "gems": 0
+  },
+  "22": {
+    "chips": 100,
+    "gems": 0
+  },
+  "23": {
+    "chips": 100,
+    "gems": 0
+  },
+  "24": {
+    "chips": 100,
+    "gems": 0
+  },
+  "25": {
+    "chips": 300,
+    "gems": 15
+  },
+  "26": {
+    "chips": 100,
+    "gems": 0
+  },
+  "27": {
+    "chips": 100,
+    "gems": 0
+  },
+  "28": {
+    "chips": 100,
+    "gems": 0
+  },
+  "29": {
+    "chips": 100,
+    "gems": 0
+  },
+  "30": {
+    "chips": 100,
+    "gems": 40
+  },
+  "31": {
+    "chips": 100,
+    "gems": 0
+  },
+  "32": {
+    "chips": 100,
+    "gems": 0
+  },
+  "33": {
+    "chips": 100,
+    "gems": 0
+  },
+  "34": {
+    "chips": 100,
+    "gems": 0
+  },
+  "35": {
+    "chips": 300,
+    "gems": 20
+  },
+  "36": {
+    "chips": 100,
+    "gems": 0
+  },
+  "37": {
+    "chips": 100,
+    "gems": 0
+  },
+  "38": {
+    "chips": 100,
+    "gems": 0
+  },
+  "39": {
+    "chips": 100,
+    "gems": 0
+  },
+  "40": {
+    "chips": 100,
+    "gems": 60
+  },
+  "41": {
+    "chips": 100,
+    "gems": 0
+  },
+  "42": {
+    "chips": 100,
+    "gems": 0
+  },
+  "43": {
+    "chips": 100,
+    "gems": 0
+  },
+  "44": {
+    "chips": 100,
+    "gems": 0
+  },
+  "45": {
+    "chips": 300,
+    "gems": 25
+  },
+  "46": {
+    "chips": 100,
+    "gems": 0
+  },
+  "47": {
+    "chips": 100,
+    "gems": 0
+  },
+  "48": {
+    "chips": 100,
+    "gems": 0
+  },
+  "49": {
+    "chips": 100,
+    "gems": 0
+  },
+  "50": {
+    "chips": 100,
+    "gems": 100
   }
 };
 

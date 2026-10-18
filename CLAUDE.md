@@ -213,6 +213,15 @@ IAP packs, analysis, welcome bonus, venue stakes) is in the root `economy.config
 chip-pack arbitrage, days-to-earn). Never hardcode a price or reward in a screen or
 catalog file — read it from `economy.generated.ts`. Details: `server/README.md` → "Economy".
 
+### Progression — `server/src/db/progression.ts`
+
+Fame (XP), level, level rewards and titles are granted in ONE place, `grantFame` (one
+transaction; every reward protected by a primary-key conflict). Never write `xp`/`level`
+anywhere else. Its summary is stored as a `progression_events` row, pushed live as the
+socket event `progression:update` (online) or returned by `/me/match-reward` (bots), and
+rendered by the app's Show Report and global `ProgressionOverlay`. All numbers are in
+`economy.config.json` (`fame`, `levels`). Details: `server/README.md` → "Progression".
+
 ### Wagers — `server/src/db/wagers.ts`
 
 Online matches at venues with a buy-in (Club and up) are played for chips: both buy-ins

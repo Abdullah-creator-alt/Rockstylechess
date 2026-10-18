@@ -80,6 +80,16 @@ files without adding `/play` to the URL/deep-link path.
   of piece type. The slot is *always* rendered at its full height, even empty: if
   it only appeared with the first capture, the row would grow then and the board
   would jump (and, when height-capped, resize) mid-game.
+- **Show Report** (`result-placeholder.tsx` + `src/components/progression/ShowReport.tsx`):
+  after every match the result card shows the server's progression report instead of the old
+  hardcoded "710 -> 726": Fame earned (with Opening Night / Hot Streak / daily-cap pills), the
+  level bar visibly filling (and wrapping on a level-up), the REAL rating change and tier,
+  the daily goals the match moved, and the next goal. Online reports arrive as the socket
+  event `progression:update` (cached in `src/lib/progression.ts`), bot reports from the
+  `/me/match-reward` reply; the match header's rank lines are real (title + rating, bot
+  strength label). Level up / new title take over the screen via the global
+  `ProgressionOverlay` (mounted in `_layout.tsx`), 2.8 s after the report on this route and
+  never during `/match` or `/puzzle-match`.
 - **Wagers:** `home.tsx` and `setup.tsx` share `useVenueEntry` (`src/hooks/`): locked venues
   explain themselves (sign in / rating / chips) and "Play Now" on a venue with a buy-in asks
   for confirmation first; the default venue is Garage. `matchmaking.tsx` handles the server's

@@ -25,7 +25,3 @@ export function botChipReward(difficulty: BotRewardDifficulty, outcome: MatchOut
   return 0;
 }
 
-// Pacing against server/src/leveling.ts's curve (300*L^2): at 500 xp/win,
-// L2 (1,200 total) takes ~3 wins, L10 (30,000) ~60, L50 (750,000) ~1,500.
-// XP is unchanged by the economy pass -- it is progression, not currency.
-export const MATCH_XP_REWARDS: Record<MatchOutcome, number> = { ...ECONOMY.matchRewards.xp };

@@ -31,8 +31,48 @@
   "matchRewards": {
     "online": { "win": 200, "draw": 40, "loss": 0 },
     "botWin": { "easy": 20, "medium": 40, "stockfish-basic": 80, "stockfish-lite": 120, "stockfish-strong": 200 },
+    "botDrawFraction": 0.1
+  },
+  "fame": {
+    "_note": "Fame = XP = what fills the level bar. Chips are untouched by every multiplier here.",
+    "online": { "win": 500, "draw": 50, "loss": 0 },
+    "botWin": { "easy": 100, "medium": 200, "stockfish-basic": 300, "stockfish-lite": 400, "stockfish-strong": 500 },
     "botDrawFraction": 0.1,
-    "xp": { "win": 500, "draw": 50, "loss": 0 }
+    "dailyBotFameCap": 2000,
+    "openingNight": 2,
+    "hotStreak": [
+      { "minStreak": 3, "mult": 1.2 },
+      { "minStreak": 5, "mult": 1.5 }
+    ]
+  },
+  "levels": {
+    "titles": [
+      { "id": "roadie", "name": "Roadie", "minLevel": 1 },
+      { "id": "opening-act", "name": "Opening Act", "minLevel": 3 },
+      { "id": "support-act", "name": "Support Act", "minLevel": 6 },
+      { "id": "local-hero", "name": "Local Hero", "minLevel": 10 },
+      { "id": "club-headliner", "name": "Club Headliner", "minLevel": 15 },
+      { "id": "arena-act", "name": "Arena Act", "minLevel": 20 },
+      { "id": "stadium-star", "name": "Stadium Star", "minLevel": 30 },
+      { "id": "main-stage-icon", "name": "Main Stage Icon", "minLevel": 40 },
+      { "id": "living-legend", "name": "Living Legend", "minLevel": 50 }
+    ],
+    "chipsPerLevel": [
+      { "from": 2, "to": 10, "chips": 150 },
+      { "from": 11, "to": 50, "chips": 100 }
+    ],
+    "milestones": {
+      "5": { "gems": 5 },
+      "10": { "gems": 15 },
+      "15": { "gems": 10, "chips": 200 },
+      "20": { "gems": 25 },
+      "25": { "gems": 15, "chips": 200 },
+      "30": { "gems": 40 },
+      "35": { "gems": 20, "chips": 200 },
+      "40": { "gems": 60 },
+      "45": { "gems": 25, "chips": 200 },
+      "50": { "gems": 100 }
+    }
   },
   "dailyBonus": [
     { "day": 1, "chips": 60, "gems": 0, "label": "60 Chips" },
@@ -96,6 +136,8 @@
     "onlineWinRate": 0.5,
     "onlineDrawRate": 0.1,
     "botMixWinChips": 45,
+    "botMixWinFame": 200,
+    "openingNightRate": 0.9,
     "botWinRate": 0.6
   }
 }
