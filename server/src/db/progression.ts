@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { ECONOMY, LEVEL_REWARDS, type BotRewardDifficulty } from '../economy.generated.js';
 import { levelForXp, getLevelProgress } from '../leveling.js';
 import type { MatchOutcome } from '../matchRewards.js';
+import { FESTIVAL_TITLES } from '../festival.js';
 import { TOUR_TITLES } from '../tour.js';
 import { ratingTier, type RatingTier } from '../tier.js';
 import { db } from './client.js';
@@ -29,9 +30,9 @@ export const TITLES: TitleInfo[] = [...ECONOMY.levels.titles].sort((a, b) => a.m
 export function titleById(id: string | null | undefined): TitleInfo | null {
   const level = TITLES.find((t) => t.id === id);
   if (level) return level;
-  // Chapter titles (earned by beating a Tour boss) have no level requirement.
-  const chapterTitle = TOUR_TITLES.find((t) => t.id === id);
-  return chapterTitle ? { id: chapterTitle.id, name: chapterTitle.name, minLevel: Number.POSITIVE_INFINITY } : null;
+  // Chapter and Festival titles (earned by beating a Tour boss / clearing a run) have no level requirement.
+  const earned = TOUR_TITLES.find((t) => t.id === id) ?? FESTIVAL_TITLES.find((t) => t.id === id);
+  return earned ? { id: earned.id, name: earned.name, minLevel: Number.POSITIVE_INFINITY } : null;
 }
 
 export interface GoalProgress {

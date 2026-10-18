@@ -180,6 +180,45 @@ const weeklyChips = wk['win-weekly'] + wk['online-weekly'] + wk['puzzles-weekly'
 check('weekly quests pay under 20% of a week of income', weeklyChips < 0.2 * base * 7, `${weeklyChips} vs ${(0.2 * base * 7).toFixed(0)}`);
 check('weekly quests unlock after the first hook levels', wk.minLevel >= 3 && wk.minLevel <= 10);
 
+// ---- Festival Run (the first repeatable chip sink) -------------------------------------------
+// The purse ladders are sized with estimated win rates (incomeModel.festivalSkill, NOT
+// measurements). Best strategy = bank or push on after each set, solved backwards.
+const fest = cfg.festival;
+const skill = cfg.incomeModel.festivalSkill;
+function festivalEv(tier, profile) {
+  const p = tier.sets.map((id) => skill[profile][rankOf[botsById[id].difficulty]]);
+  let value = tier.purse[tier.purse.length - 1];
+  for (let k = tier.purse.length - 2; k >= 0; k--) value = Math.max(tier.purse[k], p[k + 1] * value);
+  return (p[0] * value) / tier.entry;
+}
+const festIds = fest.tiers.map((t) => t.id);
+const bossOrder = tour.chapters.map((c) => c.id);
+check('3 Festival tiers with unique ids', fest.tiers.length === 3 && new Set(festIds).size === 3);
+check('Festival entries strictly increase', fest.tiers.every((t, i) => i === 0 || t.entry > fest.tiers[i - 1].entry));
+check('Festival sets are real bots, never getting easier within a tier', fest.tiers.every((t) => t.sets.every((id) => botsById[id]) && t.sets.every((id, i) => i === 0 || rankOf[botsById[id].difficulty] >= rankOf[botsById[t.sets[i - 1]].difficulty])));
+check('one purse step per set, strictly increasing', fest.tiers.every((t) => t.purse.length === t.sets.length && t.purse.every((v, i) => i === 0 || v > t.purse[i - 1])));
+check('banking after the first set never beats the entry (no free money)', fest.tiers.every((t) => t.purse[0] < t.entry));
+check('the top purse is at most 8x the entry', fest.tiers.every((t) => t.purse[t.purse.length - 1] <= 8 * t.entry));
+check('unlock chapters exist and rise with the tier', fest.tiers.every((t, i) => bossOrder.includes(t.unlockChapter) && (i === 0 || bossOrder.indexOf(t.unlockChapter) > bossOrder.indexOf(fest.tiers[i - 1].unlockChapter))));
+check('Festival titles unique and do not clash with other titles', new Set([...fest.tiers.map((t) => t.title.id), ...tour.chapters.map((c) => c.title.id), ...cfg.levels.titles.map((t) => t.id)]).size === fest.tiers.length + tour.chapters.length + cfg.levels.titles.length);
+check('every tier has a daily run cap and a sane repeat surcharge', fest.tiers.every((t) => fest.dailyRuns[t.id] >= 1 && fest.dailyRuns[t.id] <= 3) && fest.repeatSurcharge > 0 && fest.repeatSurcharge <= 1);
+const evRows = fest.tiers.map((t) => ({ t, casual: festivalEv(t, 'casual'), good: festivalEv(t, 'good'), strong: festivalEv(t, 'strong') }));
+console.log('\nFestival expected return per chip staked (ESTIMATE, best bank/push-on strategy):');
+for (const r of evRows) console.log(`  ${r.t.id.padEnd(10)} entry ${String(r.t.entry).padStart(5)}  casual ${r.casual.toFixed(2)}  good ${r.good.toFixed(2)}  strong ${r.strong.toFixed(2)}`);
+const [evOpen, evMain, evHead] = evRows;
+check('Open Mic is a real sink for a casual player (return 0.65-0.90)', evOpen.casual >= 0.65 && evOpen.casual <= 0.9, evOpen.casual.toFixed(2));
+check('Main Set is a sink for a good player (return 0.55-0.95)', evMain.good >= 0.55 && evMain.good <= 0.95, evMain.good.toFixed(2));
+check('Headliner is roughly fair for a strong player (return 0.9-1.25)', evHead.strong >= 0.9 && evHead.strong <= 1.25, evHead.strong.toFixed(2));
+check('no skill level exceeds 2.5x its stake in expectation on any tier', evRows.every((r) => Math.max(r.casual, r.good, r.strong) <= 2.5));
+const festDailyStrong = evRows.reduce((s, r) => {
+  const runs = fest.dailyRuns[r.t.id];
+  let gain = 0;
+  for (let i = 0; i < runs; i++) gain += Math.max(0, r.strong * r.t.entry - r.t.entry * (i === 0 ? 1 : 1 + fest.repeatSurcharge));
+  return s + gain;
+}, 0);
+console.log(`  best-case expected daily gain for a strong player across all tiers: ${Math.round(festDailyStrong)} chips (casual daily income ${Math.round(base)})`);
+check('a strong player farming every tier gains under 3 days of casual income per day', festDailyStrong < 3 * base, `${Math.round(festDailyStrong)} vs ${Math.round(3 * base)}`);
+
 // achievements (one-time) -- read from the server catalog
 const ach = [...read('server/src/achievementCatalog.ts').matchAll(/rewardType: '(chips|gems)', rewardAmount: ([\d_]+)/g)];
 const achChips = ach.filter((a) => a[1] === 'chips').reduce((s, a) => s + Number(a[2].replace(/_/g, '')), 0);

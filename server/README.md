@@ -179,6 +179,55 @@ are still client-reported (minimum 4 s between reports).
 that unlock at level 5 and reset Monday 00:00 UTC (`questPeriodStart` in `db/quests.ts`);
 `GET /me/quests?type=weekly`. Seed with `npm run seed:quests`. Migration `0015`.
 
+## Festival Run (the repeatable chip sink)
+
+A paid ladder of bot sets: pay an entry, beat the house band one set at a time, and bank the
+purse between sets or push on to a stronger bot. Lose a set and the purse is gone; a draw
+replays the set once. Tiers, entries, bots, purses, daily caps and titles are all in
+`economy.config.json` (`festival`); `src/festival.ts` is the pure rule set and
+`src/db/festival.ts` persists and pays it (`festival_runs`, `festival_clears`, migration 0016).
+
+- **The bot runs on the SERVER.** Device-played bot games are verified by replaying the PGN,
+  but the server cannot prove the opponent was the engine, so a purse several times the entry
+  cannot rest on a client-reported game. In a Festival set the human is one seat of an
+  ordinary `MatchState` and the other is a **bot seat** (`match.bot`, `userId: null`); the
+  server computes the bot's replies itself (`src/serverBot.ts`: the heuristic bot for
+  easy/medium, Stockfish 18 lite WASM for the rest, the same presets as the app). Only the
+  human is clocked (15 minutes a set). Move validation, reconnect grace, resign, flag-fall
+  and `finishMatch` are the online match code, unchanged.
+  `scripts/gen-server-bots.mjs` copies the app's `heuristicBot.ts`, the Stockfish presets and
+  the lite-single engine files (`server/vendor/stockfish`, GPL, with its licence) so the two
+  cannot drift; re-run it after editing the app's bots.
+- **Money.** The entry is debited in the transaction that inserts the run (conditional
+  `chips >= fee`; one active run per player via a partial unique index; the player's profile
+  row is locked so concurrent taps cannot double-enter). Every payout sits behind a locked,
+  conditional status flip out of `active` (`settleSet`, `cashOut`, `resolveInterrupted`), so
+  retries and races pay once. A set win pays no chips by itself; the purse is the only
+  payout. Flat bot chips are skipped for set matches; Fame, daily goals, achievements and the
+  Tour still count through `applyVerifiedBotResult` (shared with `finishBotSession`), and a
+  boss beaten in a set counts as beating that boss.
+- **Faults.** `SIGTERM` ends live sets through `finishMatch(forceRefund)`, which calls
+  `resolveInterrupted`: a run that had banked something is paid that purse, one that had not is
+  refunded. The stale sweeper does the same for sets with no live match behind them (30 minutes)
+  and runs left between sets for hours (`staleRunMinutes`); `POST /me/festival/runs/:id/recover`
+  lets the app resolve a dead set immediately. A disconnect past the 60 s grace, resigning or
+  flagging loses the run.
+- **Balance.** `scripts/check-economy.mjs` solves the best bank/push-on strategy per tier for
+  three ESTIMATED skill profiles (`incomeModel.festivalSkill`) and asserts: Open Mic returns
+  0.65-0.90 of the stake to a casual player, Main Set 0.55-0.95 to a good player, Headliner about
+  fair to a strong one, nobody above 2.5x anywhere, banking after set 1 never beats the entry, and
+  the daily caps (2 / 1 / 1 runs, +50% for a repeat) bound farming. These are estimates, not
+  measurements: re-tune from `festival_runs` once there is data.
+- **Scale.** The heuristic bot is a synchronous search of up to 450 ms and Stockfish moves are
+  serialised through one in-process engine (a promise queue). Fine for low volume; move the
+  heuristic search to a worker thread before many runs are played at once.
+
+REST: `GET /me/festival`, `POST /me/festival/:tierId/enter`, `POST /me/festival/runs/:id/cash-out`,
+`POST /me/festival/runs/:id/recover`. Socket: client `festival:start-set { guestId, runId }`
+(then the usual `queue:matched`, extended with a `festival` block, and `move:*`); server
+`festival:update` after every set (`advance | replay | cleared | lost | interrupted`) and
+`festival:error { reason }`. Festival matches are never listed for spectating.
+
 ## Wagers (chips at stake on online venues)
 
 Online matches at Club and above (`ECONOMY.venues`, buy-in > 0) are played for chips.
@@ -296,6 +345,7 @@ Client -> Server:
   with a fresh `queue:matched` (position + live clocks) and clears any pending
   forfeit timer.
 - `match:chat:send { matchId, text }`
+- `festival:start-set { guestId, runId }` -- authed only; claims the run's next set and seats the player against the server-run bot (see "Festival Run")
 - `friend:challenge { guestId, toUserId, duration }` -- authed only
 - `friend:challenge:respond { guestId, challengeId, accept }` -- authed only
 - `friend:challenge:cancel { challengeId }` -- authed only

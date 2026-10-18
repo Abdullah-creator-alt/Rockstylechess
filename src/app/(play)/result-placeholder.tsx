@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FestivalSetPanel } from '@/components/festival/FestivalSetPanel';
 import { ShowReport } from '@/components/progression/ShowReport';
 import { AppIcon, CurrencyIcon, CurrencyPill, RockButton, RockCard, VenueBackdrop } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
@@ -77,6 +78,7 @@ export default function ResultScreen() {
     matchMode,
     noReward,
     wagerMatchId,
+    festivalMatchId,
     buyIn: buyInParam,
     prize: prizeParam,
   } = useLocalSearchParams<{
@@ -97,6 +99,8 @@ export default function ResultScreen() {
     // Why a bot match paid nothing (guest, too short, could not be verified, offline).
     noReward?: string;
     wagerMatchId?: string;
+    // Set by match.tsx for a Festival set: the Set Break panel reads the run's update by match id.
+    festivalMatchId?: string;
     buyIn?: string;
     prize?: string;
   }>();
@@ -141,6 +145,7 @@ export default function ResultScreen() {
   const buyIn = Number(buyInParam) || 0;
   const prize = Number(prizeParam) || 0;
   const isLocalMatch = matchMode === 'local';
+  const isFestivalSet = !!festivalMatchId;
 
   // The Show Report: Fame earned, level bar, real rating change, goals moved. It
   // usually arrives within a moment of the match ending (socket push for online,
@@ -283,7 +288,7 @@ export default function ResultScreen() {
       </View>
 
       <RockCard glowColor={glowColor} style={{ width: '100%', maxWidth: 360, alignItems: 'center' }}>
-        <View className="flex-row items-center gap-sm" style={isLocalMatch ? { display: 'none' } : undefined}>
+        <View className="flex-row items-center gap-sm" style={isLocalMatch || isFestivalSet ? { display: 'none' } : undefined}>
           <View className="h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: withOpacity(Colors.chromeDark, 0.2), borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.4) }}>
             <CurrencyIcon type="chips" size={26} />
           </View>
@@ -346,6 +351,8 @@ export default function ResultScreen() {
           </Text>
         ) : null}
       </RockCard>
+
+      {festivalMatchId ? <FestivalSetPanel matchId={festivalMatchId} /> : null}
 
       <View className="w-full gap-md" style={{ maxWidth: 320 }}>
         {localReplay && localReplay.mode !== 'online' ? (

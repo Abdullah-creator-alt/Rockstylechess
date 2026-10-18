@@ -36,6 +36,21 @@ export interface QueueMatchedPayload {
   venueTier: VenueTier;
   buyIn: number;
   prize: number;
+  // Present only for a Festival set (a paid bot ladder run, see lib/festival.ts): the
+  // opponent is a bot the SERVER plays.
+  festival?: FestivalMatchInfo;
+}
+
+export interface FestivalMatchInfo {
+  runId: string;
+  tierId: string;
+  tierName: string;
+  setIndex: number;
+  totalSets: number;
+  purse: number[];
+  banked: number; // what the player holds right now (0 on set 1)
+  nextPurse: number; // what clearing THIS set banks
+  bot: { id: string; name: string; emoji: string; difficulty: string };
 }
 
 // Server -> client when a queue:join is refused (previously it failed silently).

@@ -41,7 +41,8 @@ import {
   sendRequest,
 } from './db/friends.js';
 import { levelForXp } from './leveling.js';
-import { allMatches, liveClockRemaining } from './match.js';
+import { cashOut, getFestival, recoverDeadSet, startRun } from './db/festival.js';
+import { allMatches, getMatch, liveClockRemaining } from './match.js';
 import { PIECE_SETS } from './pieceSets.js';
 import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
@@ -400,6 +401,67 @@ authRouter.post(
     } else {
       res.status(result.status === 'not-found' ? 404 : 409).json({ error: result.status });
     }
+  }),
+);
+
+// Festival Run (db/festival.ts): the paid bot ladder. Entering and banking are plain REST;
+// the sets themselves are played over the socket (`festival:start-set` in index.ts) against a
+// bot the server runs, so the result is never client-reported.
+authRouter.get(
+  '/me/festival',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json(await getFestival(req.userId as string));
+  }),
+);
+
+authRouter.post(
+  '/me/festival/:tierId/enter',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await startRun(req.userId as string, String(req.params.tierId));
+    if (result.status === 'ok') {
+      res.json({ ok: true, run: result.run, chips: result.chips, fee: result.fee });
+      return;
+    }
+    const code = { 'unknown-tier': 404, 'profile-not-found': 404, locked: 403, 'daily-limit': 429, 'already-active': 409, 'insufficient-chips': 402 }[result.status];
+    res.status(code).json({ error: result.status, ...result });
+  }),
+);
+
+authRouter.post(
+  '/me/festival/runs/:runId/cash-out',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const runId = String(req.params.runId);
+    if (!/^[0-9a-f-]{36}$/i.test(runId)) {
+      res.status(400).json({ error: 'invalid-request' });
+      return;
+    }
+    const result = await cashOut(req.userId as string, runId);
+    if (result.status === 'ok') {
+      res.json({ ok: true, run: result.run, payout: result.payout, chips: result.chips });
+      return;
+    }
+    res.status(result.status === 'not-found' ? 404 : 409).json({ error: result.status === 'not-found' ? 'not-found' : result.reason });
+  }),
+);
+
+authRouter.post(
+  '/me/festival/runs/:runId/recover',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const runId = String(req.params.runId);
+    if (!/^[0-9a-f-]{36}$/i.test(runId)) {
+      res.status(400).json({ error: 'invalid-request' });
+      return;
+    }
+    const result = await recoverDeadSet(req.userId as string, runId, (matchId) => getMatch(matchId) !== undefined);
+    if (result.status === 'resolved') {
+      res.json({ ok: true, how: result.resolved.how, payout: result.resolved.payout, chips: result.resolved.chips, run: result.resolved.run });
+      return;
+    }
+    res.status(result.status === 'not-found' ? 404 : 409).json({ error: result.status });
   }),
 );
 
@@ -861,7 +923,8 @@ authRouter.get(
 authRouter.get(
   '/me/live-matches',
   asyncHandler(async (_req, res) => {
-    const liveMatches = [...allMatches()].map((match) => ({
+    // Festival sets (a bot seat) are private to their player: never listed for spectating.
+    const liveMatches = [...allMatches()].filter((match) => !match.bot).map((match) => ({
       matchId: match.id,
       players: {
         w: { displayName: match.players.w.displayName, avatarId: match.players.w.avatarId, country: match.players.w.country },

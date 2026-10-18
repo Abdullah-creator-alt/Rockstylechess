@@ -5,6 +5,7 @@ import cors from 'cors';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
+import { Chess } from 'chess.js';
 import { Server, type Socket } from 'socket.io';
 
 import { eq } from 'drizzle-orm';
@@ -21,6 +22,8 @@ import { persistMessage } from './db/directMessages.js';
 import { areFriends, friendIdsOf } from './db/friends.js';
 import { insertNotification } from './db/notifications.js';
 import { titleById } from './db/progression.js';
+import { applyVerifiedBotResult } from './db/botSessions.js';
+import { beginSet, resolveInterrupted, revertSet, settleSet, sweepStaleRuns, type Resolved, type SetSettlement } from './db/festival.js';
 import { persistMatchResult } from './db/persistMatchResult.js';
 import {
   escrowWager,
@@ -31,6 +34,10 @@ import {
   type SettledWager,
 } from './db/wagers.js';
 import { ECONOMY } from './economy.generated.js';
+import { FESTIVAL_SET_CLOCK_MS, STALE_RUN_MS, tierById } from './festival.js';
+import { analyzeGame } from './matchAnalysis.js';
+import { pickBotMove, warmServerBot } from './serverBot.js';
+import { botById, MIN_BOT_PLIES } from './tour.js';
 import { playerProfiles } from './db/schema/index.js';
 import {
   addUserSocket,
@@ -45,6 +52,7 @@ import {
   allMatches,
   applyMove,
   colorOf,
+  createFestivalMatch,
   createMatch,
   endMatch,
   getMatch,
@@ -237,6 +245,10 @@ async function settleAndPersist(
   winnerColor: PieceColor | null,
   forceRefund: boolean,
 ): Promise<void> {
+  if (match.festival) {
+    await settleFestivalSet(match, type, winnerColor, forceRefund);
+    return;
+  }
   if (!match.wager) {
     await persistMatchResult(match, type, winnerColor);
     return;
@@ -268,6 +280,127 @@ async function settleAndPersist(
     wagered: true,
     chipsDeltaByUser: Object.fromEntries(Object.entries(settled.players).map(([uid, p]) => [uid, p.net])),
   });
+}
+
+
+// ---- Festival sets (a paid ladder of server-hosted bot games, see db/festival.ts) ----------
+
+async function withRetry<T>(task: () => Promise<T>, attempts = 3): Promise<T | null> {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await task();
+    } catch (error) {
+      console.error(`festival settlement attempt ${i} failed`, error);
+      await new Promise((resolve) => setTimeout(resolve, 250 * i));
+    }
+  }
+  return null;
+}
+
+function festivalUpdatePayload(kind: SetSettlement['kind'] | 'interrupted', fields: Record<string, unknown>) {
+  return { kind, ...fields };
+}
+
+function emitInterrupted(resolved: Resolved, matchId?: string): void {
+  emitToUser(
+    resolved.userId,
+    'festival:update',
+    festivalUpdatePayload('interrupted', { matchId, run: resolved.run, how: resolved.how, payout: resolved.payout, chips: resolved.chips }),
+  );
+}
+
+// A finished set: advance / replay / lose the run (one conditional transaction), then pay the
+// game's Fame / quests / achievements / Tour through the same verified path bot sessions use.
+// Never the flat bot chips: the purse is the payout. The server hosted the bot, so unlike a
+// device-played game there is nothing to verify about WHO the opponent was.
+async function settleFestivalSet(match: MatchState, type: EndType, winnerColor: PieceColor | null, forceRefund: boolean): Promise<void> {
+  const festival = match.festival;
+  const bot = match.bot;
+  if (!festival || !bot) return;
+  const { userId, runId, humanColor } = festival;
+
+  if (forceRefund) {
+    // Server restart: the interrupted run keeps what it banked, or gets the entry back.
+    const resolved = await withRetry(() => resolveInterrupted(runId));
+    if (resolved) emitInterrupted(resolved, match.id);
+    return;
+  }
+
+  const outcome = winnerColor === null ? 'draw' : winnerColor === humanColor ? 'win' : 'loss';
+  const settled = await withRetry(() => settleSet(runId, match.id, outcome));
+  // null = nothing to do (already settled) or failed after retries (the sweeper resolves it).
+  if (!settled) return;
+
+  let progression: unknown = null;
+  const plies = match.chess.history().length;
+  if (plies >= MIN_BOT_PLIES) {
+    try {
+      const facts = analyzeGame(match.chess.pgn(), humanColor);
+      if (facts) {
+        const applied = await applyVerifiedBotResult(userId, {
+          botId: bot.botId,
+          difficulty: bot.difficulty,
+          color: humanColor,
+          outcome,
+          facts,
+          payChips: false,
+          matchId: match.id,
+        });
+        progression = applied.progression;
+        emitToUser(userId, 'progression:update', applied.progression);
+      }
+    } catch (error) {
+      console.error('festival set rewards failed', error);
+    }
+  }
+
+  emitToUser(
+    userId,
+    'festival:update',
+    festivalUpdatePayload(settled.kind, {
+      matchId: match.id,
+      outcome,
+      endedBy: type,
+      run: settled.run,
+      payout: settled.payout,
+      chips: settled.chips,
+      titleUnlocked: settled.titleUnlocked,
+      bot: { id: bot.botId, name: match.players[bot.color].displayName },
+      progression: progression ? true : false,
+    }),
+  );
+}
+
+const MIN_BOT_THINK_MS = 700;
+
+// The bot's turn: ask the engine, wait out a natural minimum so replies do not land
+// instantly, then play the move through the same path a human move takes.
+async function botTurn(match: MatchState): Promise<void> {
+  const bot = match.bot;
+  if (!bot || bot.thinking || match.chess.isGameOver() || match.chess.turn() !== bot.color) return;
+  bot.thinking = true;
+  try {
+    const started = Date.now();
+    const move = await pickBotMove(match.chess.fen(), bot.difficulty);
+    const wait = MIN_BOT_THINK_MS - (Date.now() - started);
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    // The set may have ended (resign, flag, disconnect) while the engine was thinking.
+    if (getMatch(match.id) !== match || match.chess.turn() !== bot.color) return;
+    if (!move) {
+      console.error('server bot returned no move in a live position', match.chess.fen());
+      return;
+    }
+    const chess = applyMove(match, bot.color, { from: move.from, to: move.to, promotion: move.promotion });
+    if (!chess) {
+      console.error('server bot produced an illegal move', move, match.chess.fen());
+      return;
+    }
+    afterAppliedMove(match, chess, { from: move.from, to: move.to, promotion: move.promotion });
+  } catch (error) {
+    console.error('bot turn failed', error);
+  } finally {
+    bot.thinking = false;
+  }
 }
 
 function wagerSettledPayload(
@@ -418,6 +551,50 @@ function venueFields(match: MatchState): { venueTier: string; buyIn: number; pri
   return { venueTier: match.venueTier ?? 'garage', buyIn: match.wager?.buyIn ?? 0, prize: match.wager?.prize ?? 0 };
 }
 
+// What the app needs to draw a Festival set: the run, which set this is, and the bot's face.
+function festivalFields(match: MatchState): Record<string, unknown> {
+  const run = match.festival;
+  const bot = match.bot ? botById(match.bot.botId) : undefined;
+  const tier = run ? tierById(run.tierId) : undefined;
+  if (!run || !bot || !tier) return {};
+  return {
+    festival: {
+      runId: run.runId,
+      tierId: tier.id,
+      tierName: tier.name,
+      setIndex: run.setIndex,
+      totalSets: tier.sets.length,
+      purse: tier.purse,
+      banked: run.setIndex === 0 ? 0 : tier.purse[run.setIndex - 1],
+      nextPurse: tier.purse[run.setIndex],
+      bot: { id: bot.id, name: bot.name, emoji: bot.emoji, difficulty: bot.difficulty },
+    },
+  };
+}
+
+// A Festival set has one human seat: only that socket joins the room and is told, and the
+// bot moves first when it is White.
+function notifyFestivalMatched(match: MatchState): void {
+  const festival = match.festival;
+  const bot = match.bot;
+  if (!festival || !bot) return;
+  const human = match.players[festival.humanColor];
+  io.sockets.sockets.get(human.socketId)?.join(match.id);
+  match.clock.deadlineTimer = setTimeout(() => fireTimeout(match, 'w'), match.clock.remainingMs.w);
+  const opp = match.players[bot.color];
+  io.to(human.socketId).emit('queue:matched', {
+    matchId: match.id,
+    color: festival.humanColor,
+    opponent: { userId: null, displayName: opp.displayName, avatarId: null, country: null, rating: null, title: null },
+    fen: match.chess.fen(),
+    clocks: match.clock.remainingMs,
+    incrementMs: match.clock.incrementMs,
+    ...venueFields(match),
+    ...festivalFields(match),
+  });
+  if (bot.color === 'w') void botTurn(match);
+}
+
 function notifyMatched(match: MatchState): void {
   io.sockets.sockets.get(match.players.w.socketId)?.join(match.id);
   io.sockets.sockets.get(match.players.b.socketId)?.join(match.id);
@@ -437,6 +614,62 @@ function notifyMatched(match: MatchState): void {
       ...venueFields(match),
     });
   }
+}
+
+// Everything that follows a move that applyMove accepted -- shared by human moves
+// (move:make) and the server bot's replies (botTurn).
+function afterAppliedMove(
+  match: MatchState,
+  chess: Chess,
+  move: { from: string; to: string; promotion?: 'q' | 'r' | 'b' | 'n' },
+): void {
+  // applyMove already deducted the mover's elapsed time (+ increment) into
+  // match.clock -- clear their now-stale deadline (they just moved, it no
+  // longer applies) and arm one for whoever's turn it is now. Clearing
+  // before anything else that could yield is what makes "a move lands
+  // right as the old timer would have fired" safe: Node's single-threaded
+  // event loop means whichever callback actually got invoked first wins
+  // outright, no mutex needed.
+  if (match.clock.deadlineTimer) clearTimeout(match.clock.deadlineTimer);
+  const nextColor = chess.turn();
+  match.clock.deadlineTimer = setTimeout(() => fireTimeout(match, nextColor), match.clock.remainingMs[nextColor]);
+
+  // A draw offer doesn't survive a change in the position.
+  if (match.drawOfferBy) {
+    match.drawOfferBy = undefined;
+    io.to(match.id).emit('draw:cleared', { matchId: match.id });
+  }
+
+  io.to(match.id).emit('move:applied', {
+    matchId: match.id,
+    from: move.from,
+    to: move.to,
+    promotion: move.promotion ?? 'q',
+    fen: chess.fen(),
+    turn: chess.turn(),
+    isGameOver: chess.isGameOver(),
+    clocks: match.clock.remainingMs,
+  });
+
+  if (chess.isGameOver()) {
+    let resultType: 'checkmate' | 'stalemate' | 'draw';
+    let winnerColor: PieceColor | null = null;
+    if (chess.isCheckmate()) {
+      resultType = 'checkmate';
+      winnerColor = opponentColor(chess.turn());
+    } else if (chess.isStalemate()) {
+      resultType = 'stalemate';
+    } else {
+      resultType = 'draw';
+    }
+    // No `emit`: clients derive checkmate/stalemate/rule draws from
+    // move:applied.isGameOver. Settlement and persistence never gate or delay
+    // the realtime flow above, which has already completed by this point.
+    void finishMatch(match, resultType, winnerColor);
+    return;
+  }
+
+  if (match.bot && chess.turn() === match.bot.color) void botTurn(match);
 }
 
 io.on('connection', (socket: Socket) => {
@@ -693,6 +926,67 @@ io.on('connection', (socket: Socket) => {
     cancelRoomBySocketId(socket.id);
   });
 
+  // Starts the next set of the player's active Festival run: claims the set (ready ->
+  // playing, atomic), then seats the player against a bot the server plays itself.
+  socket.on('festival:start-set', async (payload: { guestId?: string; runId?: string }) => {
+    const uid = socket.data.userId as string | undefined;
+    const fail = (reason: string) => socket.emit('festival:error', { reason });
+    if (!uid) return fail('auth-required');
+    if (!payload?.guestId || typeof payload.runId !== 'string') return fail('bad-request');
+    guestIdBySocket.set(socket.id, payload.guestId);
+    for (const live of allMatches()) {
+      if (live.players.w.userId === uid || live.players.b.userId === uid) return fail('already-in-match');
+    }
+    removeFromQueues((p) => p.userId === uid);
+
+    const matchId = randomUUID();
+    let run;
+    try {
+      run = await beginSet(uid, payload.runId, matchId);
+    } catch (error) {
+      console.error('festival beginSet failed', error);
+      return fail('unavailable');
+    }
+    if (!run) return fail('not-ready');
+
+    const tier = tierById(run.tierId);
+    const bot = tier ? botById(tier.sets[run.setIndex]) : undefined;
+    if (!tier || !bot) {
+      await revertSet(run.id, matchId).catch((e) => console.error('festival revert failed', e));
+      return fail('unavailable');
+    }
+    try {
+      const identity = await getPlayerIdentity(uid);
+      if (!socket.connected) {
+        await revertSet(run.id, matchId);
+        return;
+      }
+      const humanColor: PieceColor = (run.setIndex + run.replaysUsed) % 2 === 0 ? 'w' : 'b';
+      const match = createFestivalMatch(
+        matchId,
+        {
+          socketId: socket.id,
+          guestId: payload.guestId,
+          userId: uid,
+          displayName: identity.displayName || 'PLAYER',
+          avatarId: identity.avatarId,
+          country: identity.country,
+          rating: identity.rating,
+          title: identity.title,
+        },
+        humanColor,
+        { botId: bot.id, name: bot.name, difficulty: bot.difficulty },
+        { runId: run.id, tierId: tier.id, setIndex: run.setIndex },
+        FESTIVAL_SET_CLOCK_MS,
+      );
+      notifyFestivalMatched(match);
+    } catch (error) {
+      console.error('festival set creation failed -- releasing the set', error);
+      await revertSet(run.id, matchId).catch((e) => console.error('festival revert failed', e));
+      fail('unavailable');
+    }
+  });
+
   socket.on('move:make', (payload: { matchId?: string; from?: string; to?: string; promotion?: 'q' | 'r' | 'b' | 'n' }) => {
     const guestId = guestIdBySocket.get(socket.id);
     const match = payload?.matchId ? getMatch(payload.matchId) : undefined;
@@ -712,50 +1006,7 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
-    // applyMove already deducted the mover's elapsed time (+ increment) into
-    // match.clock -- clear their now-stale deadline (they just moved, it no
-    // longer applies) and arm one for whoever's turn it is now. Clearing
-    // before anything else that could yield is what makes "a move lands
-    // right as the old timer would have fired" safe: Node's single-threaded
-    // event loop means whichever callback actually got invoked first wins
-    // outright, no mutex needed.
-    if (match.clock.deadlineTimer) clearTimeout(match.clock.deadlineTimer);
-    const nextColor = chess.turn();
-    match.clock.deadlineTimer = setTimeout(() => fireTimeout(match, nextColor), match.clock.remainingMs[nextColor]);
-
-    // A draw offer doesn't survive a change in the position.
-    if (match.drawOfferBy) {
-      match.drawOfferBy = undefined;
-      io.to(match.id).emit('draw:cleared', { matchId: match.id });
-    }
-
-    io.to(match.id).emit('move:applied', {
-      matchId: match.id,
-      from: payload.from,
-      to: payload.to,
-      promotion: payload.promotion ?? 'q',
-      fen: chess.fen(),
-      turn: chess.turn(),
-      isGameOver: chess.isGameOver(),
-      clocks: match.clock.remainingMs,
-    });
-
-    if (chess.isGameOver()) {
-      let resultType: 'checkmate' | 'stalemate' | 'draw';
-      let winnerColor: PieceColor | null = null;
-      if (chess.isCheckmate()) {
-        resultType = 'checkmate';
-        winnerColor = opponentColor(chess.turn());
-      } else if (chess.isStalemate()) {
-        resultType = 'stalemate';
-      } else {
-        resultType = 'draw';
-      }
-      // No `emit`: clients derive checkmate/stalemate/rule draws from
-      // move:applied.isGameOver. Settlement and persistence never gate or delay
-      // the realtime flow above, which has already completed by this point.
-      void finishMatch(match, resultType, winnerColor);
-    }
+    afterAppliedMove(match, chess, { from: payload.from, to: payload.to, promotion: payload.promotion });
   });
 
   socket.on('match:resign', (payload: { matchId?: string }) => {
@@ -776,6 +1027,11 @@ io.on('connection', (socket: Socket) => {
     if (!match || !guestId) return;
     const color = seatColor(match, guestId, socket.data.userId as string | undefined);
     if (!color || match.drawOfferBy || match.chess.isGameOver()) return;
+    // The house band never agrees to a draw: a paid set is played out.
+    if (match.bot) {
+      socket.emit('draw:declined', { matchId: match.id });
+      return;
+    }
 
     match.drawOfferBy = color;
     io.to(match.id).emit('draw:offered', { matchId: match.id, color });
@@ -799,7 +1055,7 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('spectate:join', (payload: { matchId?: string }) => {
     const match = payload?.matchId ? getMatch(payload.matchId) : undefined;
-    if (!match) {
+    if (!match || match.bot) {
       socket.emit('spectate:error', { matchId: payload?.matchId ?? null, reason: 'not-found' });
       return;
     }
@@ -880,7 +1136,10 @@ io.on('connection', (socket: Socket) => {
       clocks: liveClockRemaining(match),
       incrementMs: match.clock.incrementMs,
       ...venueFields(match),
+      ...festivalFields(match),
     });
+    // The engine may have been mid-think when the connection dropped; make sure it is not stuck.
+    if (match.bot && match.chess.turn() === match.bot.color) void botTurn(match);
   });
 
   socket.on('disconnect', () => {
@@ -940,13 +1199,25 @@ const sweeper = setInterval(() => {
 }, 2 * 60_000);
 sweeper.unref();
 
+// Festival runs the server can no longer finish (a restart wiped the live set, or the player
+// walked away for hours between sets): bank what they had, or refund the entry.
+const runSweeper = setInterval(() => {
+  sweepStaleRuns(STALE_RUN_MS, (matchId) => getMatch(matchId) !== undefined)
+    .then((resolved) => {
+      for (const r of resolved) emitInterrupted(r);
+      if (resolved.length > 0) console.log(`Resolved ${resolved.length} stale festival run(s)`);
+    })
+    .catch((err) => console.error('festival sweep failed', err));
+}, 2 * 60_000);
+runSweeper.unref();
+
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`${signal} received -- refunding live wagers before exit`);
   for (const match of [...allMatches()]) {
-    if (!match.wager) continue;
+    if (!match.wager && !match.festival) continue;
     void finishMatch(match, 'draw', null, {
       emit: { type: 'draw', winner: null, reason: 'serverRestart' },
       forceRefund: true,
@@ -961,4 +1232,5 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
 
 httpServer.listen(PORT, () => {
   console.log(`RockStyle Chess server listening on :${PORT}`);
+  warmServerBot();
 });

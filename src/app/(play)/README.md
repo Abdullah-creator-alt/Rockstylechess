@@ -88,6 +88,16 @@ files without adding `/play` to the URL/deep-link path.
   gauntlet (five bosses in a row). Bot matches now start a **server-issued session**
   (`match.tsx` → `POST /me/bot-matches`) and finish by submitting the PGN; guests and
   failed calls simply play unrewarded (the result screen says why).
+- `festival.tsx` — **Festival Run**: three tier cards (Open Mic / Main Set / Headliner) showing
+  entry, the bot ladder with the purse under each set, unlock text (a Tour boss), runs today
+  and the repeat surcharge; an "active run" card above them (play the next set, cash out, or
+  rejoin a live one). Everything is the server's `GET /me/festival` (`useFestival`). Entering
+  pays the entry and drops straight into set 1. A set is an *online* match (`mode=online`,
+  extra `festival` JSON param) against a bot the **server** plays, so `match.tsx` shows the
+  bot's portrait and `SET k/N · WIN BANKS n` pills, hides the bot's timer, chat and draw, and
+  its resign copy warns the run ends. After the set, `result-placeholder.tsx` renders
+  `src/components/festival/FestivalSetPanel` (the Set Break: bank the purse or play the next
+  set) from the cached `festival:update` (`src/lib/festival.ts`).
 - **Show Report** (`result-placeholder.tsx` + `src/components/progression/ShowReport.tsx`):
   after every match the result card shows the server's progression report instead of the old
   hardcoded "710 -> 726": Fame earned (with Opening Night / Hot Streak / daily-cap pills), the

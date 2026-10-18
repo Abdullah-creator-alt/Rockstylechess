@@ -113,6 +113,13 @@
       "when": 1792313018276,
       "tag": "0015_nostalgic_grandmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792335410785,
+      "tag": "0016_warm_fallen_one",
+      "breakpoints": true
     }
   ]
 }

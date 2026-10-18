@@ -94,6 +94,23 @@ export default function TourScreen() {
             </View>
           </RockCard>
 
+          <Pressable onPress={() => router.push('/festival')}>
+            <RockCard variant="surface" glowColor={Colors.cyan} contentPadding={12}>
+              <View className="flex-row items-center gap-md">
+                <MaterialCommunityIcons name="ticket-confirmation" size={26} color={Colors.cyan} />
+                <View className="flex-1">
+                  <Text className="font-heading-md uppercase text-text-primary" style={{ fontSize: 14 }}>
+                    Festival Run
+                  </Text>
+                  <Text className="font-body-sm text-text-muted" style={{ fontSize: 11 }}>
+                    Put chips on a run of bot sets. Bank the purse or push on.
+                  </Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={22} color={Colors.chromeMid} />
+              </View>
+            </RockCard>
+          </Pressable>
+
           {/* The map: one painted road, a badge at each chapter's stop. */}
           <View style={{ width: '100%', aspectRatio: TOUR_MAP_ASPECT, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.35), boxShadow: `0px 0px 24px ${withOpacity(Colors.gold, 0.18)}` }}>
             <Image source={TOUR_MAP} style={{ width: '100%', height: '100%' }} contentFit="cover" cachePolicy="memory-disk" />

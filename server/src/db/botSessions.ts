@@ -1,8 +1,8 @@
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 
 import { botChipReward } from '../matchRewards.js';
-import { analyzeGame } from '../matchAnalysis.js';
-import { BOT_RANK, botById, MIN_BOT_PLIES, type TourMatchEvent } from '../tour.js';
+import { analyzeGame, type GameFacts } from '../matchAnalysis.js';
+import { BOT_RANK, botById, MIN_BOT_PLIES, type BotDifficulty, type TourMatchEvent } from '../tour.js';
 import { reportMatchForAchievements } from './achievements.js';
 import { db } from './client.js';
 import { diffGoals, grantFame, type ProgressionSummary } from './progression.js';
@@ -115,8 +115,37 @@ export async function finishBotSession(
     return { status: 'no-result', reason: 'too-fast' };
   }
 
-  const difficulty = session.difficulty as keyof typeof BOT_RANK;
-  const chipsGranted = botChipReward(difficulty, outcome);
+  const paid = await applyVerifiedBotResult(
+    userId,
+    { botId: session.botId, difficulty: session.difficulty as BotDifficulty, color: myColor, outcome, facts, payChips: true },
+    now,
+  );
+  await finish(outcome);
+  return { status: 'ok', outcome, chipsGranted: paid.chipsGranted, chips: paid.chips, progression: paid.progression };
+}
+
+export interface VerifiedBotResult {
+  botId: string;
+  difficulty: BotDifficulty;
+  color: 'w' | 'b';
+  outcome: 'win' | 'loss' | 'draw';
+  facts: GameFacts;
+  // false for a Festival set: the purse (db/festival.ts) replaces the flat bot reward.
+  payChips: boolean;
+  // Online-style key so the app can match a socket-pushed report to its match (Festival sets).
+  matchId?: string;
+}
+
+// Everything a finished bot game that has ALREADY been verified is worth: the flat chip
+// reward, daily goals, achievements, the Tour and Fame. Shared by the device-played bot
+// sessions above and the server-hosted Festival sets, so both pay through one path.
+export async function applyVerifiedBotResult(
+  userId: string,
+  input: VerifiedBotResult,
+  now = new Date(),
+): Promise<{ chipsGranted: number; chips: number; progression: ProgressionSummary }> {
+  const { outcome, facts, color: myColor, difficulty } = input;
+  const chipsGranted = input.payChips ? botChipReward(difficulty, outcome) : 0;
   const [credited] = await db
     .update(playerProfiles)
     .set({ chips: sql`${playerProfiles.chips} + ${chipsGranted}`, updatedAt: now })
@@ -151,13 +180,12 @@ export async function finishBotSession(
     queenLost: facts.queenLost,
     checkmate: facts.checkmate,
     mateByPiece: facts.mateByPiece,
-    botId: session.botId,
+    botId: input.botId,
     botRank: BOT_RANK[difficulty],
   };
   const tour = await applyTour(userId, { event }, now);
 
-  const progression = await grantFame(userId, { source: 'bot', outcome, difficulty, goals, tour });
+  const progression = await grantFame(userId, { source: 'bot', outcome, difficulty, goals, tour, matchId: input.matchId });
   const [after] = await db.select({ chips: playerProfiles.chips }).from(playerProfiles).where(eq(playerProfiles.userId, userId)).limit(1);
-  await finish(outcome);
-  return { status: 'ok', outcome, chipsGranted, chips: after?.chips ?? credited.chips, progression };
+  return { chipsGranted, chips: after?.chips ?? credited?.chips ?? 0, progression };
 }

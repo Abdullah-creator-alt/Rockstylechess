@@ -231,6 +231,18 @@ PGN, bot matches via a server-issued session whose PGN the server replays
 (`finishBotSession`), puzzles. Never re-add a route that pays from a client-claimed
 result; bot rewards must go through `botSessions.ts`. Details: `server/README.md` → "The Tour".
 
+### Festival Run — `server/src/db/festival.ts` / `server/src/serverBot.ts`
+
+The repeatable chip sink: pay an entry, beat a ladder of bots one set at a time, bank the purse
+between sets or push on (`economy.config.json` -> `festival`; `check-economy.mjs` solves the
+bank/push-on EV per skill profile). The bot is played by the **server** (a bot seat on an ordinary
+`MatchState`), never by the device, because the server cannot prove a device-played bot game was
+against the engine and the purse is several times the entry. The entry is debited in the
+transaction that inserts the run; every payout is a locked conditional status flip out of
+`active`. Never move chips for a run outside `festival.ts`; never pay a Festival set from a
+client-reported result; run `node scripts/gen-server-bots.mjs` after changing the app's bots.
+Details: `server/README.md` → "Festival Run".
+
 ### Wagers — `server/src/db/wagers.ts`
 
 Online matches at venues with a buy-in (Club and up) are played for chips: both buy-ins

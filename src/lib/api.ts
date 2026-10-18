@@ -220,6 +220,88 @@ export function getTour(token: string): Promise<TourStatus> {
   return request('/me/tour', { method: 'GET', token });
 }
 
+// ---- Festival Run (server/src/db/festival.ts) ----------------------------------------------
+
+export interface FestivalSet {
+  botId: string;
+  name: string;
+  emoji: string;
+  difficulty: string;
+}
+
+export interface FestivalTierView {
+  id: string;
+  name: string;
+  tagline: string;
+  entry: number;
+  nextEntry: number; // today's price for the next run (repeat surcharge included)
+  purse: number[];
+  sets: FestivalSet[];
+  unlocked: boolean;
+  unlockChapterId: string;
+  unlockChapterName: string;
+  runsToday: number;
+  dailyRuns: number;
+  cleared: boolean;
+  titleName: string;
+}
+
+export interface FestivalRunView {
+  id: string;
+  tierId: string;
+  status: 'active' | 'cashed' | 'won' | 'lost' | 'refunded';
+  phase: 'ready' | 'playing';
+  entryPaid: number;
+  setIndex: number;
+  setsCleared: number;
+  totalSets: number;
+  replaysUsed: number;
+  purse: number[];
+  banked: number;
+  nextPurse: number | null;
+  canCashOut: boolean;
+  sets: (FestivalSet & { state: 'done' | 'current' | 'next' })[];
+  payout: number | null;
+  matchId: string | null;
+}
+
+export interface FestivalStatus {
+  tiers: FestivalTierView[];
+  activeRun: FestivalRunView | null;
+}
+
+export function getFestival(token: string): Promise<FestivalStatus> {
+  return request('/me/festival', { method: 'GET', token });
+}
+
+// Entering can be refused for reasons the screen explains (locked, daily limit, chips), so
+// this returns the refusal instead of throwing it away as a bare error string.
+export type EnterFestivalResult =
+  | { ok: true; run: FestivalRunView; chips: number; fee: number }
+  | { ok: false; error: 'unknown-tier' | 'profile-not-found' | 'locked' | 'daily-limit' | 'already-active' | 'insufficient-chips' | 'network'; required?: number; chips?: number; chapterName?: string; limit?: number; run?: FestivalRunView };
+
+export async function enterFestival(token: string, tierId: string): Promise<EnterFestivalResult> {
+  try {
+    const response = await fetch(`${SERVER_URL}/me/festival/${encodeURIComponent(tierId)}/enter`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) return { ok: true, run: data.run, chips: data.chips, fee: data.fee };
+    return { ok: false, error: data.error ?? 'network', required: data.required, chips: data.chips, chapterName: data.chapterName, limit: data.limit, run: data.run };
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+export function cashOutFestival(token: string, runId: string): Promise<{ ok: true; run: FestivalRunView; payout: number; chips: number }> {
+  return request(`/me/festival/runs/${runId}/cash-out`, { method: 'POST', token });
+}
+
+export function recoverFestivalRun(token: string, runId: string): Promise<{ ok: true; how: 'cashed' | 'refunded'; payout: number; chips: number; run: FestivalRunView }> {
+  return request(`/me/festival/runs/${runId}/recover`, { method: 'POST', token });
+}
+
 // What the Tour did with ONE finished match (part of the Show Report).
 export interface TourUpdate {
   gigsCompleted: { id: string; title: string; chapterId: string; chips: number }[];

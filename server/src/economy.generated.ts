@@ -827,6 +827,84 @@ export const ECONOMY = {
     "online-weekly": 300,
     "puzzles-weekly": 300,
     "minLevel": 5
+  },
+  "festival": {
+    "dailyRuns": {
+      "open-mic": 2,
+      "main-set": 1,
+      "headliner": 1
+    },
+    "repeatSurcharge": 0.5,
+    "staleRunMinutes": 180,
+    "tiers": [
+      {
+        "id": "open-mic",
+        "name": "Open Mic",
+        "tagline": "Three songs, one shot.",
+        "unlockChapter": "garage",
+        "entry": 250,
+        "sets": [
+          "roadie-rick",
+          "valkyrie-riff",
+          "old-school-roy"
+        ],
+        "purse": [
+          100,
+          250,
+          560
+        ],
+        "title": {
+          "id": "open-mic-hero",
+          "name": "Open Mic Hero"
+        }
+      },
+      {
+        "id": "main-set",
+        "name": "Main Set",
+        "tagline": "Real crowd, real stakes.",
+        "unlockChapter": "arena",
+        "entry": 1000,
+        "sets": [
+          "valkyrie-riff",
+          "metal-head",
+          "the-reaper"
+        ],
+        "purse": [
+          350,
+          1000,
+          2800
+        ],
+        "title": {
+          "id": "main-set-maverick",
+          "name": "Main Set Maverick"
+        }
+      },
+      {
+        "id": "headliner",
+        "name": "Headliner",
+        "tagline": "Every boss, back to back.",
+        "unlockChapter": "mainstage",
+        "entry": 3000,
+        "sets": [
+          "roadie-rick",
+          "valkyrie-riff",
+          "metal-head",
+          "the-reaper",
+          "king-axl"
+        ],
+        "purse": [
+          900,
+          1800,
+          3400,
+          5200,
+          22000
+        ],
+        "title": {
+          "id": "festival-headliner",
+          "name": "Festival Headliner"
+        }
+      }
+    ]
   }
 } as const;
 
