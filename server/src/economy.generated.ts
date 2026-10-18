@@ -414,6 +414,419 @@ export const ECONOMY = {
     "botMixWinFame": 200,
     "openingNightRate": 0.9,
     "botWinRate": 0.6
+  },
+  "bots": [
+    {
+      "id": "roadie-rick",
+      "name": "Roadie Rick",
+      "emoji": "🧢",
+      "difficulty": "easy"
+    },
+    {
+      "id": "valkyrie-riff",
+      "name": "Valkyrie Riff",
+      "emoji": "⚡",
+      "difficulty": "medium"
+    },
+    {
+      "id": "metal-head",
+      "name": "Metal Head",
+      "emoji": "🤘",
+      "difficulty": "stockfish-basic"
+    },
+    {
+      "id": "the-reaper",
+      "name": "The Reaper",
+      "emoji": "💀",
+      "difficulty": "stockfish-lite"
+    },
+    {
+      "id": "old-school-roy",
+      "name": "Old School Roy",
+      "emoji": "🕶️",
+      "difficulty": "medium"
+    },
+    {
+      "id": "king-axl",
+      "name": "King Axl",
+      "emoji": "👑",
+      "difficulty": "stockfish-strong"
+    }
+  ],
+  "tour": {
+    "minBotPlies": 6,
+    "perfectBonusGems": 5,
+    "chapters": [
+      {
+        "id": "garage",
+        "name": "The Garage",
+        "venue": "garage",
+        "tagline": "Plug in and make some noise.",
+        "bossBotId": "roadie-rick",
+        "bossReward": {
+          "chips": 500,
+          "gems": 5
+        },
+        "title": {
+          "id": "garage-graduate",
+          "name": "Garage Graduate"
+        },
+        "gigs": [
+          {
+            "id": "g1-plug-in",
+            "title": "Plug In",
+            "description": "Win a game against any bot.",
+            "kind": "win_bot",
+            "target": 1,
+            "chips": 50,
+            "minRank": 0
+          },
+          {
+            "id": "g1-stage-left",
+            "title": "Stage Left",
+            "description": "Win a game playing Black.",
+            "kind": "win_color",
+            "target": 1,
+            "chips": 50,
+            "color": "b"
+          },
+          {
+            "id": "g1-smash-hit",
+            "title": "Smash Hit",
+            "description": "Capture 10 pieces in a single win.",
+            "kind": "capture_game",
+            "target": 10,
+            "chips": 75
+          },
+          {
+            "id": "g1-warm-up",
+            "title": "Warm-Up Act",
+            "description": "Solve 5 puzzles.",
+            "kind": "puzzles",
+            "target": 5,
+            "chips": 75
+          },
+          {
+            "id": "g1-first-night",
+            "title": "First Night",
+            "description": "Play 3 online matches.",
+            "kind": "online_games",
+            "target": 3,
+            "chips": 100
+          }
+        ]
+      },
+      {
+        "id": "club",
+        "name": "The Club",
+        "venue": "club",
+        "tagline": "Small room, big crowd.",
+        "bossBotId": "valkyrie-riff",
+        "bossReward": {
+          "chips": 1000,
+          "gems": 10
+        },
+        "title": {
+          "id": "club-crusher",
+          "name": "Club Crusher"
+        },
+        "gigs": [
+          {
+            "id": "g2-quick-set",
+            "title": "Quick Set",
+            "description": "Win a game in 25 moves or fewer.",
+            "kind": "win_moves",
+            "target": 1,
+            "chips": 75,
+            "maxMoves": 25
+          },
+          {
+            "id": "g2-clean-sweep",
+            "title": "Clean Sweep",
+            "description": "Win without losing your queen.",
+            "kind": "win_no_queen_loss",
+            "target": 1,
+            "chips": 75
+          },
+          {
+            "id": "g2-crowd-pleaser",
+            "title": "Crowd Pleaser",
+            "description": "Beat 3 bots of Amateur strength or better.",
+            "kind": "win_bot",
+            "target": 3,
+            "chips": 100,
+            "minRank": 1
+          },
+          {
+            "id": "g2-knight-fall",
+            "title": "Knight Fall",
+            "description": "Deliver checkmate with a knight.",
+            "kind": "mate_piece",
+            "target": 1,
+            "chips": 150,
+            "piece": "n"
+          },
+          {
+            "id": "g2-regular",
+            "title": "Club Regular",
+            "description": "Win 3 online matches.",
+            "kind": "online_wins",
+            "target": 3,
+            "chips": 100
+          }
+        ]
+      },
+      {
+        "id": "arena",
+        "name": "The Arena",
+        "venue": "arena",
+        "tagline": "The lights get brighter.",
+        "bossBotId": "metal-head",
+        "bossReward": {
+          "chips": 1500,
+          "gems": 15
+        },
+        "title": {
+          "id": "arena-breaker",
+          "name": "Arena Breaker"
+        },
+        "gigs": [
+          {
+            "id": "g3-skilled",
+            "title": "Beat the Skilled",
+            "description": "Win a game against a Skilled bot or tougher.",
+            "kind": "win_bot",
+            "target": 1,
+            "chips": 100,
+            "minRank": 2
+          },
+          {
+            "id": "g3-clean-sweep",
+            "title": "Spotless",
+            "description": "Win a game against Amateur or tougher without losing your queen.",
+            "kind": "win_no_queen_loss",
+            "target": 1,
+            "chips": 100,
+            "minRank": 1
+          },
+          {
+            "id": "g3-online-rush",
+            "title": "Online Rush",
+            "description": "Win 5 online matches.",
+            "kind": "online_wins",
+            "target": 5,
+            "chips": 150
+          },
+          {
+            "id": "g3-puzzle-rush",
+            "title": "Puzzle Rush",
+            "description": "Solve 15 puzzles.",
+            "kind": "puzzles",
+            "target": 15,
+            "chips": 150
+          },
+          {
+            "id": "g3-black-belt",
+            "title": "Black Belt",
+            "description": "Win 3 games playing Black.",
+            "kind": "win_color",
+            "target": 3,
+            "chips": 150,
+            "color": "b"
+          }
+        ]
+      },
+      {
+        "id": "stadium",
+        "name": "The Stadium",
+        "venue": "stadium",
+        "tagline": "Fifty thousand voices.",
+        "bossBotId": "the-reaper",
+        "bossReward": {
+          "chips": 2500,
+          "gems": 25
+        },
+        "title": {
+          "id": "stadium-slayer",
+          "name": "Stadium Slayer"
+        },
+        "gigs": [
+          {
+            "id": "g4-high-stakes",
+            "title": "High Stakes",
+            "description": "Win a wagered online match.",
+            "kind": "wager_wins",
+            "target": 1,
+            "chips": 200
+          },
+          {
+            "id": "g4-rising-star",
+            "title": "Rising Star",
+            "description": "Reach a rating of 1300.",
+            "kind": "rating",
+            "target": 1300,
+            "chips": 200
+          },
+          {
+            "id": "g4-in-a-hurry",
+            "title": "Mate in a Hurry",
+            "description": "Win in 30 moves or fewer against a Skilled bot or tougher.",
+            "kind": "win_moves",
+            "target": 1,
+            "chips": 200,
+            "maxMoves": 30,
+            "minRank": 2
+          },
+          {
+            "id": "g4-veteran",
+            "title": "Veteran",
+            "description": "Play 10 online matches.",
+            "kind": "online_games",
+            "target": 10,
+            "chips": 200
+          },
+          {
+            "id": "g4-tactician",
+            "title": "Tactician",
+            "description": "Solve 30 puzzles.",
+            "kind": "puzzles",
+            "target": 30,
+            "chips": 200
+          }
+        ]
+      },
+      {
+        "id": "mainstage",
+        "name": "Main Stage",
+        "venue": "mainstage",
+        "tagline": "Headliner territory.",
+        "bossBotId": "king-axl",
+        "bossReward": {
+          "chips": 4000,
+          "gems": 40
+        },
+        "title": {
+          "id": "festival-king",
+          "name": "Festival King"
+        },
+        "gigs": [
+          {
+            "id": "g5-big-money",
+            "title": "Big Money",
+            "description": "Win 3 wagered online matches.",
+            "kind": "wager_wins",
+            "target": 3,
+            "chips": 300
+          },
+          {
+            "id": "g5-rating",
+            "title": "Main Stage Rating",
+            "description": "Reach a rating of 1500.",
+            "kind": "rating",
+            "target": 1500,
+            "chips": 300
+          },
+          {
+            "id": "g5-marathon",
+            "title": "Marathon",
+            "description": "Win a game lasting 60 moves or more.",
+            "kind": "win_marathon",
+            "target": 1,
+            "chips": 300,
+            "minMoves": 60
+          },
+          {
+            "id": "g5-giant-slayer",
+            "title": "Giant Slayer",
+            "description": "Beat 3 bots of Expert strength or better.",
+            "kind": "win_bot",
+            "target": 3,
+            "chips": 300,
+            "minRank": 3
+          },
+          {
+            "id": "g5-flawless",
+            "title": "Flawless",
+            "description": "Win against an Expert bot or tougher without losing your queen.",
+            "kind": "win_no_queen_loss",
+            "target": 1,
+            "chips": 300,
+            "minRank": 3
+          }
+        ]
+      },
+      {
+        "id": "world-tour",
+        "name": "World Tour",
+        "venue": "world-tour",
+        "tagline": "The whole world is listening.",
+        "bossBotId": null,
+        "encore": [
+          "roadie-rick",
+          "valkyrie-riff",
+          "metal-head",
+          "the-reaper",
+          "king-axl"
+        ],
+        "bossReward": {
+          "chips": 8000,
+          "gems": 80
+        },
+        "title": {
+          "id": "world-tour-legend",
+          "name": "World Tour Legend"
+        },
+        "gigs": [
+          {
+            "id": "g6-legend-rating",
+            "title": "Legend",
+            "description": "Reach a rating of 1800.",
+            "kind": "rating",
+            "target": 1800,
+            "chips": 500
+          },
+          {
+            "id": "g6-high-roller",
+            "title": "High Roller",
+            "description": "Win 5 wagered online matches.",
+            "kind": "wager_wins",
+            "target": 5,
+            "chips": 500
+          },
+          {
+            "id": "g6-crowd-favourite",
+            "title": "Crowd Favourite",
+            "description": "Win 25 online matches.",
+            "kind": "online_wins",
+            "target": 25,
+            "chips": 500
+          },
+          {
+            "id": "g6-axl-slayer",
+            "title": "Axl Slayer",
+            "description": "Beat the strongest bot 5 times.",
+            "kind": "win_bot",
+            "target": 5,
+            "chips": 500,
+            "minRank": 4
+          },
+          {
+            "id": "g6-grand-tactician",
+            "title": "Grand Tactician",
+            "description": "Solve 100 puzzles.",
+            "kind": "puzzles",
+            "target": 100,
+            "chips": 500
+          }
+        ]
+      }
+    ]
+  },
+  "weeklyQuests": {
+    "win-weekly": 400,
+    "online-weekly": 300,
+    "puzzles-weekly": 300,
+    "minLevel": 5
   }
 } as const;
 

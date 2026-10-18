@@ -75,6 +75,7 @@ export default function ResultScreen() {
     venueTier: venueTierParam,
     reportKey,
     matchMode,
+    noReward,
     wagerMatchId,
     buyIn: buyInParam,
     prize: prizeParam,
@@ -93,6 +94,8 @@ export default function ResultScreen() {
     // and which kind of match it was ('local' pass-and-play pays and counts nothing).
     reportKey?: string;
     matchMode?: string;
+    // Why a bot match paid nothing (guest, too short, could not be verified, offline).
+    noReward?: string;
     wagerMatchId?: string;
     buyIn?: string;
     prize?: string;
@@ -323,6 +326,17 @@ export default function ResultScreen() {
         ) : null}
 
         {/* A voided wager changed no rating, so the (sample) rating row is hidden. */}
+        {noReward ? (
+          <Text className="mt-sm text-center font-caption text-caption text-text-muted">
+            {noReward === 'guest'
+              ? 'Sign in to earn chips and Fame from bot matches.'
+              : noReward === 'too-short'
+                ? 'That game was too short to count for rewards.'
+                : noReward === 'offline'
+                  ? "We couldn't reach the server, so this game wasn't counted."
+                  : "This game couldn't be verified, so it earned nothing."}
+          </Text>
+        ) : null}
         {/* A voided wager changed nothing, and pass-and-play counts for nothing. */}
         {reportKey && !isVoid && !isLocalMatch ? <ShowReport report={report} timedOut={reportTimedOut} /> : null}
 

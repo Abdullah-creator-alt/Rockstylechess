@@ -150,6 +150,36 @@ check('chips from levels 1-10 are under 10% of the income earned meanwhile', r10
 const r50 = rewardTo(50);
 check('all 50 levels of gems stay well under the achievement gem pool', r50.gems < 920, String(r50.gems));
 
+
+// ---- The Tour ------------------------------------------------------------
+const tour = cfg.tour;
+const rankOf = { easy: 0, medium: 1, 'stockfish-basic': 2, 'stockfish-lite': 3, 'stockfish-strong': 4 };
+const botsById = Object.fromEntries(cfg.bots.map((b) => [b.id, b]));
+const GIG_KINDS = ['win_bot', 'win_color', 'capture_game', 'puzzles', 'online_games', 'online_wins', 'wager_wins', 'win_moves', 'win_marathon', 'win_no_queen_loss', 'mate_piece', 'rating'];
+check('6 bots with unique ids', cfg.bots.length === 6 && new Set(cfg.bots.map((b) => b.id)).size === 6);
+check('bot difficulties are valid', cfg.bots.every((b) => b.difficulty in rankOf));
+check('6 chapters, one per venue, in ladder order', tour.chapters.map((c) => c.venue).join() === Object.keys(cfg.venues).join(), tour.chapters.map((c) => c.venue).join());
+check('every chapter has 5 gigs', tour.chapters.every((c) => c.gigs.length === 5));
+const gigIds = tour.chapters.flatMap((c) => c.gigs.map((g) => g.id));
+check('gig ids unique', new Set(gigIds).size === gigIds.length);
+check('every gig kind is known', tour.chapters.every((c) => c.gigs.every((g) => GIG_KINDS.includes(g.kind))));
+check('every gig has a positive target and reward', tour.chapters.every((c) => c.gigs.every((g) => g.target > 0 && g.chips > 0)));
+const bossChapters = tour.chapters.filter((c) => c.bossBotId);
+check('boss bots exist and get stronger chapter by chapter', bossChapters.every((c, i) => botsById[c.bossBotId] && (i === 0 || rankOf[botsById[c.bossBotId].difficulty] > rankOf[botsById[bossChapters[i - 1].bossBotId].difficulty])), bossChapters.map((c) => c.bossBotId).join());
+check('the last chapter is the Encore gauntlet of every boss in order', tour.chapters[5].bossBotId === null && tour.chapters[5].encore.join() === bossChapters.map((c) => c.bossBotId).join());
+check('boss rewards and gig rewards grow with the chapter', tour.chapters.every((c, i) => i === 0 || (c.bossReward.chips > tour.chapters[i - 1].bossReward.chips && c.gigs.reduce((s, g) => s + g.chips, 0) > tour.chapters[i - 1].gigs.reduce((s, g) => s + g.chips, 0))));
+check('chapter titles unique and do not clash with level titles', new Set([...tour.chapters.map((c) => c.title.id), ...cfg.levels.titles.map((t) => t.id)]).size === tour.chapters.length + cfg.levels.titles.length);
+check('rating gigs line up with venue rating gates (the gate is the goal)', tour.chapters.flatMap((c) => c.gigs).filter((g) => g.kind === 'rating').every((g) => Object.values(cfg.venues).some((v) => v.minRating === g.target)));
+const tourChips = tour.chapters.reduce((s, c) => s + c.gigs.reduce((a, g) => a + g.chips, 0) + c.bossReward.chips, 0);
+const tourGems = tour.chapters.reduce((s, c) => s + c.bossReward.gems + tour.perfectBonusGems, 0);
+console.log(`\nTour totals (one-time): ${tourChips.toLocaleString()} chips + ${tourGems} gems = about ${(tourChips / base).toFixed(0)} casual days of chip income`);
+check('the whole Tour is worth under 35% of 90 days of chip income', tourChips < 0.35 * base * 90, `${tourChips} vs ${(0.35 * base * 90).toFixed(0)}`);
+check('Tour gems stay under the achievement gem pool', tourGems < 920, String(tourGems));
+const wk = cfg.weeklyQuests;
+const weeklyChips = wk['win-weekly'] + wk['online-weekly'] + wk['puzzles-weekly'];
+check('weekly quests pay under 20% of a week of income', weeklyChips < 0.2 * base * 7, `${weeklyChips} vs ${(0.2 * base * 7).toFixed(0)}`);
+check('weekly quests unlock after the first hook levels', wk.minLevel >= 3 && wk.minLevel <= 10);
+
 // achievements (one-time) -- read from the server catalog
 const ach = [...read('server/src/achievementCatalog.ts').matchAll(/rewardType: '(chips|gems)', rewardAmount: ([\d_]+)/g)];
 const achChips = ach.filter((a) => a[1] === 'chips').reduce((s, a) => s + Number(a[2].replace(/_/g, '')), 0);

@@ -7,7 +7,7 @@ export const rewardTypeEnum = pgEnum('reward_type', ['chips', 'gems', 'xp']);
 // What real gameplay event a quest's progress is driven by -- lets increment
 // logic stay generic ("on event X, bump every quest whose metric is X")
 // instead of hardcoding quest ids into game-event code. See db/quests.ts.
-export const questMetricEnum = pgEnum('quest_metric', ['wins', 'captures', 'puzzles_solved', 'checkmates']);
+export const questMetricEnum = pgEnum('quest_metric', ['wins', 'captures', 'puzzles_solved', 'checkmates', 'online_games']);
 
 // Achievements are permanent, one-time unlocks (unlike quests' daily/weekly
 // reset), so their metric set is wider -- it covers lifetime/watermark
@@ -230,4 +230,53 @@ export const progressionEvents = pgTable(
     seenAt: timestamp('seen_at', { withTimezone: true }),
   },
   (t) => [index('progression_events_unseen_idx').on(t.userId, t.celebratory, t.seenAt)],
+);
+
+// ---- The Tour (campaign) and verified bot matches (see db/tour.ts, db/botSessions.ts) ----
+
+// One row per (player, gig). `progress` counts toward the gig's target (or is a
+// high-water mark for rating/capture gigs); `completedAt` is set once, when the gig
+// pays out. Boss gigs use the id `boss-<chapterId>`, perfect-chapter bonuses
+// `perfect-<chapterId>`.
+export const tourProgress = pgTable(
+  'tour_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    gigId: varchar('gig_id', { length: 60 }).notNull(),
+    progress: integer('progress').notNull().default(0),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.gigId] })],
+);
+
+// Per-player Tour state that is not a plain counter: the Encore gauntlet (the
+// World Tour finale) is a streak of boss wins that any boss loss resets.
+export const tourState = pgTable('tour_state', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  encoreProgress: integer('encore_progress').notNull().default(0),
+});
+
+// A bot match the SERVER knows about. Bot games are played on the device, so the
+// only way to stop "POST me a win" farming is to make the server issue the match
+// first (it records which bot and which colour) and verify the finished game's PGN
+// before paying anything. One session = one reward, claimed atomically.
+export const botSessions = pgTable(
+  'bot_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    botId: varchar('bot_id', { length: 40 }).notNull(),
+    difficulty: varchar('difficulty', { length: 40 }).notNull(),
+    color: varchar('color', { length: 1 }).notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    result: varchar('result', { length: 20 }),
+  },
+  (t) => [index('bot_sessions_user_idx').on(t.userId, t.finishedAt)],
 );

@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { usePathname } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
@@ -17,6 +18,7 @@ import { AppIcon } from '@/components/ui/AppIcon';
 import { CurrencyIcon } from '@/components/ui/CurrencyIcon';
 import { RockButton } from '@/components/ui/RockButton';
 import { Colors, Fonts, withOpacity } from '@/constants/theme';
+import { CHAPTER_BADGES } from '@/constants/emblems';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import type { ProgressionReport } from '@/lib/api';
 import { celebrate } from '@/lib/celebration';
@@ -49,18 +51,55 @@ function Spark({ index }: { index: number }) {
   return <Animated.View style={[styles.spark, style]} />;
 }
 
+type Phase = 'level' | 'title' | 'chapter';
+
+// One report can hold several moments (a level up AND a beaten boss). They play one
+// after the other -- each its own card -- so none of them has to squeeze into a small
+// phone screen together.
+function phasesFor(report: ProgressionReport): Phase[] {
+  const phases: Phase[] = [];
+  if (report.levelAfter > report.levelBefore) phases.push('level');
+  else if (report.titlesUnlocked.length > 0) phases.push('title');
+  if (report.tour?.bossBeaten) phases.push('chapter');
+  return phases;
+}
+
+function RewardPills({ chips, gems }: { chips: number; gems: number }) {
+  if (chips <= 0 && gems <= 0) return null;
+  return (
+    <View style={styles.rewards}>
+      {chips > 0 ? (
+        <View style={styles.reward}>
+          <CurrencyIcon type="chips" size={22} />
+          <Text style={styles.rewardText}>+{chips.toLocaleString('en-US')}</Text>
+        </View>
+      ) : null}
+      {gems > 0 ? (
+        <View style={styles.reward}>
+          <CurrencyIcon type="gems" size={22} />
+          <Text style={styles.rewardText}>+{gems.toLocaleString('en-US')}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function Celebration({ report, onContinue }: { report: ProgressionReport; onContinue: () => void }) {
-  const leveled = report.levelAfter > report.levelBefore;
+  const phases = phasesFor(report);
+  const [phaseIndex, setPhaseIndex] = useState(0);
+  const phase = phases[phaseIndex] ?? 'level';
+  const leveled = phase === 'level';
   const slam = useSharedValue(0);
   const halo = useSharedValue(0);
 
   useEffect(() => {
-    celebrate(leveled ? 'levelUp' : 'title');
+    celebrate(phase === 'chapter' ? 'title' : leveled ? 'levelUp' : 'title');
+    slam.value = 0;
     slam.value = withSpring(1, { damping: 9, stiffness: 140, mass: 0.8 });
     halo.value = withRepeat(withSequence(withTiming(1, { duration: 1100 }), withTiming(0.35, { duration: 1100 })), -1, false);
     const titleTimer = leveled && report.titlesUnlocked.length > 0 ? setTimeout(() => celebrate('title'), 900) : undefined;
     return () => clearTimeout(titleTimer);
-  }, [leveled, report.titlesUnlocked.length, slam, halo]);
+  }, [phase, leveled, report.titlesUnlocked.length, slam, halo]);
 
   const numberStyle = useAnimatedStyle(() => ({
     opacity: Math.min(1, slam.value * 2),
@@ -69,56 +108,61 @@ function Celebration({ report, onContinue }: { report: ProgressionReport; onCont
   const haloStyle = useAnimatedStyle(() => ({ opacity: 0.25 + halo.value * 0.45, transform: [{ scale: 0.9 + halo.value * 0.2 }] }));
 
   const newTitle = report.titlesUnlocked[report.titlesUnlocked.length - 1];
+  const boss = report.tour?.bossBeaten;
+  const last = phaseIndex >= phases.length - 1;
 
   return (
     <View style={styles.card}>
       <Animated.View pointerEvents="none" style={[styles.halo, haloStyle]} />
       {SPARKS.map((i) => (
-        <Spark key={i} index={i} />
+        <Spark key={`${phase}-${i}`} index={i} />
       ))}
 
-      {leveled ? (
+      {phase === 'chapter' && boss ? (
+        <>
+          <Text style={styles.kicker}>CHAPTER COMPLETE</Text>
+          <Animated.View style={[{ alignItems: 'center', marginTop: 6 }, numberStyle]}>
+            <Image source={CHAPTER_BADGES[boss.chapterId]} style={{ width: 132, height: 132 }} contentFit="contain" />
+            <Text style={styles.chapterName}>{boss.chapterName}</Text>
+          </Animated.View>
+          <Text style={styles.sub}>Boss defeated</Text>
+          <RewardPills chips={report.tour?.chips ?? boss.chips} gems={report.tour?.gems ?? boss.gems} />
+          <View style={styles.titleCard}>
+            <Text style={styles.titleKicker}>NEW TITLE UNLOCKED</Text>
+            <Text style={styles.titleName}>{boss.titleName}</Text>
+          </View>
+          {report.tour?.chapterUnlocked ? <Text style={[styles.sub, { marginTop: 10, color: Colors.cyan }]}>Next up: {report.tour.chapterUnlocked.name}</Text> : null}
+        </>
+      ) : leveled ? (
         <>
           <Text style={styles.kicker}>LEVEL UP</Text>
           <Animated.Text style={[styles.bigNumber, numberStyle]}>{report.levelAfter}</Animated.Text>
-          {report.levelAfter - report.levelBefore > 1 ? (
-            <Text style={styles.sub}>Jumped {report.levelAfter - report.levelBefore} levels!</Text>
+          {report.levelAfter - report.levelBefore > 1 ? <Text style={styles.sub}>Jumped {report.levelAfter - report.levelBefore} levels!</Text> : null}
+          <RewardPills chips={report.rewards.chips} gems={report.rewards.gems} />
+          {newTitle ? (
+            <View style={styles.titleCard}>
+              <TitleEmblem titleId={newTitle.id} size={72} />
+              <Text style={styles.titleKicker}>NEW TITLE UNLOCKED</Text>
+              <Text style={styles.titleName}>{newTitle.name}</Text>
+            </View>
           ) : null}
         </>
       ) : (
         <>
           <Text style={styles.kicker}>NEW TITLE</Text>
           {newTitle ? <TitleEmblem titleId={newTitle.id} size={120} /> : <AppIcon name="workspace_premium" size={56} color={Colors.gold} />}
+          <RewardPills chips={report.rewards.chips} gems={report.rewards.gems} />
+          {newTitle ? (
+            <View style={styles.titleCard}>
+              <Text style={styles.titleKicker}>YOUR TITLE</Text>
+              <Text style={styles.titleName}>{newTitle.name}</Text>
+            </View>
+          ) : null}
         </>
       )}
 
-      {report.rewards.chips > 0 || report.rewards.gems > 0 ? (
-        <View style={styles.rewards}>
-          {report.rewards.chips > 0 ? (
-            <View style={styles.reward}>
-              <CurrencyIcon type="chips" size={22} />
-              <Text style={styles.rewardText}>+{report.rewards.chips.toLocaleString('en-US')}</Text>
-            </View>
-          ) : null}
-          {report.rewards.gems > 0 ? (
-            <View style={styles.reward}>
-              <CurrencyIcon type="gems" size={22} />
-              <Text style={styles.rewardText}>+{report.rewards.gems.toLocaleString('en-US')}</Text>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {newTitle ? (
-        <View style={styles.titleCard}>
-          {leveled ? <TitleEmblem titleId={newTitle.id} size={72} /> : null}
-          <Text style={styles.titleKicker}>{leveled ? 'NEW TITLE UNLOCKED' : 'YOUR TITLE'}</Text>
-          <Text style={styles.titleName}>{newTitle.name}</Text>
-        </View>
-      ) : null}
-
       <View style={{ width: '100%', marginTop: 18 }}>
-        <RockButton label="Keep Rocking" variant="gold" onPress={onContinue} />
+        <RockButton label={last ? 'Keep Rocking' : 'Continue'} variant="gold" onPress={last ? onContinue : () => setPhaseIndex(phaseIndex + 1)} />
       </View>
     </View>
   );
@@ -184,6 +228,9 @@ const styles = StyleSheet.create({
   reward: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: withOpacity(Colors.bgBase, 0.6), borderWidth: 1, borderColor: withOpacity(Colors.chromeDark, 0.5) },
   rewardText: { fontSize: 16, color: Colors.textPrimary, fontFamily: Fonts.heading },
   titleCard: { marginTop: 14, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, width: '100%', backgroundColor: withOpacity(Colors.gold, 0.1), borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.45) },
+  chapterArt: { width: 240, height: 110, borderRadius: 14, overflow: 'hidden', alignItems: 'center', justifyContent: 'flex-end', marginTop: 14, borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.6) },
+  chapterScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: withOpacity(Colors.bgBase, 0.45) },
+  chapterName: { fontSize: 24, color: Colors.gold, fontFamily: Fonts.display, textTransform: 'uppercase', marginTop: 4 },
   titleKicker: { fontSize: 10, letterSpacing: 3, color: Colors.textMuted, fontFamily: Fonts.heading },
   titleName: { fontSize: 22, color: Colors.gold, fontFamily: Fonts.display, textTransform: 'uppercase', marginTop: 2 },
 });

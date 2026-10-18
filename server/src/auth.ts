@@ -45,12 +45,13 @@ import { allMatches, liveClockRemaining } from './match.js';
 import { PIECE_SETS } from './pieceSets.js';
 import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
-import { diffGoals, getOwnedTitleIds, getUnseenCelebrations, grantFame, markProgressionSeen, TITLES } from './db/progression.js';
-import { claimQuest, getQuestsStatus, reportMatchForQuests, reportPuzzleSolvedForQuests } from './db/quests.js';
+import { ENDED_BY, finishBotSession, startBotSession } from './db/botSessions.js';
+import { applyTour, getTour } from './db/tour.js';
+import { getOwnedTitleIds, getUnseenCelebrations, grantFame, markProgressionSeen, TITLES } from './db/progression.js';
+import { claimQuest, getQuestsStatus, reportPuzzleSolvedForQuests } from './db/quests.js';
 import { matchParticipants, matches, playerProfiles, userCosmetics, users } from './db/schema/index.js';
 import { getSpinStatus, performSpin } from './db/spin.js';
 import { emitToUser, onlineAmong } from './realtime.js';
-import { botChipReward, isBotDifficulty, type MatchOutcome } from './matchRewards.js';
 
 // Query-param limit shared by /me/matches and /leaderboard -- clamps to a
 // sane range so a client can't ask for an unbounded result set.
@@ -357,60 +358,57 @@ authRouter.post(
   }),
 );
 
-// Bot/local matches never reach the server otherwise (pure client-side
-// chess.js, called from match.tsx's handleGameOver) -- this is the only
-// point a reward gets persisted for those modes. Only the outcome claim is
-// trusted, never a client-supplied amount, but there's no server-side match
-// record for bot/local play to validate the claim itself against, unlike
-// online matches (credited authoritatively in persistMatchResult.ts, which
-// never calls this route). Acceptable for now since chips aren't redeemable
-// for anything real anywhere in the app.
+// Bot matches are played on the device, so the server issues each one FIRST
+// (which bot, which colour, when it started) and only pays out when the finished
+// game's PGN replays as a legal game with a real result (db/botSessions.ts). This
+// replaced the old "POST me a win" route, which anyone signed in could call in a loop.
 authRouter.post(
-  '/me/match-reward',
+  '/me/bot-matches',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { outcome, difficulty } = req.body ?? {};
-    if (outcome !== 'win' && outcome !== 'loss' && outcome !== 'draw') {
-      res.status(400).json({ error: 'invalid-outcome' });
+    const result = await startBotSession(req.userId as string, req.body?.botId, req.body?.color);
+    if (result.status === 'ok') {
+      res.json({ ok: true, sessionId: result.sessionId });
       return;
     }
-    // Bot payout scales with the bot's strength (see matchRewards.ts). An
-    // absent/unknown difficulty (older app build, local mode) pays as the
-    // weakest bot, so a bad value can never pay MORE than a real one.
-    const botDifficulty = isBotDifficulty(difficulty) ? difficulty : 'easy';
+    res.status(result.status === 'profile-not-found' ? 404 : 400).json({ error: result.status });
+  }),
+);
 
-    const chipsGranted = botChipReward(botDifficulty, outcome as MatchOutcome);
-    const [credited] = await db
-      .update(playerProfiles)
-      .set({ chips: sql`${playerProfiles.chips} + ${chipsGranted}`, updatedAt: new Date() })
-      .where(eq(playerProfiles.userId, req.userId as string))
-      .returning({ chips: playerProfiles.chips });
-    if (!credited) {
-      res.status(404).json({ error: 'profile-not-found' });
+authRouter.post(
+  '/me/bot-matches/:sessionId/finish',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const sessionId = String(req.params.sessionId);
+    const endedBy = req.body?.endedBy;
+    if (!/^[0-9a-f-]{36}$/i.test(sessionId) || typeof endedBy !== 'string' || !(ENDED_BY as string[]).includes(endedBy)) {
+      res.status(400).json({ error: 'invalid-request' });
       return;
     }
-    // Fame (XP), level, level rewards and titles: one transaction in
-    // db/progression.ts. Bot Fame scales with the bot's strength and is capped
-    // per day; the returned `progression` feeds the app's Show Report.
-    const progression = await grantFame(req.userId as string, {
-      source: 'bot',
-      outcome: outcome as MatchOutcome,
-      difficulty: botDifficulty,
-    });
-    const [after] = await db
-      .select({ chips: playerProfiles.chips })
-      .from(playerProfiles)
-      .where(eq(playerProfiles.userId, req.userId as string))
-      .limit(1);
-    res.json({
-      ok: true,
-      chipsGranted,
-      chips: after?.chips ?? credited.chips,
-      xpGranted: progression.fame.gained,
-      xp: progression.xpAfter,
-      level: progression.levelAfter,
-      progression,
-    });
+    const result = await finishBotSession(req.userId as string, sessionId, { pgn: req.body?.pgn, endedBy });
+    if (result.status === 'ok') {
+      res.json({
+        ok: true,
+        outcome: result.outcome,
+        chipsGranted: result.chipsGranted,
+        chips: result.chips,
+        progression: result.progression,
+      });
+    } else if (result.status === 'no-result') {
+      // A game that cannot be verified pays nothing -- 200 so the app just shows "no reward".
+      res.json({ ok: true, noResult: true, reason: result.reason });
+    } else {
+      res.status(result.status === 'not-found' ? 404 : 409).json({ error: result.status });
+    }
+  }),
+);
+
+// The Tour (campaign): chapters, gigs, bosses and the player's progress.
+authRouter.get(
+  '/me/tour',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json(await getTour(req.userId as string));
   }),
 );
 
@@ -553,7 +551,8 @@ authRouter.get(
   '/me/quests',
   requireAuth,
   asyncHandler(async (req, res) => {
-    res.json({ quests: await getQuestsStatus(req.userId as string) });
+    const type = req.query.type === 'weekly' ? 'weekly' : 'daily';
+    res.json({ quests: await getQuestsStatus(req.userId as string, type) });
   }),
 );
 
@@ -575,45 +574,6 @@ authRouter.post(
       return;
     }
     res.json({ ok: true, chipsGranted: result.rewardChips, chips: result.chips });
-  }),
-);
-
-// Bot/local matches never reach the server otherwise (pure client-side
-// chess.js), same reason POST /me/match-reward exists -- see that route's
-// comment for the accepted trust tradeoff (client-reported, not validated
-// against a server-side match record). Never called for online matches:
-// those get their quest AND achievement progress from persistMatchResult.ts
-// instead, computed server-side from the authoritative PGN. The extra
-// fields (color/moveCount/opponentCapturedCount/isBot) feed achievements
-// only -- quests don't need them -- and are optional so an older client
-// build degrades to just the quest report instead of a hard 400.
-authRouter.post(
-  '/me/quests/report-match',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const { won, checkmate, capturedCount, opponentCapturedCount, color, moveCount, isBot } = req.body ?? {};
-    if (typeof won !== 'boolean' || typeof checkmate !== 'boolean' || typeof capturedCount !== 'number') {
-      res.status(400).json({ error: 'invalid-report' });
-      return;
-    }
-    const safeCapturedCount = Math.max(0, Math.floor(capturedCount));
-    // Snapshot today's goals around the report so the Show Report can say which
-    // ones this match moved.
-    const questsBefore = await getQuestsStatus(req.userId as string);
-    await Promise.all([
-      reportMatchForQuests(req.userId as string, { won, checkmate, capturedCount: safeCapturedCount }),
-      reportMatchForAchievements(req.userId as string, {
-        won,
-        checkmate,
-        capturedCount: safeCapturedCount,
-        opponentCapturedCount: typeof opponentCapturedCount === 'number' ? Math.max(0, Math.floor(opponentCapturedCount)) : undefined,
-        color: color === 'w' || color === 'b' ? color : undefined,
-        moveCount: typeof moveCount === 'number' ? Math.max(0, Math.floor(moveCount)) : undefined,
-        isBot: isBot === true,
-      }),
-    ]);
-    const questsAfter = await getQuestsStatus(req.userId as string);
-    res.json({ ok: true, goals: diffGoals(questsBefore, questsAfter) });
   }),
 );
 
@@ -653,14 +613,25 @@ authRouter.get(
   }),
 );
 
+const PUZZLE_REPORT_MIN_GAP_MS = 4_000;
+const lastPuzzleReport = new Map<string, number>();
+
 authRouter.post(
   '/me/quests/report-puzzle-solved',
   requireAuth,
   asyncHandler(async (req, res) => {
-    await Promise.all([
-      reportPuzzleSolvedForQuests(req.userId as string),
-      reportPuzzleSolvedForAchievements(req.userId as string),
-    ]);
+    // Puzzles are still solved (and reported) on the device. Until the server
+    // knows the puzzle catalog, a minimum gap between reports at least stops a
+    // tight loop from farming quests, achievements and Tour gigs.
+    const userId = req.userId as string;
+    const last = lastPuzzleReport.get(userId) ?? 0;
+    if (Date.now() - last < PUZZLE_REPORT_MIN_GAP_MS) {
+      res.status(429).json({ error: 'too-fast' });
+      return;
+    }
+    lastPuzzleReport.set(userId, Date.now());
+    await Promise.all([reportPuzzleSolvedForQuests(userId), reportPuzzleSolvedForAchievements(userId)]);
+    await applyTour(userId, { puzzle: true });
     res.json({ ok: true });
   }),
 );

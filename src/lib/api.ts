@@ -115,6 +115,7 @@ export interface ProgressionReport {
   equippedTitle: { id: string; name: string } | null;
   rating: null | { before: number; after: number; delta: number; tierBefore: RatingTier; tierAfter: RatingTier };
   goals: GoalProgress[];
+  tour: TourUpdate | null;
 }
 
 export function getUnseenProgression(token: string): Promise<{ events: ProgressionReport[] }> {
@@ -158,25 +159,77 @@ export function getMyProfile(token: string): Promise<{ profile: PlayerProfile }>
   return request('/me/profile', { method: 'GET', token });
 }
 
-// Bot/local matches never reach the server otherwise (pure client-side
-// chess.js) -- this is the one point a reward gets persisted for those
-// modes. Online matches are credited authoritatively server-side instead
-// (see persistMatchResult.ts), so this is never called for mode: 'online'.
-export function claimMatchReward(
-  token: string,
-  outcome: 'win' | 'loss' | 'draw',
-  difficulty?: string,
-): Promise<{
+// ---- Verified bot matches (server/src/db/botSessions.ts) ----
+// Bot games are played on the device, so the server issues each one first and only
+// pays when the finished game's PGN replays as a legal game with a real result.
+export function startBotMatch(token: string, botId: string, color: 'w' | 'b'): Promise<{ ok: true; sessionId: string }> {
+  return request('/me/bot-matches', { method: 'POST', body: { botId, color }, token });
+}
+
+export type BotFinishReason = 'game' | 'resign' | 'timeout' | 'abandon' | 'bot-timeout';
+
+export interface BotFinishResult {
   ok: true;
-  chipsGranted: number;
+  // noResult: the game could not be verified (too short, too fast, illegal PGN, ...) -- nothing was paid.
+  noResult?: boolean;
+  reason?: string;
+  outcome?: 'win' | 'loss' | 'draw';
+  chipsGranted?: number;
+  chips?: number;
+  progression?: ProgressionReport;
+}
+
+export function finishBotMatch(token: string, sessionId: string, pgn: string, endedBy: BotFinishReason): Promise<BotFinishResult> {
+  return request(`/me/bot-matches/${sessionId}/finish`, { method: 'POST', body: { pgn, endedBy }, token });
+}
+
+// ---- The Tour (campaign) ----
+export interface TourGig {
+  id: string;
+  title: string;
+  description: string;
+  kind: string;
+  target: number;
+  progress: number;
+  completed: boolean;
   chips: number;
-  xpGranted: number;
-  xp: number;
-  level: number;
-  // What the Show Report needs: Fame earned (with bonuses/cap), level-ups, rewards, titles.
-  progression: ProgressionReport;
-}> {
-  return request('/me/match-reward', { method: 'POST', body: { outcome, difficulty }, token });
+}
+
+export interface TourChapter {
+  id: string;
+  name: string;
+  venue: string;
+  tagline: string;
+  unlocked: boolean;
+  bossBeaten: boolean;
+  perfect: boolean;
+  gigsDone: number;
+  boss: null | { botId: string; name: string; emoji: string; difficulty: string };
+  encore: null | { progress: number; bots: { id: string; name: string; emoji: string }[] };
+  reward: { chips: number; gems: number; titleName: string };
+  gigs: TourGig[];
+}
+
+export interface TourStatus {
+  chapters: TourChapter[];
+  gigsDone: number;
+  gigsTotal: number;
+}
+
+export function getTour(token: string): Promise<TourStatus> {
+  return request('/me/tour', { method: 'GET', token });
+}
+
+// What the Tour did with ONE finished match (part of the Show Report).
+export interface TourUpdate {
+  gigsCompleted: { id: string; title: string; chapterId: string; chips: number }[];
+  gigsProgressed: { id: string; title: string; before: number; after: number; target: number }[];
+  bossBeaten: null | { chapterId: string; chapterName: string; chips: number; gems: number; titleId: string; titleName: string };
+  perfect: null | { chapterId: string; chapterName: string; gems: number };
+  chapterUnlocked: null | { id: string; name: string };
+  encore: null | { progress: number; total: number };
+  chips: number;
+  gems: number;
 }
 
 export interface DailyBonusStatus {
@@ -281,39 +334,14 @@ export interface QuestStatus {
 // Full quest objects come back from the server directly (unlike daily-bonus/
 // spin's minimal status shape) -- quests.tsx renders straight from this, no
 // local catalog mirror needed.
-export function getQuestsStatus(token: string): Promise<{ quests: QuestStatus[] }> {
-  return request('/me/quests', { method: 'GET', token });
+export function getQuestsStatus(token: string, type: 'daily' | 'weekly' = 'daily'): Promise<{ quests: QuestStatus[] }> {
+  return request(`/me/quests?type=${type}`, { method: 'GET', token });
 }
 
 // Rejects with Error('quest-not-complete') if progress hasn't reached target,
 // or Error('already-claimed') on a repeat call.
 export function claimQuest(token: string, questId: string): Promise<{ ok: true; chipsGranted: number; chips: number }> {
   return request(`/me/quests/${questId}/claim`, { method: 'POST', token });
-}
-
-// Bot/local matches only (see server/src/auth.ts's POST /me/quests/report-match
-// comment) -- never called for mode: 'online', which gets its quest AND
-// achievement progress server-side from persistMatchResult.ts instead. One
-// request now feeds both systems -- the route name stayed quest-specific
-// for backward compatibility, but the payload isn't anymore. capturedCount/
-// opponentCapturedCount are each side's OWN captures for that game
-// (game.capturedByWhite/capturedByBlack picked by playerColor / the other
-// color) -- quests only need capturedCount, achievements need both plus
-// color/moveCount/isBot for the color-mastery/flawless/marathon/quickdraw/
-// bot-sparring achievements.
-export function reportMatchOutcome(
-  token: string,
-  report: {
-    won: boolean;
-    checkmate: boolean;
-    capturedCount: number;
-    opponentCapturedCount: number;
-    color: 'w' | 'b';
-    moveCount: number;
-    isBot: boolean;
-  },
-): Promise<{ ok: true; goals: GoalProgress[] }> {
-  return request('/me/quests/report-match', { method: 'POST', body: report, token });
 }
 
 export function reportPuzzleSolvedForQuests(token: string): Promise<{ ok: true }> {

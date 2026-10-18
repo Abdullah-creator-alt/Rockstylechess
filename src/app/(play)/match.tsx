@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type ImageSourcePropType,
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,21 +35,22 @@ import { getPieceSprites, type PieceSpriteMap } from '@/components/ui/pieceSprit
 import { getBoardTheme } from '@/constants/boardThemes';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
+import { BOT_PORTRAITS, BOT_TIER_LABEL } from '@/constants/bots';
 import { formatChips, getVenue, getVenueIntensity } from '@/constants/venues';
 import { useChessClock, type ClockTimes } from '@/hooks/useChessClock';
 import { useChessGame, type BotDifficulty, type ChessGameResult, type GameMode } from '@/hooks/useChessGame';
 import { useMatchChat } from '@/hooks/useMatchChat';
 import { useMatchReplay } from '@/hooks/useMatchReplay';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
-import { claimMatchReward, reportMatchOutcome } from '@/lib/api';
+import { finishBotMatch, startBotMatch, type BotFinishReason } from '@/lib/api';
 import { getAuthToken } from '@/lib/authStorage';
 import { capturedPoints, materialLead } from '@/lib/pieceValues';
 import { getSocket } from '@/lib/socket';
 import type { EngineMove, StockfishConfig } from '@/lib/botEngine';
 import { setPendingLocalReplay, type LocalMatchReplay } from '@/lib/localMatchReplayStore';
-import { botChipReward, MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
+import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
 import { DURATION_MS, isDuration, isVenueTier } from '@/lib/onlineMatch';
-import { ensureProgressionListener, getReport, putReport, titleName } from '@/lib/progression';
+import { ensureProgressionListener, putReport, titleName } from '@/lib/progression';
 import { ensureWagerListener } from '@/lib/wagerResult';
 
 
@@ -110,20 +112,6 @@ const MIN_BOARD_SIZE = 200;
 // piece dragged inward from the a/h files.
 const BOARD_SIDE_BLEED = 4;
 
-// Strength label shown in a bot's header line (same names as the bots screen).
-const BOT_TIER_LABEL: Record<BotDifficulty, string> = {
-  easy: 'NOVICE',
-  medium: 'AMATEUR',
-  'stockfish-basic': 'SKILLED',
-  'stockfish-lite': 'EXPERT',
-  'stockfish-strong': 'GRANDMASTER',
-};
-
-// Navigation params: bots.tsx passes mode=bot + difficulty (which of the
-// four bot engines to use) + color (the "Play As" pick); matchmaking.tsx
-// passes mode=online + matchId/color/fen/opponentName once the server has
-// paired a real opponent; the PvP/"Iron Duel" flow otherwise defaults to
-// local pass-and-play. `color=b` also flips the board (see flipBoard below).
 export default function MatchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -138,6 +126,7 @@ export default function MatchScreen() {
     opponentCountry,
     opponentUserId,
     botName,
+    botId,
     botEmoji,
     clockW: clockWParam,
     clockB: clockBParam,
@@ -159,6 +148,8 @@ export default function MatchScreen() {
     opponentCountry?: string;
     opponentUserId?: string;
     botName?: string;
+    // Which roster bot this is (the server validates it and issues the match -- see botSessions.ts).
+    botId?: string;
     botEmoji?: string;
     clockW?: string;
     clockB?: string;
@@ -320,50 +311,35 @@ export default function MatchScreen() {
     }
     console.log('Game over', outcome, reason);
 
-    // Online pays the flat online table; bot/local pays by bot strength (server
-    // does the same math in POST /me/match-reward -- this is the display value).
-    let chipsGranted = mode === 'online' ? MATCH_CHIP_REWARDS[outcome] : mode === 'bot' ? botChipReward(difficulty, outcome) : 0;
+    // Online pays the flat online table (display value; the server credits it). Bot
+    // matches pay what the SERVER verifies: it issued the match at the start and
+    // replays the finished PGN before paying anything (db/botSessions.ts), so this
+    // starts at 0 and becomes whatever the server says. Pass-and-play pays nothing.
+    let chipsGranted = mode === 'online' ? MATCH_CHIP_REWARDS[outcome] : 0;
+    let noReward: string | undefined;
     // Bot matches get their Show Report from the server's reply (online ones arrive
     // over the socket as `progression:update`, keyed by the match id).
     const reportKey = `bot-${Date.now()}`;
-    // Pass-and-play ('local') is not a contest against the game: it pays nothing and
-    // counts toward nothing (it used to pay as an easy bot and tick quests).
     if (mode === 'bot') {
-      // Bot/local matches never reach the server otherwise (pure
-      // client-side chess.js) -- this is the only point a reward gets
-      // persisted for those modes. Online matches are already credited
-      // authoritatively server-side, inside persistMatchResult.ts, at the
-      // same moment this fires -- calling the claim endpoint here too
-      // would double-credit.
       const token = await getAuthToken();
-      if (token) {
+      const sessionId = botSessionRef.current;
+      const pgn = game.getReplayData()?.pgn;
+      if (token && sessionId && pgn) {
+        // How the game ended, as the server needs it: a conclusive position settles itself
+        // (the server reads checkmate/draws from the PGN); otherwise only a loss is believed.
+        const endedBy: BotFinishReason =
+          result.type === 'resignation' ? 'resign' : result.type === 'timeout' ? (result.winner === playerColor ? 'bot-timeout' : 'timeout') : 'game';
         try {
-          const claimed = await claimMatchReward(token, outcome, difficulty);
-          chipsGranted = claimed.chipsGranted;
-          putReport(reportKey, claimed.progression);
+          const finished = await finishBotMatch(token, sessionId, pgn, endedBy);
+          if (finished.noResult) noReward = finished.reason ?? 'unverified';
+          if (finished.progression) putReport(reportKey, finished.progression);
+          chipsGranted = finished.chipsGranted ?? 0;
         } catch (error) {
-          console.log('Failed to claim match reward', error);
+          console.log('Failed to finish bot match', error);
+          noReward = 'offline';
         }
-        try {
-          const capturedCount =
-            playerColor === 'w' ? game.capturedByWhite.length : game.capturedByBlack.length;
-          const opponentCapturedCount =
-            playerColor === 'w' ? game.capturedByBlack.length : game.capturedByWhite.length;
-          const reported = await reportMatchOutcome(token, {
-            won: outcome === 'win',
-            checkmate: outcome === 'win' && reason === 'checkmate',
-            capturedCount,
-            opponentCapturedCount,
-            color: playerColor,
-            moveCount: game.moveCount,
-            isBot: mode === 'bot',
-          });
-          // Merge the goals this match moved into the report the result screen shows.
-          const base = getReport(reportKey);
-          if (base) putReport(reportKey, { ...base, goals: reported.goals });
-        } catch (error) {
-          console.log('Failed to report match outcome', error);
-        }
+      } else if (!token) {
+        noReward = 'guest';
       }
     }
 
@@ -409,6 +385,7 @@ export default function MatchScreen() {
           reason,
           chipsGranted: String(chipsGranted),
           matchMode: mode,
+          ...(noReward ? { noReward } : {}),
           // Where the Show Report comes from: the online match id (socket push) or a bot report key.
           ...(mode === 'online' && matchId ? { reportKey: matchId } : mode === 'bot' ? { reportKey } : {}),
           venueTier,
@@ -458,6 +435,27 @@ export default function MatchScreen() {
   // both setPlyIndex calls into one render, so there's no visible flash of
   // move 0.
   const wasPeekActiveRef = useRef(peekActive);
+  // Bot matches are issued by the server first (so a win can be verified later).
+  // Guests, or a failed call, simply play unrewarded.
+  const botSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (mode !== 'bot' || !botId) return;
+    let cancelled = false;
+    (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      try {
+        const { sessionId } = await startBotMatch(token, botId, playerColor);
+        if (!cancelled) botSessionRef.current = sessionId;
+      } catch (error) {
+        console.log('Failed to start bot match', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, botId, playerColor]);
+
   // Make sure the shared wager:settled listener is attached for the whole online
   // match, so the settlement is cached even if it lands after we navigate away.
   useEffect(() => {
@@ -660,6 +658,7 @@ export default function MatchScreen() {
           name={opponentDisplayName}
           avatarId={opponentAvatarKey}
           avatarEmoji={opponentAvatarEmoji}
+          avatarSource={mode === 'bot' && botId ? BOT_PORTRAITS[botId] : undefined}
           countryCode={mode === 'online' ? (opponentCountry ?? null) : null}
           rank={opponentRank}
           getRemaining={clock.getRemaining}
@@ -818,6 +817,7 @@ const PlayerRow = memo(function PlayerRow({
   name,
   avatarId,
   avatarEmoji,
+  avatarSource,
   countryCode = null,
   rank,
   getRemaining,
@@ -832,6 +832,8 @@ const PlayerRow = memo(function PlayerRow({
   name: string;
   avatarId?: string | null;
   avatarEmoji?: string;
+  /** A bundled portrait (a roster bot's painted face); wins over the emoji. */
+  avatarSource?: ImageSourcePropType;
   countryCode?: string | null;
   rank: string;
   getRemaining: (color: 'w' | 'b') => number;
@@ -856,7 +858,7 @@ const PlayerRow = memo(function PlayerRow({
     // whether or not anything has been captured yet.
     <View className="flex-row items-start justify-between gap-sm px-sm py-xs">
       <View className="flex-shrink flex-row items-start gap-sm">
-        <PlayerAvatar avatarId={avatarId} emoji={avatarEmoji} size="small" />
+        <PlayerAvatar avatarId={avatarId} emoji={avatarEmoji} source={avatarSource} size="small" />
         <View className="flex-shrink">
           <View className="flex-row items-center gap-1">
             <CountryFlag code={countryCode} size={12} />

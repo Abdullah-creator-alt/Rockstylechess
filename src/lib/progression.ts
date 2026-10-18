@@ -20,12 +20,14 @@ const celebrationListeners = new Set<() => void>();
 let attached = false;
 
 export const LEVEL_TITLES = ECONOMY.levels.titles;
+// Chapter titles (earned by beating a Tour boss) live in the Tour catalog.
+const CHAPTER_TITLES = ECONOMY.tour.chapters.map((c) => c.title);
 export function titleName(id: string | null | undefined): string | null {
-  return LEVEL_TITLES.find((t) => t.id === id)?.name ?? null;
+  return LEVEL_TITLES.find((t) => t.id === id)?.name ?? CHAPTER_TITLES.find((t) => t.id === id)?.name ?? null;
 }
 
 function isCelebratory(report: ProgressionReport): boolean {
-  return report.levelAfter > report.levelBefore || report.titlesUnlocked.length > 0;
+  return report.levelAfter > report.levelBefore || report.titlesUnlocked.length > 0 || !!report.tour?.bossBeaten;
 }
 
 function enqueueCelebration(report: ProgressionReport): void {

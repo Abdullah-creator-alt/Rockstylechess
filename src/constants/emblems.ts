@@ -32,3 +32,27 @@ export function tierForRating(rating: number): RatingTier {
   if (rating >= 1400) return 'challenger';
   return 'rookie';
 }
+
+// Tour chapter badges (assets/progression/chapters), keyed by chapter id (= venue id).
+export const CHAPTER_BADGES: Record<string, ImageSourcePropType> = {
+  garage: require('../../assets/progression/chapters/chapter-garage.png'),
+  club: require('../../assets/progression/chapters/chapter-club.png'),
+  arena: require('../../assets/progression/chapters/chapter-arena.png'),
+  stadium: require('../../assets/progression/chapters/chapter-stadium.png'),
+  mainstage: require('../../assets/progression/chapters/chapter-mainstage.png'),
+  'world-tour': require('../../assets/progression/chapters/chapter-world-tour.png'),
+};
+
+// The Tour map (768x1376 painted road from the Garage up to the World Tour stage) and
+// where each chapter's stop sits on it, as fractions of the image (measured from the
+// six marker discs painted into the art).
+export const TOUR_MAP = require('../../assets/progression/map/tour-map.jpg') as ImageSourcePropType;
+export const TOUR_MAP_ASPECT = 768 / 1376;
+export const TOUR_MAP_NODES: Record<string, { x: number; y: number }> = {
+  garage: { x: 0.547, y: 0.927 },
+  club: { x: 0.299, y: 0.657 },
+  arena: { x: 0.705, y: 0.52 },
+  stadium: { x: 0.335, y: 0.414 },
+  mainstage: { x: 0.633, y: 0.336 },
+  'world-tour': { x: 0.399, y: 0.294 },
+};

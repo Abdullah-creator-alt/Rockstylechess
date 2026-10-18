@@ -4,9 +4,8 @@ export type MatchOutcome = 'win' | 'loss' | 'draw';
 
 // Mirrors src/lib/matchRewards.ts on the client (used there for the
 // result-placeholder.tsx count-up display). This copy is the authoritative
-// one -- both persistMatchResult.ts (online matches) and POST
-// /me/match-reward (bot/local matches) credit chips and xp using these
-// amounts, never a client-supplied number. The numbers themselves live in
+// one -- persistMatchResult.ts (online matches) and db/botSessions.ts (verified
+// bot matches) credit chips using these amounts, never a client-supplied number. The numbers themselves live in
 // economy.config.json.
 export const MATCH_CHIP_REWARDS: Record<MatchOutcome, number> = { ...ECONOMY.matchRewards.online };
 

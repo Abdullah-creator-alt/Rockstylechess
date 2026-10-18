@@ -3,9 +3,11 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { ECONOMY, LEVEL_REWARDS, type BotRewardDifficulty } from '../economy.generated.js';
 import { levelForXp, getLevelProgress } from '../leveling.js';
 import type { MatchOutcome } from '../matchRewards.js';
+import { TOUR_TITLES } from '../tour.js';
 import { ratingTier, type RatingTier } from '../tier.js';
 import { db } from './client.js';
 import type { QuestStatusEntry } from './quests.js';
+import type { TourUpdate } from './tour.js';
 import { dailyProgress, levelRewardsGranted, playerProfiles, progressionEvents, userTitles } from './schema/index.js';
 import { utcDayStart } from './utcDay.js';
 
@@ -25,7 +27,11 @@ export interface TitleInfo {
 export const TITLES: TitleInfo[] = [...ECONOMY.levels.titles].sort((a, b) => a.minLevel - b.minLevel);
 
 export function titleById(id: string | null | undefined): TitleInfo | null {
-  return TITLES.find((t) => t.id === id) ?? null;
+  const level = TITLES.find((t) => t.id === id);
+  if (level) return level;
+  // Chapter titles (earned by beating a Tour boss) have no level requirement.
+  const chapterTitle = TOUR_TITLES.find((t) => t.id === id);
+  return chapterTitle ? { id: chapterTitle.id, name: chapterTitle.name, minLevel: Number.POSITIVE_INFINITY } : null;
 }
 
 export interface GoalProgress {
@@ -65,6 +71,7 @@ export interface FameInput {
   matchId?: string;
   rating?: { before: number; after: number };
   goals?: GoalProgress[];
+  tour?: TourUpdate | null; // what the Tour did with this match (already paid by db/tour.ts)
 }
 
 export interface ProgressionSummary {
@@ -91,6 +98,7 @@ export interface ProgressionSummary {
   equippedTitle: { id: string; name: string } | null;
   rating: null | { before: number; after: number; delta: number; tierBefore: RatingTier; tierAfter: RatingTier };
   goals: GoalProgress[];
+  tour: TourUpdate | null;
 }
 
 function hotStreakMultiplier(streak: number): number {
@@ -188,7 +196,10 @@ export async function grantFame(userId: string, input: FameInput, now = new Date
       if (inserted.length > 0) newTitles.push(title);
     }
     const highest = newTitles.length ? newTitles[newTitles.length - 1] : null;
-    const equippedTitleId = highest ? highest.id : profile.equippedTitleId;
+    // A newly earned level title is worn when a level was actually gained (or nothing is
+    // worn yet). A first-grant BACKFILL of old titles must not displace what the player
+    // already wears -- e.g. a chapter title the Tour just gave them in the same match.
+    const equippedTitleId = highest && (levelAfter > levelBefore || !profile.equippedTitleId) ? highest.id : profile.equippedTitleId;
 
     const [updated] = await tx
       .update(playerProfiles)
@@ -229,9 +240,11 @@ export async function grantFame(userId: string, input: FameInput, now = new Date
           }
         : null,
       goals: input.goals ?? [],
+      tour: input.tour ?? null,
     };
 
-    const celebratory = levelAfter > levelBefore || newTitles.length > 0;
+    // A beaten boss (chapter complete) is a big moment too.
+    const celebratory = levelAfter > levelBefore || newTitles.length > 0 || !!input.tour?.bossBeaten;
     const [event] = await tx
       .insert(progressionEvents)
       .values({

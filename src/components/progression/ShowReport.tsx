@@ -65,6 +65,49 @@ function FameBar({ report }: { report: ProgressionReport }) {
   );
 }
 
+function TourLines({ tour }: { tour: NonNullable<ProgressionReport['tour']> }) {
+  return (
+    <View style={{ marginTop: 6, gap: 4 }}>
+      {tour.gigsCompleted.map((gig) => (
+        <View key={gig.id} style={[styles.row]}>
+          <View style={[styles.rowLeft, { flexShrink: 1 }]}>
+            <AppIcon name="flag" size={14} color={Colors.gold} />
+            <Text style={[styles.goal, { color: Colors.gold }]} numberOfLines={1}>
+              GIG DONE · {gig.title}
+            </Text>
+          </View>
+          <Text style={[styles.meta, { color: Colors.gold }]}>+{gig.chips}</Text>
+        </View>
+      ))}
+      {tour.gigsProgressed.slice(0, 2).map((gig) => (
+        <View key={gig.id} style={styles.row}>
+          <View style={[styles.rowLeft, { flexShrink: 1 }]}>
+            <AppIcon name="flag" size={14} color={Colors.textMuted} />
+            <Text style={styles.goal} numberOfLines={1}>
+              {gig.title}
+            </Text>
+          </View>
+          <Text style={styles.meta}>
+            {gig.after}/{gig.target}
+          </Text>
+        </View>
+      ))}
+      {tour.encore ? (
+        <Text style={[styles.tierUp, { color: Colors.ember }]}>
+          ENCORE {tour.encore.progress}/{tour.encore.total}
+        </Text>
+      ) : null}
+      {tour.bossBeaten ? (
+        <Text style={[styles.tierUp, { color: Colors.gold }]}>BOSS DEFEATED · {tour.bossBeaten.chapterName.toUpperCase()} COMPLETE</Text>
+      ) : null}
+      {tour.chapterUnlocked ? (
+        <Text style={[styles.tierUp, { color: Colors.cyan }]}>NEXT CHAPTER UNLOCKED · {tour.chapterUnlocked.name.toUpperCase()}</Text>
+      ) : null}
+      {tour.perfect ? <Text style={[styles.tierUp, { color: Colors.gold }]}>★ PERFECT {tour.perfect.chapterName.toUpperCase()} · +{tour.perfect.gems} GEMS</Text> : null}
+    </View>
+  );
+}
+
 function BonusPill({ label, color }: { label: string; color: string }) {
   return (
     <View style={[styles.pill, { backgroundColor: withOpacity(color, 0.14), borderColor: withOpacity(color, 0.5) }]}>
@@ -169,6 +212,9 @@ export function ShowReport({ report, timedOut }: ShowReportProps) {
           </Text>
         </View>
       ))}
+
+      {/* The Tour: gigs this match completed or moved, boss and chapter news */}
+      {report.tour ? <TourLines tour={report.tour} /> : null}
 
       {/* What to do next */}
       <Text style={styles.next}>

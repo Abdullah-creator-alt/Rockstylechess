@@ -16,6 +16,7 @@ const cfg = JSON.parse(readFileSync(join(ROOT, 'economy.config.json'), 'utf8'));
 const { _readme, ...config } = cfg;
 delete config.incomeModel._note;
 delete config.fame._note;
+delete config.tour._note;
 
 const price = (tier) => {
   if (tier === null) return { gems: 0, chips: 0 };

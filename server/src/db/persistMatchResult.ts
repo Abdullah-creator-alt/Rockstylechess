@@ -7,6 +7,8 @@ import { reportMatchForAchievements } from './achievements.js';
 import { db } from './client.js';
 import { expectedScore, updatedRating } from './elo.js';
 import { insertNotification } from './notifications.js';
+import { analyzeGame } from '../matchAnalysis.js';
+import { applyTour } from './tour.js';
 import { diffGoals, grantFame } from './progression.js';
 import { getQuestsStatus, reportMatchForQuests } from './quests.js';
 import { matchParticipants, matches, playerProfiles } from './schema/index.js';
@@ -116,8 +118,8 @@ export async function persistMatchResult(
   // db/progression.ts); a failure there must never lose the match record above.
   const [questsBeforeW, questsBeforeB] = await Promise.all([getQuestsStatus(white.userId), getQuestsStatus(black.userId)]);
   await Promise.all([
-    reportMatchForQuests(white.userId, { won: whiteScore === 1, checkmate: whiteScore === 1 && resultType === 'checkmate', capturedCount: whiteCaptures }),
-    reportMatchForQuests(black.userId, { won: blackScore === 1, checkmate: blackScore === 1 && resultType === 'checkmate', capturedCount: blackCaptures }),
+    reportMatchForQuests(white.userId, { won: whiteScore === 1, checkmate: whiteScore === 1 && resultType === 'checkmate', capturedCount: whiteCaptures, onlineGame: true }),
+    reportMatchForQuests(black.userId, { won: blackScore === 1, checkmate: blackScore === 1 && resultType === 'checkmate', capturedCount: blackCaptures, onlineGame: true }),
   ]);
   const [questsAfterW, questsAfterB] = await Promise.all([getQuestsStatus(white.userId), getQuestsStatus(black.userId)]);
   await Promise.all(
@@ -126,6 +128,25 @@ export async function persistMatchResult(
       { userId: black.userId, score: blackScore, stats: blackStats, before: blackProfile.rating, after: blackRatingAfter, goals: diffGoals(questsBeforeB, questsAfterB) },
     ].map(async (p) => {
       try {
+        // The Tour reads the same authoritative PGN (never a client claim).
+        const myColor = p.userId === white.userId ? 'w' : 'b';
+        const facts = analyzeGame(match.chess.pgn(), myColor);
+        const tour = facts
+          ? await applyTour(p.userId, {
+              event: {
+                source: 'online',
+                outcome: outcomeFor(p.score),
+                color: myColor,
+                moveCount: facts.moveCount,
+                myCaptures: facts.myCaptures,
+                queenLost: facts.queenLost,
+                checkmate: facts.checkmate,
+                mateByPiece: facts.mateByPiece,
+                wagered: opts.wagered === true,
+                rating: p.after,
+              },
+            })
+          : null;
         const summary = await grantFame(p.userId, {
           source: 'online',
           outcome: outcomeFor(p.score),
@@ -133,6 +154,7 @@ export async function persistMatchResult(
           matchId: match.id,
           rating: { before: p.before, after: p.after },
           goals: p.goals,
+          tour,
         });
         emitToUser(p.userId, 'progression:update', summary);
       } catch (error) {

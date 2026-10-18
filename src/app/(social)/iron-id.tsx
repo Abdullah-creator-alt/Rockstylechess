@@ -194,6 +194,25 @@ export default function IronIdScreen() {
             </View>
           </RockCard>
 
+          <Pressable onPress={() => router.push('/tour')}>
+            <RockCard variant="surface" glowColor={Colors.gold} contentPadding={12}>
+              <View className="flex-row items-center gap-md">
+                <View className="items-center justify-center rounded-md" style={{ width: 40, height: 40, backgroundColor: withOpacity(Colors.gold, 0.12), borderWidth: 1, borderColor: withOpacity(Colors.gold, 0.4) }}>
+                  <AppIcon name="emoji_events" size={22} color={Colors.gold} />
+                </View>
+                <View className="flex-1">
+                  <Text className="font-heading-md uppercase text-text-primary" style={{ fontSize: 14, letterSpacing: 0.5 }}>
+                    The Tour
+                  </Text>
+                  <Text className="font-body-sm text-text-muted" style={{ fontSize: 12 }}>
+                    Gigs, boss fights and the road to the World Tour
+                  </Text>
+                </View>
+                <AppIcon name="chevron_right" size={20} color={Colors.textMuted} />
+              </View>
+            </RockCard>
+          </Pressable>
+
           {profile.friendCode ? (
             <RockCard variant="surface" contentPadding={12}>
               <View className="flex-row items-center justify-between">
