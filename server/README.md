@@ -115,7 +115,7 @@ Rules: **1 gem = 40 chips** everywhere. One tier ladder for all cosmetics (Commo
 900 / 1,350 / 1,800 gems only + rating gate). No chip pack may give more chips per dollar
 than gems give chip-equivalent. Online win 200 / draw 40 / loss 0; bot wins pay by
 difficulty (20 / 40 / 80 / 120 / 200; the server knows the difficulty from the bot session);
-welcome bonus 4,000 (one Common); analysis 200 chips or 5 gems. After a price change
+welcome bonus 4,000 (one Common); analysis 200 chips or 5 gems (or 10 at once, see "Review Packs" below). After a price change
 re-seed: `seed:cosmetics`, `seed:spin`, `seed:quests` (`:remote` for Neon). Venue buy-ins,
 prizes and rating gates in the config are REAL since the wagers phase (next section).
 Bot payouts are
@@ -175,9 +175,82 @@ in a loop. It cannot prove the opponent was really the engine, so bot rewards st
 and rating/wagers stay online-only. Puzzle reports (`/me/quests/report-puzzle-solved`)
 are still client-reported (minimum 4 s between reports).
 
+**Backstage: Crowd Energy and the Roadie Kit** (`economy.config.json` -> `tour.backstage`;
+`db/tour.ts`: `recordBossLoss`, `claimBossKit`, `refundBossKit`). The help for a player who is
+stuck on a chapter boss, built so it cannot be a shortcut and doubles as a chip sink.
+- *Crowd Energy* grows with every **real** loss to a chapter's boss (`tour_boss_attempts.losses`,
+  counted in `applyTour`; a loss only counts past `minAttemptPlies` = 20 plies, so resigning early
+  earns nothing). It is free and cannot be bought.
+- After `kitUnlockLosses` (2) real losses the **Roadie Kit** can be bought: price =
+  `kitPriceFraction` (12%) of that boss's chip reward, to the nearest 10 (60 / 120 / 180 / 300 /
+  480 / 960). Every `crowdFreeEvery` (4) losses the crowd hands over one **free** kit, so a
+  broke-but-persistent player is never locked out.
+- The kit = **Take Two** (rewind your last turn; the clock keeps running) + **Roadie's Tip**
+  (selects the piece worth moving, not where; a medium-strength search, not the best move).
+  Both live on the device (`useChessGame` `takeBack` / `suggestTip`, buttons in `match.tsx`); the
+  server only sells the kit and records it on the bot session (`bot_sessions.kit_paid`).
+- It buys help, never the win: the game must still be played and is verified like any other
+  (`finishBotSession`); a kit game **advances no gigs** (`assisted` on the Tour event); a kit
+  cannot be bought once the boss is beaten (so it can't be used to farm Fame/chips); a kit game
+  that can't be verified (too short, illegal PGN) or whose session is evicted/expired is
+  **refunded**.
+- Purchase: `POST /me/bot-matches {botId, color, kit: true}` takes the chips (or the free kit)
+  and opens the session in ONE transaction (`startBotSession` -> `claimBossKit`); it answers
+  `kit-locked` / `not-a-boss` / `insufficient-chips` otherwise. `GET /me/tour` carries
+  `chapters[].backstage` (losses, kitOpen, price, freeKit, ...) and the Show Report carries
+  `tour.bossAttempt` after a real boss loss. Migration `0017`.
+- Tuning is in `check-economy.mjs` (kit is 5-15% of its boss reward, opens before the free one,
+  small contents); re-run `gen-economy.mjs` + `check-economy.mjs` after editing the config.
+
 **Weekly quests ("Tour Dates")**: three quests (win 10, play 5 online, solve 20 puzzles)
 that unlock at level 5 and reset Monday 00:00 UTC (`questPeriodStart` in `db/quests.ts`);
 `GET /me/quests?type=weekly`. Seed with `npm run seed:quests`. Migration `0015`.
+
+## Backstage Gear (consumables)
+
+Chip sinks that cost nothing in fairness: none of it touches chess strength or rating. Rules and
+numbers are in `economy.config.json` -> `gear`; `src/gear.ts` is the pure catalog + Safety Net
+terms, `src/db/boosts.ts` the bag (`player_items`: `quantity` in the bag, `charges` left on the
+ONE activated copy). Routes: `GET /me/gear`, `POST /me/gear/:itemId/buy`,
+`POST /me/gear/:itemId/activate`. Migration `0018`.
+
+- **Amp Boost** (150 chips, bag cap 5): activate it and the next 3 Fame-paying wins add
+  +50% of BASE Fame. The bonus is *added to* Opening Night / Hot Streak (never multiplied by them),
+  a charge is spent only by a win that actually paid Fame (a loss, or a win with 0 Fame left under
+  the daily bot cap, spends nothing), and it is spent inside `grantFame`'s transaction by a
+  conditional `charges > 0` UPDATE so two matches ending together can't share a charge. It is
+  Fame (level progress) only; `check-economy.mjs` asserts the price stays above the most
+  chips-equivalent its extra Fame can ever return in level rewards.
+- **Lucky Pick** (100 chips): armed, it forgives ONE loss on a Hot Streak of 3+ (`updateProfileStats`
+  in `persistMatchResult.ts`, one transaction, spent only when it saves something). `winStreak`
+  (Hot Streak) is kept; `win_run` is the honest consecutive-win count and is what the "N in a row"
+  achievements read, so a Lucky Pick can't be used to farm them.
+- **Safety Net** (not stocked; an add-on at a wagered venue): `queue:join {insured: true}` adds a
+  premium (25% of the buy-in) to that seat's escrow debit, in the same transaction, and a LOSS
+  pays 35% of the buy-in back (`wagers.white_/black_premium` + `_cover`, fixed at escrow so a
+  config change can't re-price a held wager). A win or a real draw keeps the premium; a voided
+  match (left in the first 3 moves) returns it. It is the one place `wagers.ts` pays chips that
+  were not in the pot, and is a net sink for any player below a 71% loss rate; a pair of colluding
+  accounts always loses (2 x rake + premium > cover). Both are asserted by `check-economy.mjs`.
+  An insured player needs buy-in + premium to enter; `queue:error insufficient-chips` carries that
+  total. `wager:settled` carries `insurance: {premium, refund} | null`.
+- Show Report: `fame.ampBonus / ampWinsLeft / luckyPickSaved`. App: the Shop's **Gear** tab
+  (`components/shop/GearPanel.tsx`) and the Safety Net card + active-gear pills on Match Setup.
+
+## Review Packs (Game Analysis in bulk)
+
+A single Game Review is still 200 chips or 5 gems (`POST /me/analysis/charge {currency}`). A
+**Review Pack** is 10 reviews at once for 1,600 chips or 40 gems (20% off, 160 / 4 each;
+`economy.config.json` -> `analysis.pack`), `POST /me/analysis/packs/buy {currency}`. The reviews are
+stored as `player_profiles.analysis_credits` (migration `0019`, returned with `GET /me/profile`) and the
+Analyze Game button spends one with `currency: 'credit'` (price 0) before any chips/gems; they never
+expire, never convert back, and are capped at `maxCredits` (30) so a pack can't be hoarded without
+limit. `db/analysisCharge.ts` does both in single conditional UPDATEs (the balance guard AND the cap
+guard are in the WHERE), so a double-tap or two devices can neither overspend nor pass the cap, and a
+refused purchase (`insufficient-funds` / `stock-full`) charges nothing. `check-economy.mjs` asserts the
+discount is real but modest (10-25%), the chip and gem prices keep the 40:1 rate, and the cap leaves
+room for more than one pack. App: the Review Pack card on the Shop's Gear tab, and the Analyze Game
+prompt on the result screen (uses a stored review first; offers the pack when the player can afford it).
 
 ## Festival Run (the repeatable chip sink)
 

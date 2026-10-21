@@ -8,7 +8,7 @@ import { BOARD_THEMES } from './boardThemes.js';
 import { isValidCountryCode } from './countryCodes.js';
 import { ADS_REQUIRE_SSV, AD_PLACEMENTS } from './adRewards.js';
 import { verifyAdMobSsv } from './adsSsv.js';
-import { chargeForAnalysis } from './db/analysisCharge.js';
+import { buyAnalysisPack, chargeForAnalysis } from './db/analysisCharge.js';
 import { getAdStatus, recordVerifiedAdView, redeemAdReward } from './db/adEvents.js';
 import {
   claimAchievement,
@@ -47,6 +47,7 @@ import { PIECE_SETS } from './pieceSets.js';
 import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
 import { ENDED_BY, finishBotSession, startBotSession } from './db/botSessions.js';
+import { activateGear, buyGear, getGear } from './db/boosts.js';
 import { applyTour, getTour } from './db/tour.js';
 import { getOwnedTitleIds, getUnseenCelebrations, grantFame, markProgressionSeen, TITLES } from './db/progression.js';
 import { claimQuest, getQuestsStatus, reportPuzzleSolvedForQuests } from './db/quests.js';
@@ -340,8 +341,9 @@ authRouter.post(
   '/me/analysis/charge',
   requireAuth,
   asyncHandler(async (req, res) => {
+    // 'credit' spends one review stored from a Review Pack instead of chips/gems.
     const currency = req.body?.currency;
-    if (currency !== 'chips' && currency !== 'gems') {
+    if (currency !== 'chips' && currency !== 'gems' && currency !== 'credit') {
       res.status(400).json({ error: 'invalid-currency' });
       return;
     }
@@ -355,7 +357,35 @@ authRouter.post(
       });
       return;
     }
-    res.json({ ok: true, currency: result.currency, price: result.price, chips: result.chips, gems: result.gems });
+    res.json({ ok: true, currency: result.currency, price: result.price, chips: result.chips, gems: result.gems, credits: result.credits });
+  }),
+);
+
+// Review Pack: ten Game Reviews at once for less than ten singles, paid in chips or gems and
+// stored as credits (see db/analysisCharge.ts: buyAnalysisPack).
+authRouter.post(
+  '/me/analysis/packs/buy',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const currency = req.body?.currency;
+    if (currency !== 'chips' && currency !== 'gems') {
+      res.status(400).json({ error: 'invalid-currency' });
+      return;
+    }
+    const result = await buyAnalysisPack(req.userId as string, currency);
+    if (result.status === 'ok') {
+      res.json({ ok: true, currency: result.currency, price: result.price, reviews: result.reviews, chips: result.chips, gems: result.gems, credits: result.credits });
+      return;
+    }
+    if (result.status === 'insufficient-funds') {
+      res.status(400).json({ error: 'insufficient-funds', currency: result.currency, price: result.price, balance: result.balance });
+      return;
+    }
+    if (result.status === 'stock-full') {
+      res.status(400).json({ error: 'stock-full', credits: result.credits, maxCredits: result.maxCredits });
+      return;
+    }
+    res.status(404).json({ error: 'profile-not-found' });
   }),
 );
 
@@ -367,9 +397,9 @@ authRouter.post(
   '/me/bot-matches',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const result = await startBotSession(req.userId as string, req.body?.botId, req.body?.color);
+    const result = await startBotSession(req.userId as string, req.body?.botId, req.body?.color, req.body?.kit === true);
     if (result.status === 'ok') {
-      res.json({ ok: true, sessionId: result.sessionId });
+      res.json({ ok: true, sessionId: result.sessionId, kit: result.kit });
       return;
     }
     res.status(result.status === 'profile-not-found' ? 404 : 400).json({ error: result.status });
@@ -471,6 +501,41 @@ authRouter.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     res.json(await getTour(req.userId as string));
+  }),
+);
+
+// Backstage Gear (consumables): the bag, buying with chips, activating one copy. See db/boosts.ts.
+authRouter.get(
+  '/me/gear',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json(await getGear(req.userId as string));
+  }),
+);
+
+authRouter.post(
+  '/me/gear/:itemId/buy',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await buyGear(req.userId as string, req.params.itemId);
+    if (result.status === 'ok') {
+      res.json({ ok: true, chips: result.chips, quantity: result.quantity });
+      return;
+    }
+    res.status(result.status === 'profile-not-found' ? 404 : 400).json({ error: result.status });
+  }),
+);
+
+authRouter.post(
+  '/me/gear/:itemId/activate',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await activateGear(req.userId as string, req.params.itemId);
+    if (result.status === 'ok') {
+      res.json({ ok: true, quantity: result.quantity, activeCharges: result.activeCharges });
+      return;
+    }
+    res.status(400).json({ error: result.status });
   }),
 );
 

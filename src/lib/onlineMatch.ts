@@ -77,6 +77,8 @@ export interface WagerSettledPayload {
   net: number; // payout - buyIn: +800, -1000, or 0
   chipsAfter: number;
   refunded: boolean;
+  // Safety Net: what THIS player paid for it and what it paid back (a loss only). null = none bought.
+  insurance: null | { premium: number; refund: number };
 }
 
 export interface MoveAppliedPayload {

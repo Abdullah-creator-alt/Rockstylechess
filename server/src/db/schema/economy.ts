@@ -126,10 +126,35 @@ export const wagers = pgTable(
     payout: bigint('payout', { mode: 'number' }),
     rake: bigint('rake', { mode: 'number' }),
     plies: integer('plies'),
+    // Safety Net (db/wagers.ts): per seat, the premium paid at escrow on top of the buy-in and
+    // the cover a LOSS pays back. 0 = not insured. Fixed at escrow time, so a later config
+    // change cannot re-price a wager already held.
+    whitePremium: bigint('white_premium', { mode: 'number' }).notNull().default(0),
+    blackPremium: bigint('black_premium', { mode: 'number' }).notNull().default(0),
+    whiteCover: bigint('white_cover', { mode: 'number' }).notNull().default(0),
+    blackCover: bigint('black_cover', { mode: 'number' }).notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     settledAt: timestamp('settled_at', { withTimezone: true }),
   },
   (t) => [index('wagers_status_idx').on(t.status, t.createdAt)],
+);
+
+// Backstage Gear inventory (db/boosts.ts; items in economy.config.json -> gear). One row per
+// (player, item): `quantity` is stock in the bag, `charges` is what is left on the copy the player
+// has ACTIVATED (Amp Boost: wins left; Lucky Pick: 1 while armed). Both only change inside
+// db/boosts.ts or the one transaction that spends a charge.
+export const playerItems = pgTable(
+  'player_items',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
+    quantity: integer('quantity').notNull().default(0),
+    charges: integer('charges').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.itemId] })],
 );
 
 // Festival Run: a paid ladder of server-hosted bot sets (see db/festival.ts). One row

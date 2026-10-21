@@ -2,6 +2,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 
 import { ECONOMY, LEVEL_REWARDS, type BotRewardDifficulty } from '../economy.generated.js';
 import { levelForXp, getLevelProgress } from '../leveling.js';
+import { spendAmpCharge } from './boosts.js';
 import type { MatchOutcome } from '../matchRewards.js';
 import { FESTIVAL_TITLES } from '../festival.js';
 import { TOUR_TITLES } from '../tour.js';
@@ -73,6 +74,8 @@ export interface FameInput {
   rating?: { before: number; after: number };
   goals?: GoalProgress[];
   tour?: TourUpdate | null; // what the Tour did with this match (already paid by db/tour.ts)
+  // online only: a Lucky Pick just saved this streak from the loss (db/persistMatchResult.ts)
+  luckyPickSaved?: number;
 }
 
 export interface ProgressionSummary {
@@ -88,6 +91,9 @@ export interface ProgressionSummary {
     streak: number; // current win streak (online), else 0
     capped: boolean; // bot Fame was cut by the daily cap
     botFameLeftToday: number | null; // bot only
+    ampBonus: number; // Amp Boost: added to the multiplier (0 = none was active)
+    ampWinsLeft: number; // wins left on the active Amp Boost after this one
+    luckyPickSaved: number; // the win streak a Lucky Pick just saved from a loss (0 = none)
   };
   xpBefore: number;
   xpAfter: number;
@@ -153,7 +159,11 @@ export async function grantFame(userId: string, input: FameInput, now = new Date
     const openingNight = isWin && !daily.firstWinDone && base > 0;
     const streak = input.source === 'online' ? (input.winStreak ?? 0) : 0;
     const hotStreak = isWin && input.source === 'online' ? hotStreakMultiplier(streak) : 1;
-    const gained = Math.round(base * (openingNight ? ECONOMY.fame.openingNight : 1) * hotStreak);
+    // Amp Boost (db/boosts.ts): a Fame-paying win spends one charge and adds a flat share of BASE
+    // Fame on top of Opening Night / Hot Streak (added, not multiplied, so it is never wasted and
+    // never compounds). The daily bot cap above already limited `base`, so it still holds.
+    const amp = isWin && base > 0 ? await spendAmpCharge(tx, userId, now) : null;
+    const gained = Math.round(base * ((openingNight ? ECONOMY.fame.openingNight : 1) * hotStreak + (amp?.bonus ?? 0)));
 
     await tx
       .update(dailyProgress)
@@ -220,7 +230,18 @@ export async function grantFame(userId: string, input: FameInput, now = new Date
       source: input.source,
       matchId: input.matchId ?? null,
       outcome: input.outcome,
-      fame: { base, gained, openingNight, hotStreak, streak, capped, botFameLeftToday },
+      fame: {
+        base,
+        gained,
+        openingNight,
+        hotStreak,
+        streak,
+        capped,
+        botFameLeftToday,
+        ampBonus: amp?.bonus ?? 0,
+        ampWinsLeft: amp?.chargesLeft ?? 0,
+        luckyPickSaved: input.luckyPickSaved ?? 0,
+      },
       xpBefore,
       xpAfter: updated.xp,
       levelBefore,

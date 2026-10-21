@@ -72,11 +72,21 @@ export function verifyPurchase(
 // Premium action: charges chips or gems every time Game Analysis is used
 // (no persistent "unlocked" record). Rejects with Error('insufficient-funds')
 // -- callers catch that specifically, same pattern as unlockCosmetic.
+// currency 'credit' spends one review stored from a Review Pack (price 0).
 export function chargeForAnalysis(
   token: string,
-  currency: 'chips' | 'gems',
-): Promise<{ ok: true; currency: 'chips' | 'gems'; price: number; chips: number; gems: number }> {
+  currency: 'chips' | 'gems' | 'credit',
+): Promise<{ ok: true; currency: 'chips' | 'gems' | 'credit'; price: number; chips: number; gems: number; credits: number }> {
   return request('/me/analysis/charge', { method: 'POST', body: { currency }, token });
+}
+
+// Review Pack: ten reviews at once for less than ten singles, paid in chips or gems and stored as
+// credits. Rejects with Error('insufficient-funds' | 'stock-full').
+export function buyAnalysisPack(
+  token: string,
+  currency: 'chips' | 'gems',
+): Promise<{ ok: true; currency: 'chips' | 'gems'; price: number; reviews: number; chips: number; gems: number; credits: number }> {
+  return request('/me/analysis/packs/buy', { method: 'POST', body: { currency }, token });
 }
 
 // ---- Progression (Fame / level / titles) -- mirrors server/src/db/progression.ts ----
@@ -104,6 +114,11 @@ export interface ProgressionReport {
     streak: number;
     capped: boolean;
     botFameLeftToday: number | null;
+    // Backstage Gear: Amp Boost bonus applied to this win (0 = none) and wins left on it, and the
+    // win streak a Lucky Pick just saved from this loss (0 = none).
+    ampBonus: number;
+    ampWinsLeft: number;
+    luckyPickSaved: number;
   };
   xpBefore: number;
   xpAfter: number;
@@ -148,6 +163,8 @@ export interface PlayerProfile {
   equippedPieceId: string | null;
   equippedAvatarCosmeticId: string | null;
   ownedCosmeticIds: string[];
+  // Game Reviews bought in a Review Pack and not yet spent (Analyze Game spends these first).
+  analysisCredits: number;
   // True once the player bought Remove Ads (server-set only, never writable
   // through PATCH /me/profile). Switches off interstitials; rewarded ads stay.
   adsRemoved: boolean;
@@ -162,8 +179,16 @@ export function getMyProfile(token: string): Promise<{ profile: PlayerProfile }>
 // ---- Verified bot matches (server/src/db/botSessions.ts) ----
 // Bot games are played on the device, so the server issues each one first and only
 // pays when the finished game's PGN replays as a legal game with a real result.
-export function startBotMatch(token: string, botId: string, color: 'w' | 'b'): Promise<{ ok: true; sessionId: string }> {
-  return request('/me/bot-matches', { method: 'POST', body: { botId, color }, token });
+// `kit: true` also buys the Roadie Kit for a Tour boss fight (the chips leave in the same call).
+// It rejects with Error('kit-locked' | 'insufficient-chips' | 'not-a-boss').
+export interface BotMatchKit {
+  takeTwos: number;
+  tips: number;
+  paid: number; // chips paid (0 = the crowd's free kit)
+  chips: number | null; // balance after paying
+}
+export function startBotMatch(token: string, botId: string, color: 'w' | 'b', kit = false): Promise<{ ok: true; sessionId: string; kit: BotMatchKit | null }> {
+  return request('/me/bot-matches', { method: 'POST', body: { botId, color, ...(kit ? { kit: true } : {}) }, token });
 }
 
 export type BotFinishReason = 'game' | 'resign' | 'timeout' | 'abandon' | 'bot-timeout';
@@ -181,6 +206,38 @@ export interface BotFinishResult {
 
 export function finishBotMatch(token: string, sessionId: string, pgn: string, endedBy: BotFinishReason): Promise<BotFinishResult> {
   return request(`/me/bot-matches/${sessionId}/finish`, { method: 'POST', body: { pgn, endedBy }, token });
+}
+
+// ---- Backstage Gear: consumables (server/src/db/boosts.ts) ----
+export interface GearItemStatus {
+  id: string;
+  name: string;
+  tagline: string;
+  price: number;
+  charges: number; // uses on one copy
+  quantity: number; // in the bag
+  activeCharges: number; // left on the activated copy (0 = none active)
+  atCap: boolean;
+}
+
+export interface GearStatus {
+  items: GearItemStatus[];
+  maxStock: number;
+  chips: number;
+}
+
+export function getGear(token: string): Promise<GearStatus> {
+  return request('/me/gear', { method: 'GET', token });
+}
+
+// Rejects with Error('insufficient-chips' | 'stock-full' | 'unknown-item').
+export function buyGear(token: string, itemId: string): Promise<{ ok: true; chips: number; quantity: number }> {
+  return request(`/me/gear/${encodeURIComponent(itemId)}/buy`, { method: 'POST', token });
+}
+
+// Rejects with Error('already-active' | 'none-in-bag' | 'unknown-item').
+export function activateGear(token: string, itemId: string): Promise<{ ok: true; quantity: number; activeCharges: number }> {
+  return request(`/me/gear/${encodeURIComponent(itemId)}/activate`, { method: 'POST', token });
 }
 
 // ---- The Tour (campaign) ----
@@ -207,6 +264,17 @@ export interface TourChapter {
   boss: null | { botId: string; name: string; emoji: string; difficulty: string };
   encore: null | { progress: number; bots: { id: string; name: string; emoji: string }[] };
   reward: { chips: number; gems: number; titleName: string };
+  // Crowd Energy + the Roadie Kit (server/src/db/tour.ts); null when there is no boss to be stuck on.
+  backstage: null | {
+    losses: number;
+    kitUnlockLosses: number;
+    kitOpen: boolean;
+    toNextFree: number;
+    crowdFreeEvery: number;
+    freeKit: boolean;
+    price: number;
+    kit: { takeTwos: number; tips: number };
+  };
   gigs: TourGig[];
 }
 
@@ -310,6 +378,15 @@ export interface TourUpdate {
   perfect: null | { chapterId: string; chapterName: string; gems: number };
   chapterUnlocked: null | { id: string; name: string };
   encore: null | { progress: number; total: number };
+  bossAttempt: null | {
+    chapterId: string;
+    chapterName: string;
+    losses: number;
+    toUnlock: number;
+    kitJustOpened: boolean;
+    freeKitJustEarned: boolean;
+    toNextFree: number;
+  };
   chips: number;
   gems: number;
 }

@@ -353,7 +353,22 @@ interface ChessBoardProps {
    * passes it here. Only consulted by the 'large' variant.
    */
   maxSize?: number;
+  /**
+   * When provided, the pieces are NOT mounted until this is true AND the board's measured
+   * size has stopped changing for PIECE_SETTLE_MS. The match screen sizes the board in two
+   * passes (full width, then capped to the room its neighbours leave); the piece sprites are
+   * very heavy traced SVGs that decode per rendered size, so mounting them for the first
+   * pass and again for the second doubled the decode work and hung a low-end Adreno GPU.
+   * Left undefined (every other screen), pieces mount immediately as before.
+   */
+  sizeFinal?: boolean;
+  /** Diagnostics only (match screen `dbg` deep-link switches): never set in normal play. */
+  debugNoPieces?: boolean;
+  debugPlain?: boolean;
 }
+
+// How long the board's size must hold still before the pieces mount (see sizeFinal).
+const PIECE_SETTLE_MS = 150;
 
 export const ChessBoard = memo(function ChessBoard({
   style,
@@ -371,6 +386,9 @@ export const ChessBoard = memo(function ChessBoard({
   flipped = false,
   variant = 'default',
   maxSize,
+  sizeFinal,
+  debugNoPieces,
+  debugPlain,
 }: ChessBoardProps) {
   const large = variant === 'large';
   // Clamped on BOTH axes: the slot is width-driven with aspectRatio, and a
@@ -378,6 +396,15 @@ export const ChessBoard = memo(function ChessBoard({
   // on every layout engine -- capping the height too keeps it square.
   const largeCap = Math.min(LARGE_MAX_BOARD_SIZE, maxSize !== undefined && maxSize > 0 ? maxSize : LARGE_MAX_BOARD_SIZE);
   const [gridSize, setGridSize] = useState(0);
+  // Once the pieces have mounted they stay mounted (a later resize must not blank them).
+  const gatePieces = sizeFinal !== undefined;
+  const [piecesSettled, setPiecesSettled] = useState(false);
+  useEffect(() => {
+    if (!gatePieces || piecesSettled || !sizeFinal || gridSize <= 0) return;
+    const timer = setTimeout(() => setPiecesSettled(true), PIECE_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [gatePieces, piecesSettled, sizeFinal, gridSize]);
+  const piecesVisible = (!gatePieces || piecesSettled) && !debugNoPieces;
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
   // -1 = no piece currently being dragged. A shared value (not React state)
@@ -658,7 +685,7 @@ export const ChessBoard = memo(function ChessBoard({
   return (
     <View style={[styles.boardWrap, style]}>
       <View style={large ? [styles.frameSlotLarge, { maxWidth: largeCap, maxHeight: largeCap }] : styles.frameSlot}>
-        <GlowRing color={theme.glowColor} large={large} />
+        {debugPlain ? null : <GlowRing color={theme.glowColor} large={large} />}
 
         <LinearGradient
           // Brushed-metal frame: the extra mid stops give it a bright top-left
@@ -668,7 +695,7 @@ export const ChessBoard = memo(function ChessBoard({
           locations={FRAME_LOCATIONS}
           start={FRAME_START}
           end={FRAME_END}
-          style={large ? [styles.boardFrame, styles.boardFrameLarge] : styles.boardFrame}
+          style={large ? [styles.boardFrame, styles.boardFrameLarge, debugPlain && ({ boxShadow: [] } as never)] : styles.boardFrame}
         >
           {/* Bevel: a bright inner highlight down the top edge and a dark
               recess at the bottom, so the playfield looks inset into the frame. */}
@@ -764,16 +791,18 @@ export const ChessBoard = memo(function ChessBoard({
                   />
                 ))}
 
-                <PieceLayer
-                  pieces={livePieces}
-                  positions={positionsRef.current}
-                  squareSize={squareSize}
-                  squareSizeShared={squareSizeShared}
-                  pieceSprites={pieceSprites}
-                  draggingIdSV={draggingIdSV}
-                  dragX={dragX}
-                  dragY={dragY}
-                />
+                {piecesVisible ? (
+                  <PieceLayer
+                    pieces={livePieces}
+                    positions={positionsRef.current}
+                    squareSize={squareSize}
+                    squareSizeShared={squareSizeShared}
+                    pieceSprites={pieceSprites}
+                    draggingIdSV={draggingIdSV}
+                    dragX={dragX}
+                    dragY={dragY}
+                  />
+                ) : null}
 
                 {checkSquare && checkEffectId > 0 ? (
                   <CheckPulse

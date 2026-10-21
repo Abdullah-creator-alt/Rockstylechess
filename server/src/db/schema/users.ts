@@ -39,6 +39,12 @@ export const playerProfiles = pgTable('player_profiles', {
   // rankings.tsx's pinned-row 1650), which are just placeholder content.
   rating: integer('rating').notNull().default(1200),
   winStreak: integer('win_streak').notNull().default(0),
+  // Consecutive online wins with NO Lucky Pick forgiveness (db/boosts.ts): `winStreak` can be kept
+  // alive through a loss by a Lucky Pick, but "win N in a row" achievements read this one.
+  winRun: integer('win_run').notNull().default(0),
+  // Game Reviews bought in a Review Pack and not yet spent (db/analysisCharge.ts). The Analyze Game
+  // button spends one of these before any chips/gems; they never expire and never convert back.
+  analysisCredits: integer('analysis_credits').notNull().default(0),
   wins: integer('wins').notNull().default(0),
   losses: integer('losses').notNull().default(0),
   draws: integer('draws').notNull().default(0),

@@ -34,6 +34,7 @@ import {
   type SettledWager,
 } from './db/wagers.js';
 import { ECONOMY } from './economy.generated.js';
+import { safetyNetTerms } from './gear.js';
 import { FESTIVAL_SET_CLOCK_MS, STALE_RUN_MS, tierById } from './festival.js';
 import { analyzeGame } from './matchAnalysis.js';
 import { pickBotMove, warmServerBot } from './serverBot.js';
@@ -207,6 +208,7 @@ async function buildChallengePlayer(
       rating: identity.rating,
       title: identity.title,
     duration: '5m',
+    insured: false,
   };
 }
 
@@ -406,7 +408,7 @@ async function botTurn(match: MatchState): Promise<void> {
 function wagerSettledPayload(
   match: MatchState,
   settled: SettledWager,
-  mine: { net: number; chipsAfter: number; payout: number },
+  mine: { net: number; chipsAfter: number; payout: number; premium: number; coverPaid: number },
 ) {
   return {
     matchId: match.id,
@@ -419,6 +421,8 @@ function wagerSettledPayload(
     net: mine.net,
     chipsAfter: mine.chipsAfter,
     refunded: settled.outcome !== 'win',
+    // Safety Net: null when this player did not buy one.
+    insurance: mine.premium > 0 ? { premium: mine.premium, refund: mine.coverPaid } : null,
   };
 }
 
@@ -490,7 +494,7 @@ async function startPairedMatch(waiting: QueuedPlayer, joiner: QueuedPlayer, tie
   const [white, black] = whiteIsWaiting ? [waiting, joiner] : [joiner, waiting];
   let escrow;
   try {
-    escrow = await escrowWager(matchId, tier, white.userId as string, black.userId as string);
+    escrow = await escrowWager(matchId, tier, white.userId as string, black.userId as string, { white: white.insured, black: black.insured });
   } catch (error) {
     console.error('wager escrow failed', error);
     for (const p of [waiting, joiner]) io.to(p.socketId).emit('queue:error', { reason: 'unavailable' });
@@ -500,7 +504,7 @@ async function startPairedMatch(waiting: QueuedPlayer, joiner: QueuedPlayer, tie
     // Their balance dropped since they joined (spent elsewhere / another match).
     const short = escrow.userId === waiting.userId ? waiting : joiner;
     const other = short === waiting ? joiner : waiting;
-    io.to(short.socketId).emit('queue:error', { reason: 'insufficient-chips', required: stake.buyIn });
+    io.to(short.socketId).emit('queue:error', { reason: 'insufficient-chips', required: stake.buyIn + (short.insured ? safetyNetTerms(stake.buyIn).premium : 0) });
     requeue(other, tier);
     return;
   }
@@ -795,7 +799,7 @@ io.on('connection', (socket: Socket) => {
 
   socket.on(
     'queue:join',
-    async (payload: { guestId?: string; displayName?: string; venueTier?: string; duration?: string }) => {
+    async (payload: { guestId?: string; displayName?: string; venueTier?: string; duration?: string; insured?: boolean }) => {
       if (!payload?.guestId || !isVenueTier(payload.venueTier)) {
         socket.emit('queue:error', { reason: 'bad-tier' });
         return;
@@ -809,6 +813,9 @@ io.on('connection', (socket: Socket) => {
       // seated in a live match. Garage skips all of it. The pairing step re-checks
       // the balance atomically (escrowWager) -- this is the early, friendly answer.
       const stake = stakeFor(tier);
+      // Safety Net (db/wagers.ts): an optional add-on, wagered venues and accounts only.
+      const insured = !!stake && !!userId && payload.insured === true;
+      const premium = stake && insured ? safetyNetTerms(stake.buyIn).premium : 0;
       if (stake) {
         if (!userId) {
           socket.emit('queue:error', { reason: 'auth-required' });
@@ -825,8 +832,8 @@ io.on('connection', (socket: Socket) => {
           socket.emit('queue:error', { reason: 'rating-too-low', required, current: entry.rating });
           return;
         }
-        if (entry.chips < stake.buyIn) {
-          socket.emit('queue:error', { reason: 'insufficient-chips', required: stake.buyIn, current: entry.chips });
+        if (entry.chips < stake.buyIn + premium) {
+          socket.emit('queue:error', { reason: 'insufficient-chips', required: stake.buyIn + premium, current: entry.chips });
           return;
         }
         for (const live of allMatches()) {
@@ -849,6 +856,7 @@ io.on('connection', (socket: Socket) => {
       rating: identity.rating,
       title: identity.title,
         duration: resolveDuration(payload.duration),
+        insured,
       };
 
       // ONE queue entry per socket, per guest and per account: an account on a
@@ -889,6 +897,7 @@ io.on('connection', (socket: Socket) => {
       rating: identity.rating,
       title: identity.title,
       duration: resolveDuration(payload.duration),
+      insured: false,
     };
     socket.emit('room:created', { code: createRoom(player) });
   });
@@ -912,6 +921,7 @@ io.on('connection', (socket: Socket) => {
       // (result.opponent below) is what createMatch actually uses, since
       // they're the one who set the room up in the first place.
       duration: '5m',
+      insured: false,
     };
     const result = joinRoom(payload.code, player);
     if (result.status !== 'ok') {

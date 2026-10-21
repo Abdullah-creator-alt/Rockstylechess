@@ -84,6 +84,14 @@ const weekChips = cfg.dailyBonus.reduce((s, d) => s + d.chips, 0);
 const weekGems = cfg.dailyBonus.reduce((s, d) => s + d.gems, 0);
 check('daily-bonus week under 5 online wins', weekChips < 5 * cfg.matchRewards.online.win, String(weekChips));
 check('analysis priced at the same 40:1 rate', cfg.analysis.chips === cfg.analysis.gems * R, `${cfg.analysis.chips} vs ${cfg.analysis.gems}x${R}`);
+// Review Pack: ten reviews at once for less than ten single ones. One fixed discount step.
+const pk = cfg.analysis.pack;
+const packDiscount = (price, single) => 1 - price / (single * pk.reviews);
+console.log(`Review Pack: ${pk.reviews} for ${pk.chips} chips (${(packDiscount(pk.chips, cfg.analysis.chips) * 100).toFixed(0)}% off, ${pk.chips / pk.reviews} each) or ${pk.gems} gems (${(packDiscount(pk.gems, cfg.analysis.gems) * 100).toFixed(0)}% off, ${pk.gems / pk.reviews} each)`);
+check('a Review Pack costs less than the same number of single reviews, in chips and in gems', pk.chips < cfg.analysis.chips * pk.reviews && pk.gems < cfg.analysis.gems * pk.reviews);
+check('the Review Pack discount is real but modest (10-25%)', [packDiscount(pk.chips, cfg.analysis.chips), packDiscount(pk.gems, cfg.analysis.gems)].every((d) => d >= 0.1 && d <= 0.25));
+check('Review Pack chips and gems keep the 40:1 rate (no arbitrage between currencies)', pk.chips === pk.gems * R, `${pk.chips} vs ${pk.gems}x${R}`);
+check('a Review Pack fits under the credit cap, with room for more than one', pk.maxCredits >= 2 * pk.reviews && pk.maxCredits <= 5 * pk.reviews);
 check('welcome bonus buys exactly one Common', cfg.welcomeChips === t.common.gems * R, String(cfg.welcomeChips));
 
 // ---- venue ladder ------------------------------------------------------
@@ -175,6 +183,16 @@ const tourGems = tour.chapters.reduce((s, c) => s + c.bossReward.gems + tour.per
 console.log(`\nTour totals (one-time): ${tourChips.toLocaleString()} chips + ${tourGems} gems = about ${(tourChips / base).toFixed(0)} casual days of chip income`);
 check('the whole Tour is worth under 35% of 90 days of chip income', tourChips < 0.35 * base * 90, `${tourChips} vs ${(0.35 * base * 90).toFixed(0)}`);
 check('Tour gems stay under the achievement gem pool', tourGems < 920, String(tourGems));
+
+// Backstage: the Roadie Kit. Help for a stuck player that must stay a sink and never a shortcut.
+const bs = tour.backstage;
+const kitPrice = (c) => Math.round((c.bossReward.chips * bs.kitPriceFraction) / 10) * 10;
+console.log(`\nRoadie Kit prices: ${tour.chapters.map((c) => `${c.id} ${kitPrice(c)}`).join(', ')}`);
+check('a loss only counts as a real attempt after 12+ plies (no resign-farming)', bs.minAttemptPlies >= 12 && bs.minAttemptPlies > tour.minBotPlies);
+check('the kit opens before the free one arrives', bs.kitUnlockLosses >= 1 && bs.crowdFreeEvery > bs.kitUnlockLosses);
+check('a kit costs 5-15% of its boss reward (a real sink, never a trap)', tour.chapters.every((c) => kitPrice(c) >= 0.05 * c.bossReward.chips && kitPrice(c) <= 0.15 * c.bossReward.chips));
+check('the kit is small: 1-2 take-backs and 1-3 tips', bs.kit.takeTwos >= 1 && bs.kit.takeTwos <= 2 && bs.kit.tips >= 1 && bs.kit.tips <= 3);
+check('one kit never costs more than one casual day of chip income at the first two chapters', kitPrice(tour.chapters[0]) < base && kitPrice(tour.chapters[1]) < base, `${kitPrice(tour.chapters[0])}/${kitPrice(tour.chapters[1])} vs ${base}`);
 const wk = cfg.weeklyQuests;
 const weeklyChips = wk['win-weekly'] + wk['online-weekly'] + wk['puzzles-weekly'];
 check('weekly quests pay under 20% of a week of income', weeklyChips < 0.2 * base * 7, `${weeklyChips} vs ${(0.2 * base * 7).toFixed(0)}`);
@@ -220,6 +238,34 @@ console.log(`  best-case expected daily gain for a strong player across all tier
 check('a strong player farming every tier gains under 3 days of casual income per day', festDailyStrong < 3 * base, `${Math.round(festDailyStrong)} vs ${Math.round(3 * base)}`);
 
 // achievements (one-time) -- read from the server catalog
+// ---- Backstage Gear (consumables) -----------------------------------------
+const gear = cfg.gear;
+const amp = gear.items.find((i) => i.id === 'amp-boost');
+const pick = gear.items.find((i) => i.id === 'lucky-pick');
+check('gear has Amp Boost and Lucky Pick with unique ids', !!amp && !!pick && new Set(gear.items.map((i) => i.id)).size === gear.items.length);
+// The most chips-equivalent a booster's extra Fame can ever pay back in level rewards: the best
+// reward-per-Fame level, times the extra Fame of the best possible boosted run (3 online wins).
+let bestChipsPerFame = 0;
+for (let L = 2; L <= 50; L++) {
+  const rw = levelRewards[L] ?? { chips: 0, gems: 0 };
+  const span = xpFor(L) - xpFor(L - 1);
+  bestChipsPerFame = Math.max(bestChipsPerFame, (rw.chips + rw.gems * R) / span);
+}
+const ampExtraFame = amp.charges * gear.ampBonus * cfg.fame.online.win;
+const ampMaxPayback = ampExtraFame * bestChipsPerFame;
+console.log(`\nAmp Boost: extra Fame at most ${ampExtraFame}, worth at most ~${ampMaxPayback.toFixed(0)} chips-equivalent in level rewards (price ${amp.chips})`);
+check('an Amp Boost never pays for itself (price >= 1.25x its best-case level-reward payback)', amp.chips >= 1.25 * ampMaxPayback, `${amp.chips} vs ${(1.25 * ampMaxPayback).toFixed(0)}`);
+check('a Review Pack costs under two casual days of chip income (an impulse-sized sink)', pk.chips < 2 * base, `${pk.chips} vs ${2 * base}`);
+check('gear prices are under one casual day of chip income', gear.items.every((i) => i.chips < base), String(base));
+check('Amp Boost bonus is modest (<= +50% of base Fame) and stock is capped at 3-10', gear.ampBonus <= 0.5 && gear.maxStock >= 3 && gear.maxStock <= 10);
+check('Lucky Pick only matters on a real streak (minStreak is the first Hot Streak step)', gear.minStreak === cfg.fame.hotStreak[0].minStreak);
+const sn = gear.safetyNet;
+check('Safety Net premium is more than half the cover (loses money unless you lose >57% of the time)', sn.premiumFraction / sn.coverFraction > 0.5, `${sn.premiumFraction}/${sn.coverFraction}`);
+// Two accounts: one loses on purpose to the other. The pair pays the rake (venueRake of the POT = 2x venueRake of one buy-in) plus the premium and gets the cover back.
+check('Safety Net cannot be farmed by two accounts (2 x rake + premium > cover)', 2 * cfg.venueRake + sn.premiumFraction > sn.coverFraction, `2 x ${cfg.venueRake} + ${sn.premiumFraction} vs ${sn.coverFraction}`);
+check('Safety Net cover is far below the buy-in (it softens a loss, never erases it)', sn.coverFraction <= 0.5);
+console.log(`  Safety Net by venue: ${Object.entries(cfg.venues).filter(([, v]) => v.buyIn > 0).map(([id, v]) => `${id} ${Math.round(v.buyIn * sn.premiumFraction)} -> back ${Math.round(v.buyIn * sn.coverFraction)}`).join(', ')}`);
+
 const ach = [...read('server/src/achievementCatalog.ts').matchAll(/rewardType: '(chips|gems)', rewardAmount: ([\d_]+)/g)];
 const achChips = ach.filter((a) => a[1] === 'chips').reduce((s, a) => s + Number(a[2].replace(/_/g, '')), 0);
 const achGems = ach.filter((a) => a[1] === 'gems').reduce((s, a) => s + Number(a[2].replace(/_/g, '')), 0);

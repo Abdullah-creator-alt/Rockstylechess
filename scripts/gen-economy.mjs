@@ -17,7 +17,10 @@ const { _readme, ...config } = cfg;
 delete config.incomeModel._note;
 delete config.fame._note;
 delete config.tour._note;
+delete config.tour.backstage._note;
 delete config.festival._note;
+delete config.gear._note;
+delete config.analysis.pack._note;
 // Skill profiles only size purses inside check-economy.mjs; nothing at runtime reads them.
 delete config.incomeModel.festivalSkill;
 

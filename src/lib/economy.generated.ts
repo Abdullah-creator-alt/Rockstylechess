@@ -316,7 +316,13 @@ export const ECONOMY = {
   },
   "analysis": {
     "chips": 200,
-    "gems": 5
+    "gems": 5,
+    "pack": {
+      "reviews": 10,
+      "chips": 1600,
+      "gems": 40,
+      "maxCredits": 30
+    }
   },
   "iap": {
     "chipPacks": [
@@ -456,6 +462,16 @@ export const ECONOMY = {
   "tour": {
     "minBotPlies": 6,
     "perfectBonusGems": 5,
+    "backstage": {
+      "minAttemptPlies": 20,
+      "kitUnlockLosses": 2,
+      "crowdFreeEvery": 4,
+      "kitPriceFraction": 0.12,
+      "kit": {
+        "takeTwos": 1,
+        "tips": 2
+      }
+    },
     "chapters": [
       {
         "id": "garage",
@@ -905,6 +921,31 @@ export const ECONOMY = {
         }
       }
     ]
+  },
+  "gear": {
+    "maxStock": 5,
+    "items": [
+      {
+        "id": "amp-boost",
+        "name": "Amp Boost",
+        "tagline": "Crank it to 11: +50% Fame on your next 3 wins.",
+        "chips": 150,
+        "charges": 3
+      },
+      {
+        "id": "lucky-pick",
+        "name": "Lucky Pick",
+        "tagline": "Keep a Hot Streak of 3+ through one loss.",
+        "chips": 100,
+        "charges": 1
+      }
+    ],
+    "ampBonus": 0.5,
+    "minStreak": 3,
+    "safetyNet": {
+      "premiumFraction": 0.25,
+      "coverFraction": 0.35
+    }
   }
 } as const;
 

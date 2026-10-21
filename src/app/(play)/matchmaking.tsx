@@ -50,9 +50,11 @@ export default function MatchmakingScreen() {
   const { profile } = usePlayerProfile();
   // Set when the server refuses the join (queue:error) -- replaces the searching UI.
   const [queueError, setQueueError] = useState<QueueErrorPayload | null>(null);
-  const { venueTier: venueTierParam, duration: durationParam } = useLocalSearchParams<{ venueTier?: string; duration?: string }>();
+  const { venueTier: venueTierParam, duration: durationParam, insured: insuredParam } = useLocalSearchParams<{ venueTier?: string; duration?: string; insured?: string }>();
   const venueTier = isVenueTier(venueTierParam) ? venueTierParam : 'garage';
   const duration = isDuration(durationParam) ? durationParam : '5m';
+  // The player ticked the Safety Net on Match Setup (the server prices it and charges it at pairing).
+  const insured = insuredParam === '1';
 
   useEffect(() => {
     pulse.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }), -1, true);
@@ -112,7 +114,7 @@ export default function MatchmakingScreen() {
     function joinQueue() {
       Promise.all([ensureAuthenticated(), getPlayerId()]).then(([, guestId]) => {
         if (cancelled || errored) return;
-        socket.emit('queue:join', { guestId, displayName: 'AXL_CHESS', venueTier, duration });
+        socket.emit('queue:join', { guestId, displayName: 'AXL_CHESS', venueTier, duration, ...(insured ? { insured: true } : {}) });
       });
     }
 
@@ -135,7 +137,7 @@ export default function MatchmakingScreen() {
       socket.off('connect', joinQueue);
       socket.emit('queue:leave');
     };
-  }, [router, venueTier, duration]);
+  }, [router, venueTier, duration, insured]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     opacity: 0.5 + pulse.value * 0.5,

@@ -30,6 +30,9 @@ export interface QueuedPlayer {
   // match's actual duration -- simplest reasonable tie-break given queues
   // aren't segmented by duration, only by venue tier.
   duration: Duration;
+  // Wagered venues: the player bought the Safety Net for this match (db/wagers.ts). Always false
+  // for guests and for free venues.
+  insured: boolean;
 }
 
 // One FIFO queue per venue tier -- players are only ever paired within the

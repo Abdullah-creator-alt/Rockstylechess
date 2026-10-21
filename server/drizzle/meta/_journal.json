@@ -120,6 +120,27 @@
       "when": 1792335410785,
       "tag": "0016_warm_fallen_one",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792510772368,
+      "tag": "0017_backstage_roadie_kit",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792603943162,
+      "tag": "0018_backstage_gear",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792605016395,
+      "tag": "0019_analysis_credits",
+      "breakpoints": true
     }
   ]
 }

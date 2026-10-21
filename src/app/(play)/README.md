@@ -13,7 +13,10 @@ files without adding `/play` to the URL/deep-link path.
   source of `buyIn`/`prize`/`image` per tier; the selected venue's id is forwarded
   to `matchmaking.tsx` as `venueTier`. Home's hero card is now the same picker, so
   its "Play Now" also goes straight to `matchmaking.tsx` — `setup.tsx` stays the
-  entry point from the "Iron Duel" tile and the `(tabs)/play.tsx` mode picker.
+  entry point from the "Iron Duel" tile and the `(tabs)/play.tsx` mode picker. At a venue
+  with a buy-in it also offers the optional **Safety Net** (premium up front, a loss pays part of
+  the buy-in back; forwarded to `matchmaking.tsx` as `insured=1` and sent as `queue:join
+  {insured: true}`) and shows which Backstage Gear is switched on (`useGear`).
 - `matchmaking.tsx` — joins the companion `server/`'s real matchmaking queue over
   Socket.IO (`queue:join` with the venue tier, `queue:matched` to advance) — no
   longer simulated. Re-joins on every socket `connect` (including automatic
@@ -87,7 +90,12 @@ files without adding `/play` to the URL/deep-link path.
   server recognises the boss when the finished game is verified. World Tour is the Encore
   gauntlet (five bosses in a row). Bot matches now start a **server-issued session**
   (`match.tsx` → `POST /me/bot-matches`) and finish by submitting the PGN; guests and
-  failed calls simply play unrewarded (the result screen says why).
+  failed calls simply play unrewarded (the result screen says why). Once a boss has beaten you
+  for real (`backstage` in the Tour payload) the boss card shows **Crowd Energy**; after 2 real
+  losses it offers the optional **Roadie Kit** (Take Two + Roadie's Tip for one boss game, bought
+  with chips or free from the crowd). The Tour screen buys it itself (`startBotMatch(..., kit)`)
+  and hands the session to `match.tsx` (`sessionId`, `kitTakeTwos`, `kitTips` params), which shows
+  the two kit pills in the action bar in place of Chat. See `server/README.md` -> "Backstage".
 - `festival.tsx` — **Festival Run**: three tier cards (Open Mic / Main Set / Headliner) showing
   entry, the bot ladder with the purse under each set, unlock text (a Tour boss), runs today
   and the repeat surcharge; an "active run" card above them (play the next set, cash out, or

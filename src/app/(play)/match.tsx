@@ -140,6 +140,10 @@ export default function MatchScreen() {
     opponentRating: opponentRatingParam,
     opponentTitle: opponentTitleParam,
     festival: festivalParam,
+    sessionId: sessionIdParam,
+    kitTakeTwos: kitTakeTwosParam,
+    kitTips: kitTipsParam,
+    dbg: dbgParam,
   } = useLocalSearchParams<{
     mode?: string;
     difficulty?: string;
@@ -174,7 +178,16 @@ export default function MatchScreen() {
     // Festival set only: the run / set / purse / bot, JSON from the server's queue:matched
     // (lib/festival.ts). The opponent is a bot the SERVER plays.
     festival?: string;
+    // Tour boss fight only: the bot session the Tour screen already opened (it bought the
+    // Roadie Kit with it, so it can't be opened twice) and what the kit holds.
+    sessionId?: string;
+    kitTakeTwos?: string;
+    kitTips?: string;
+    // Diagnostics only: comma list of switches that turn parts of this screen off, opened via a
+    // deep link (np pieces, ng board glow/shadow, nv backdrop+crowd, nsh header/action-bar shadows).
+    dbg?: string;
   }>();
+  const dbg = useMemo(() => new Set((dbgParam ?? '').split(',').filter(Boolean)), [dbgParam]);
   const mode: GameMode = modeParam === 'bot' ? 'bot' : modeParam === 'online' ? 'online' : 'local';
   const difficulty: BotDifficulty =
     difficultyParam === 'medium' ||
@@ -282,9 +295,9 @@ export default function MatchScreen() {
       backgroundColor: withOpacity(Colors.bgPanel, 0.96),
       borderTopWidth: 1,
       borderTopColor: withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.6),
-      boxShadow: `0px -2px ${venueIntensity.glowRadius}px ${withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.5)}`,
+      ...(dbg.has('nsh') ? {} : { boxShadow: `0px -2px ${venueIntensity.glowRadius}px ${withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.5)}` }),
     }),
-    [venue.accentColor, venueIntensity.glowOpacity, venueIntensity.glowRadius],
+    [venue.accentColor, venueIntensity.glowOpacity, venueIntensity.glowRadius, dbg],
   );
 
   const requestEngineMove = useCallback((fen: string, config: StockfishConfig): Promise<EngineMove | null> => {
@@ -459,6 +472,10 @@ export default function MatchScreen() {
   const botSessionRef = useRef<string | null>(null);
   useEffect(() => {
     if (mode !== 'bot' || !botId) return;
+    if (sessionIdParam) {
+      botSessionRef.current = sessionIdParam;
+      return;
+    }
     let cancelled = false;
     (async () => {
       const token = await getAuthToken();
@@ -473,7 +490,20 @@ export default function MatchScreen() {
     return () => {
       cancelled = true;
     };
-  }, [mode, botId, playerColor]);
+  }, [mode, botId, playerColor, sessionIdParam]);
+
+  // Roadie Kit (Tour boss fights): a couple of limited helps, never a win button. Take Two
+  // rewinds your last turn (the clock keeps running); Roadie's Tip points at the piece to move.
+  const kitActive = mode === 'bot' && !!sessionIdParam && (Number(kitTakeTwosParam) > 0 || Number(kitTipsParam) > 0);
+  const [takeTwosLeft, setTakeTwosLeft] = useState(() => Math.max(0, Math.floor(Number(kitTakeTwosParam) || 0)));
+  const [tipsLeft, setTipsLeft] = useState(() => Math.max(0, Math.floor(Number(kitTipsParam) || 0)));
+  const kitReady = kitActive && !peekActive && !game.isGameOver && !matchEnded && game.turn === playerColor && !game.pendingPromotion;
+  function onTakeTwo() {
+    if (takeTwosLeft > 0 && game.takeBack()) setTakeTwosLeft((n) => n - 1);
+  }
+  function onTip() {
+    if (tipsLeft > 0 && game.suggestTip()) setTipsLeft((n) => n - 1);
+  }
 
   // Make sure the shared wager:settled listener is attached for the whole online
   // match, so the settlement is cached even if it lands after we navigate away.
@@ -612,14 +642,16 @@ export default function MatchScreen() {
 
   return (
     <View style={styles.root}>
-      <VenueBackdrop venueTier={venueTier} />
+      {dbg.has('nv') ? null : <VenueBackdrop venueTier={venueTier} />}
       <StockfishEngine ref={stockfishRef} enabled={isStockfishTier} />
-      <Image
-        source={ScreenArt.frontRowCrowd}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-        style={styles.crowdImage}
-      />
+      {dbg.has('nv') ? null : (
+        <Image
+          source={ScreenArt.frontRowCrowd}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          style={styles.crowdImage}
+        />
+      )}
 
       <View className="flex-row items-center justify-between px-lg pb-sm" style={headerPad}>
         <View className="flex-row items-center" style={{ gap: Spacing.sm }}>
@@ -660,7 +692,7 @@ export default function MatchScreen() {
               borderWidth: 1,
               backgroundColor: withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.15),
               borderColor: withOpacity(venue.accentColor, venueIntensity.glowOpacity),
-              boxShadow: `0px 0px ${venueIntensity.glowRadius}px ${withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.5)}`,
+              ...(dbg.has('nsh') ? {} : { boxShadow: `0px 0px ${venueIntensity.glowRadius}px ${withOpacity(venue.accentColor, venueIntensity.glowOpacity * 0.5)}` }),
             }}
           >
             <MaterialCommunityIcons name={venue.icon} size={11} color={venue.accentColor} />
@@ -720,6 +752,10 @@ export default function MatchScreen() {
             <ChessBoard
               variant="large"
               maxSize={boardMaxSize}
+              // Pieces wait for the measured, capped size so their heavy SVGs decode once.
+              sizeFinal={boardAreaHeight !== null}
+              debugNoPieces={dbg.has('np')}
+              debugPlain={dbg.has('ng')}
               // Bled into the column's side padding; invisible until boardArea
               // has been measured, so it never flashes at an uncapped size.
               style={boardAreaHeight === null ? styles.boardBleedHidden : styles.boardBleed}
@@ -780,13 +816,20 @@ export default function MatchScreen() {
       </View>
 
       <View className="flex-row items-center gap-sm rounded-t-xl px-margin-mobile pt-md" style={actionBarPad}>
-        <ActionPillButton
-          icon="chat"
-          label="Chat"
-          onPress={openChat}
-          disabled={mode !== 'online' || !!festivalInfo}
-          badgeCount={mode === 'online' ? chat.unreadCount : 0}
-        />
+        {kitActive ? (
+          <>
+            <ActionPillButton icon="rewind" label="Take 2" onPress={onTakeTwo} disabled={!kitReady || takeTwosLeft === 0 || game.ply < 2} badgeCount={takeTwosLeft} />
+            <ActionPillButton icon="lightbulb-on-outline" label="Tip" onPress={onTip} disabled={!kitReady || tipsLeft === 0} badgeCount={tipsLeft} />
+          </>
+        ) : (
+          <ActionPillButton
+            icon="chat"
+            label="Chat"
+            onPress={openChat}
+            disabled={mode !== 'online' || !!festivalInfo}
+            badgeCount={mode === 'online' ? chat.unreadCount : 0}
+          />
+        )}
         <ActionPillButton icon="flag" label="Resign" tone="danger" onPress={openResign} />
         <ActionPillButton
           icon={peekActive ? 'eye-off' : 'history'}

@@ -4,6 +4,7 @@ import type { MatchState, PieceColor } from '../match.js';
 import { MATCH_CHIP_REWARDS } from '../matchRewards.js';
 import { emitToUser } from '../realtime.js';
 import { reportMatchForAchievements } from './achievements.js';
+import { spendLuckyPick } from './boosts.js';
 import { db } from './client.js';
 import { expectedScore, updatedRating } from './elo.js';
 import { insertNotification } from './notifications.js';
@@ -151,6 +152,7 @@ export async function persistMatchResult(
           source: 'online',
           outcome: outcomeFor(p.score),
           winStreak: p.stats.winStreak,
+          luckyPickSaved: p.stats.luckyPickSaved,
           matchId: match.id,
           rating: { before: p.before, after: p.after },
           goals: p.goals,
@@ -171,7 +173,7 @@ export async function persistMatchResult(
       opponentCapturedCount: blackCaptures,
       color: 'w',
       moveCount,
-      winStreak: whiteStats.winStreak,
+      winStreak: whiteStats.winRun,
     }),
     reportMatchForAchievements(black.userId, {
       won: blackScore === 1,
@@ -180,7 +182,7 @@ export async function persistMatchResult(
       opponentCapturedCount: whiteCaptures,
       color: 'b',
       moveCount,
-      winStreak: blackStats.winStreak,
+      winStreak: blackStats.winRun,
     }),
     insertNotification(white.userId, 'match_ended', ...matchNotificationText(whiteScore, resultType, black.displayName), {
       matchId: insertedMatch.id,
@@ -220,30 +222,41 @@ function outcomeFor(score: number): 'win' | 'loss' | 'draw' {
   return 'draw';
 }
 
-async function updateProfileStats(
+export async function updateProfileStats(
   userId: string,
   ratingAfter: number,
   score: number,
   grantFlatChips: boolean,
-): Promise<{ winStreak: number }> {
+): Promise<{ winStreak: number; winRun: number; luckyPickSaved: number }> {
   const outcome = outcomeFor(score);
   // Wagered matches pay through the escrow settlement (db/wagers.ts) instead.
   const chipsGranted = grantFlatChips ? MATCH_CHIP_REWARDS[outcome] : 0;
-  // Fame/XP/level are granted separately by db/progression.ts's grantFame.
-  const [row] = await db
-    .update(playerProfiles)
-    .set({
-      rating: ratingAfter,
-      wins: sql`${playerProfiles.wins} + ${score === 1 ? 1 : 0}`,
-      losses: sql`${playerProfiles.losses} + ${score === 0 ? 1 : 0}`,
-      draws: sql`${playerProfiles.draws} + ${score === 0.5 ? 1 : 0}`,
-      // A draw no longer breaks a win streak (it neither extends nor resets it);
-      // only a loss does.
-      winStreak: score === 1 ? sql`${playerProfiles.winStreak} + 1` : score === 0 ? sql`0` : playerProfiles.winStreak,
-      chips: sql`${playerProfiles.chips} + ${chipsGranted}`,
-      updatedAt: new Date(),
-    })
-    .where(eq(playerProfiles.userId, userId))
-    .returning({ winStreak: playerProfiles.winStreak });
-  return { winStreak: row.winStreak };
+  const now = new Date();
+  // One transaction: a Lucky Pick is spent in the very write that would have reset the streak.
+  return db.transaction(async (tx) => {
+    // Locking the row serialises this player's own concurrent endings, so the streak we read is
+    // the streak we change.
+    const [before] = await tx.select({ winStreak: playerProfiles.winStreak }).from(playerProfiles).where(eq(playerProfiles.userId, userId)).for('update');
+    // A LOSS on a streak of 3+ spends an armed Lucky Pick, and the streak survives it.
+    const luckyPickSaved = score === 0 && (await spendLuckyPick(tx, userId, before.winStreak, now)) ? before.winStreak : 0;
+    // Fame/XP/level are granted separately by db/progression.ts's grantFame.
+    const [row] = await tx
+      .update(playerProfiles)
+      .set({
+        rating: ratingAfter,
+        wins: sql`${playerProfiles.wins} + ${score === 1 ? 1 : 0}`,
+        losses: sql`${playerProfiles.losses} + ${score === 0 ? 1 : 0}`,
+        draws: sql`${playerProfiles.draws} + ${score === 0.5 ? 1 : 0}`,
+        // A draw no longer breaks a win streak (it neither extends nor resets it);
+        // only a loss does -- unless a Lucky Pick just forgave it.
+        winStreak: score === 1 ? sql`${playerProfiles.winStreak} + 1` : score === 0 && luckyPickSaved === 0 ? sql`0` : playerProfiles.winStreak,
+        // The honest run ("N in a row" achievements): a loss ALWAYS resets it, Lucky Pick or not.
+        winRun: score === 1 ? sql`${playerProfiles.winRun} + 1` : score === 0 ? sql`0` : playerProfiles.winRun,
+        chips: sql`${playerProfiles.chips} + ${chipsGranted}`,
+        updatedAt: now,
+      })
+      .where(eq(playerProfiles.userId, userId))
+      .returning({ winStreak: playerProfiles.winStreak, winRun: playerProfiles.winRun });
+    return { winStreak: row.winStreak, winRun: row.winRun, luckyPickSaved };
+  });
 }

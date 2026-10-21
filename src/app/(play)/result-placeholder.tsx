@@ -12,8 +12,8 @@ import { useFriends } from '@/hooks/useFriends';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { recordMatchCompleted } from '@/lib/ads/adFrequency';
 import { maybeShowInterstitial } from '@/lib/ads/maybeShowInterstitial';
-import { chargeForAnalysis } from '@/lib/api';
-import { ANALYSIS_COST } from '@/lib/analysisCost';
+import { buyAnalysisPack, chargeForAnalysis } from '@/lib/api';
+import { ANALYSIS_COST, ANALYSIS_PACK, packSavings } from '@/lib/analysisCost';
 import { getAuthToken } from '@/lib/authStorage';
 import { clearPendingLocalReplay, getPendingLocalReplay } from '@/lib/localMatchReplayStore';
 import { MATCH_CHIP_REWARDS } from '@/lib/matchRewards';
@@ -113,7 +113,9 @@ export default function ResultScreen() {
   // read once per mount, not on every render, since Home explicitly clears
   // it and we don't want that clear to also blank the button mid-transition.
   const [localReplay] = useState(() => getPendingLocalReplay());
-  const { chips: currentChips, refresh: refreshPlayerProfile } = usePlayerProfile();
+  const { chips: currentChips, gems: currentGems, profile: myProfile, refresh: refreshPlayerProfile } = usePlayerProfile();
+  // Game Reviews already bought in a Review Pack: spent before any chips/gems.
+  const reviewCredits = myProfile?.analysisCredits ?? 0;
   const friends = useFriends();
 
   // Wagered match: show the server's settlement, not the flat reward. It usually
@@ -220,34 +222,69 @@ export default function ResultScreen() {
     }
   }
 
+  // Pays for one review (a stored credit, chips or gems) and opens the analysis.
+  async function analyzeWith(token: string, currency: 'chips' | 'gems' | 'credit') {
+    try {
+      await chargeForAnalysis(token, currency);
+      refreshPlayerProfile();
+      router.push({ pathname: '/replay', params: { source: 'local', mode: 'analysis' } });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'insufficient-funds') {
+        Alert.alert('Not Enough Currency', currency === 'credit' ? 'You have no stored reviews left.' : `You need ${ANALYSIS_COST[currency].toLocaleString()} ${currency} to analyze this game.`);
+      } else {
+        console.log('Failed to charge for analysis', error);
+        Alert.alert('Something Went Wrong', 'Please try again.');
+      }
+    }
+  }
+
+  // Buys a Review Pack, then uses its first review on this game (the player pressed Analyze).
+  async function buyPackAndAnalyze(token: string, currency: 'chips' | 'gems') {
+    try {
+      await buyAnalysisPack(token, currency);
+      await analyzeWith(token, 'credit');
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'insufficient-funds') Alert.alert('Not Enough Currency', `A ${ANALYSIS_PACK.reviews}-Review Pack costs ${ANALYSIS_PACK[currency].toLocaleString()} ${currency}.`);
+      else if (code === 'stock-full') Alert.alert('Reviews Full', `You can hold up to ${ANALYSIS_PACK.maxCredits} stored reviews. Use a few first.`);
+      else Alert.alert('Something Went Wrong', 'Please try again.');
+    }
+  }
+
   async function handleAnalyzePress() {
     const token = await getAuthToken();
     if (!token) {
       Alert.alert('Sign In Required', 'Sign in to use Game Analysis.');
       return;
     }
+    // Reviews you already bought are used first.
+    if (reviewCredits > 0) {
+      Alert.alert('Analyze This Game', `Use 1 of your ${reviewCredits} stored reviews on this game? (${reviewCredits - 1} left after.)`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Analyze', onPress: () => void analyzeWith(token, 'credit') },
+      ]);
+      return;
+    }
     const currency: 'chips' | 'gems' = currentChips >= ANALYSIS_COST.chips ? 'chips' : 'gems';
     const price = ANALYSIS_COST[currency];
-    Alert.alert('Analyze This Game', `Get move-by-move analysis for ${price.toLocaleString()} ${currency}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Analyze',
-        onPress: async () => {
-          try {
-            await chargeForAnalysis(token, currency);
-            refreshPlayerProfile();
-            router.push({ pathname: '/replay', params: { source: 'local', mode: 'analysis' } });
-          } catch (error) {
-            if (error instanceof Error && error.message === 'insufficient-funds') {
-              Alert.alert('Not Enough Currency', `You need ${price.toLocaleString()} ${currency} to analyze this game.`);
-            } else {
-              console.log('Failed to charge for analysis', error);
-              Alert.alert('Something Went Wrong', 'Please try again.');
-            }
-          }
-        },
-      },
-    ]);
+    // The pack in whichever currency the player can cover (chips first); not offered if neither.
+    const packCurrency: 'chips' | 'gems' | null = currentChips >= ANALYSIS_PACK.chips ? 'chips' : currentGems >= ANALYSIS_PACK.gems ? 'gems' : null;
+    const pack = packCurrency ? packSavings(packCurrency) : null;
+    const buttons = [
+      { text: 'Cancel', style: 'cancel' as const },
+      ...(packCurrency && pack
+        ? [{ text: `Buy ${ANALYSIS_PACK.reviews}-Pack`, onPress: () => void buyPackAndAnalyze(token, packCurrency) }]
+        : []),
+      { text: 'Analyze', onPress: () => void analyzeWith(token, currency) },
+    ];
+    Alert.alert(
+      'Analyze This Game',
+      `Get move-by-move analysis for ${price.toLocaleString()} ${currency}?` +
+        (packCurrency && pack
+          ? `\n\nOr buy a ${ANALYSIS_PACK.reviews}-Review Pack for ${ANALYSIS_PACK[packCurrency].toLocaleString()} ${packCurrency} (${pack.each.toLocaleString()} each, save ${pack.percent}%) and use the first one on this game.`
+          : ''),
+      buttons,
+    );
   }
 
   // match.tsx always passes this (the real, just-granted amount) -- the
@@ -298,11 +335,11 @@ export default function ResultScreen() {
                 className="font-display-hero"
                 style={{
                   fontSize: 28,
-                  color: wager.refunded ? Colors.chrome : wager.net > 0 ? Colors.gold : Colors.crimson,
+                  color: wager.net === 0 ? Colors.chrome : wager.net > 0 ? Colors.gold : Colors.crimson,
                 }}
               >
-                {wager.refunded ? '±0' : wager.net > 0 ? '+' : '-'}
-                {wager.refunded ? '' : chipsWon.toLocaleString('en-US')}
+                {wager.net === 0 ? '±0' : wager.net > 0 ? '+' : '-'}
+                {wager.net === 0 ? '' : chipsWon.toLocaleString('en-US')}
               </Text>
             ) : (
               <Text className="font-heading-md" style={{ fontSize: 16, color: Colors.textMuted }}>
@@ -322,8 +359,10 @@ export default function ResultScreen() {
               ? isVoid
                 ? 'You left in the first 3 moves. Both buy-ins were returned and nothing counted.'
                 : wager.refunded
-                  ? `Draw. Your ${wager.buyIn.toLocaleString('en-US')} buy-in was returned.`
-                  : `Pot ${wager.pot.toLocaleString('en-US')} · 10% house cut · balance ${wager.chipsAfter.toLocaleString('en-US')}`
+                  ? `Draw. Your ${wager.buyIn.toLocaleString('en-US')} buy-in was returned.${wager.insurance ? ` The ${wager.insurance.premium.toLocaleString('en-US')} Safety Net premium was spent.` : ''}`
+                  : wager.insurance && wager.insurance.refund > 0
+                    ? `The Safety Net paid back ${wager.insurance.refund.toLocaleString('en-US')} of your ${wager.buyIn.toLocaleString('en-US')} buy-in · balance ${wager.chipsAfter.toLocaleString('en-US')}`
+                    : `Pot ${wager.pot.toLocaleString('en-US')} · 10% house cut${wager.insurance ? ` · ${wager.insurance.premium.toLocaleString('en-US')} Safety Net premium` : ''} · balance ${wager.chipsAfter.toLocaleString('en-US')}`
               : wagerTimedOut
                 ? `Your ${buyIn.toLocaleString('en-US')} buy-in is settled — check your balance.`
                 : `Buy-in ${buyIn.toLocaleString('en-US')} · winner takes ${prize.toLocaleString('en-US')}`}
@@ -361,12 +400,23 @@ export default function ResultScreen() {
         {localReplay ? (
           <View className="gap-xs">
             <RockButton label="Analyze Game" variant="cyan" icon={<AppIcon name="analytics" size={20} color={Colors.bgBase} />} onPress={handleAnalyzePress} />
-            <View className="flex-row items-center justify-center gap-xs">
-              <Text className="font-body-sm text-caption uppercase tracking-wide text-text-muted">Costs</Text>
-              <CurrencyPill type="chips" value={ANALYSIS_COST.chips} />
-              <Text className="font-body-sm text-caption uppercase tracking-wide text-text-muted">or</Text>
-              <CurrencyPill type="gems" value={ANALYSIS_COST.gems} />
-            </View>
+            {reviewCredits > 0 ? (
+              <Text className="text-center font-body-sm text-caption uppercase tracking-wide text-text-muted">
+                {reviewCredits} stored review{reviewCredits === 1 ? '' : 's'} · no charge
+              </Text>
+            ) : (
+              <View className="items-center gap-xs">
+                <View className="flex-row items-center justify-center gap-xs">
+                  <Text className="font-body-sm text-caption uppercase tracking-wide text-text-muted">Costs</Text>
+                  <CurrencyPill type="chips" value={ANALYSIS_COST.chips} />
+                  <Text className="font-body-sm text-caption uppercase tracking-wide text-text-muted">or</Text>
+                  <CurrencyPill type="gems" value={ANALYSIS_COST.gems} />
+                </View>
+                <Text className="text-center font-body-sm text-caption text-text-muted">
+                  {ANALYSIS_PACK.reviews}-pack: {ANALYSIS_PACK.chips.toLocaleString('en-US')} chips · save {packSavings('chips').percent}%
+                </Text>
+              </View>
+            )}
           </View>
         ) : null}
         {canAddOpponent ? (

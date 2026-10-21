@@ -317,7 +317,14 @@
   },
   "analysis": {
     "chips": 200,
-    "gems": 5
+    "gems": 5,
+    "pack": {
+      "_note": "Review Pack: `reviews` Game Reviews bought at once at a discount, stored as credits on the player (spent by the Analyze Game button before any chips/gems). The discount is the whole incentive, so it is one fixed step; credits never expire, never convert back, and are capped at maxCredits so a pack can't be hoarded without limit.",
+      "reviews": 10,
+      "chips": 1600,
+      "gems": 40,
+      "maxCredits": 30
+    }
   },
   "iap": {
     "chipPacks": [
@@ -483,6 +490,17 @@
     "_note": "The Tour: six chapters (one per venue). A chapter unlocks when the previous boss is beaten. Gig kinds are evaluated in server/src/tour.ts. minRank = bot strength rank (0 easy .. 4 strongest).",
     "minBotPlies": 6,
     "perfectBonusGems": 5,
+    "backstage": {
+      "_note": "Backstage (Roadie Kit + Crowd Energy): help for a player STUCK on a chapter boss, never a shortcut. A boss loss only counts as a real attempt past minAttemptPlies (no resign-farming). After kitUnlockLosses real losses to a chapter's boss the Roadie Kit can be bought (price = kitPriceFraction of that boss reward, rounded to 10) and every crowdFreeEvery losses one kit is on the house. The kit is Take Two (rewind your last turn; the clock keeps running) + Roadie's Tip (points at the piece to move, not where). It works on the boss fight only: a kit game advances no gigs, and a kit can't be bought once the boss is beaten.",
+      "minAttemptPlies": 20,
+      "kitUnlockLosses": 2,
+      "crowdFreeEvery": 4,
+      "kitPriceFraction": 0.12,
+      "kit": {
+        "takeTwos": 1,
+        "tips": 2
+      }
+    },
     "chapters": [
       {
         "id": "garage",
@@ -933,5 +951,31 @@
         }
       }
     ]
+  },
+  "gear": {
+    "_note": "Backstage Gear: consumables bought with chips. Nothing here touches chess strength or rating. Amp Boost = +ampBonus of BASE Fame (added on top of Opening Night / Hot Streak, never multiplied by them) on the next `charges` Fame-paying wins; Lucky Pick = a win streak of at least minStreak survives ONE loss; stock is capped; one copy of each is active at a time and the player activates it. Safety Net is not stocked: an optional add-on at a wagered venue (premium = premiumFraction of the buy-in, paid at pairing; a LOSS returns coverFraction of the buy-in; the premium is returned if the match is voided, kept on a win or a draw).",
+    "maxStock": 5,
+    "items": [
+      {
+        "id": "amp-boost",
+        "name": "Amp Boost",
+        "tagline": "Crank it to 11: +50% Fame on your next 3 wins.",
+        "chips": 150,
+        "charges": 3
+      },
+      {
+        "id": "lucky-pick",
+        "name": "Lucky Pick",
+        "tagline": "Keep a Hot Streak of 3+ through one loss.",
+        "chips": 100,
+        "charges": 1
+      }
+    ],
+    "ampBonus": 0.5,
+    "minStreak": 3,
+    "safetyNet": {
+      "premiumFraction": 0.25,
+      "coverFraction": 0.35
+    }
   }
 }
