@@ -24,11 +24,17 @@ repeating it. Schema lives in `src/db/schema/*.ts`, one file per domain
 (`users`, `matches`, `economy`, `progression`, `social`), barrel-exported
 from `schema/index.ts`.
 
-**Auth is self-hosted here**, not Supabase (superseding the old
-`(auth)/README.md` placeholder) -- bcrypt-hashed passwords in `users`,
-JWT sessions issued by `POST /auth/signup` / `POST /auth/login`, verified
-by `authMiddleware.ts` for both REST (`requireAuth`) and Socket.IO
-connections (`socketAuth`, via `socket.handshake.auth.token`). A socket
+**Auth is self-hosted with better-auth** (`src/betterAuth.ts`): Drizzle
+adapter over the `schema/auth.ts` tables, email + password (min 8 chars,
+sign-in/sign-up rate limited to 5/min), the `bearer()` plugin so the app can
+send `Authorization: Bearer <session token>`, and the `expo()` plugin. It is
+mounted at `/api/auth/*` (e.g. `POST /api/auth/sign-up/email`,
+`POST /api/auth/sign-in/email`); the app calls it through
+`src/lib/authClient.ts`. A `databaseHooks` user-create hook creates the
+`player_profiles` row and its friend code. Sessions are verified by
+`authMiddleware.ts` for both REST (`requireAuth`) and Socket.IO connections
+(`socketAuth`, via `socket.handshake.auth.token`). Not configured yet:
+password reset and email verification (see `../ROADMAP.md`). A socket
 with no/invalid token is still allowed to connect and play as a guest
 (`src/lib/playerId.ts`'s persisted UUID on the client side) -- it just
 never gets a trusted `socket.data.userId`, and match persistence below
@@ -206,6 +212,51 @@ stuck on a chapter boss, built so it cannot be a shortcut and doubles as a chip 
 that unlock at level 5 and reset Monday 00:00 UTC (`questPeriodStart` in `db/quests.ts`);
 `GET /me/quests?type=weekly`. Seed with `npm run seed:quests`. Migration `0015`.
 
+## Time-control pools (matchmaking)
+
+The picker's time control is the one that is played. `matchmaking.ts` keeps one FIFO queue per venue, but a
+pairing is only made between players who picked the SAME time control (the longest-waiting match on the same
+clock is always preferred), so a player who picks 3m is never put into a 10m game. Thin pools are handled by
+an opt-in, never by default: after ~25 s the search screen offers "Also search other time controls" (`queue:widen`;
+`queue:join {widen: true}` on a reconnect); a widened player (`QueuedPlayer.flex`) accepts anyone, and the game is
+played at the clock the OTHER, non-widened player picked (`agreedDuration`). `startPairedMatch` takes the
+agreed clock in `opts.duration`. `GET /queue/stats?venueTier=` (public, display only) returns the number
+waiting per time control; Match Setup shows "N searching" under each clock and refreshes it every 6 s. Friend
+challenges carry their own chosen clock; private rooms are always 5m; bot and local games use the client clock.
+
+## Public player profiles
+
+`GET /users/:userId/profile` (`db/publicProfile.ts`, sign-in required): name, avatar, country, rating and tier,
+level, title, record and win rate, online presence, your relation (self / friends / outgoing / incoming /
+none) and your head-to-head over every finished online game between you (rated, wagered or friendly). Public
+fields only: no chips, gems, friend code or e-mail. A blocked pair (either direction), an unknown id and a
+malformed id are all a plain 404, so blocking cannot be probed. The app opens it as a sheet
+(`components/social/PlayerProfileSheet`): tap the opponent in the match header (look-only, the clock keeps
+running), on the result screen, or a row in the Friends list / rankings (podium, ranked rows, friends tab).
+
+## Rematch (play again)
+
+A finished online match is deleted from memory at once, so `src/rematch.ts` keeps a short-lived **rematch window**
+(modelled on `challenge.ts`): `snapshotForRematch(match)` is taken synchronously in `finishMatch` (both seats,
+venue, stake, `friendly`, `baseMs`, each seat's Safety Net choice) and `openRematch` opens it once any wager is
+settled (so winnings are credited before anyone re-escrows), keyed by the finished match id, 45 s TTL. No window for
+Festival sets or server-bot matches. Events (`index.ts`, next to `draw:*`): `rematch:offer {matchId}` ->
+the other seat gets `rematch:offered {from, buyIn, prize, insured, friendly}`; `rematch:respond {matchId, accept}`
+(only the asked player; two simultaneous offers count as an accept); `rematch:cancel`; `rematch:leave` (the player left
+the result screen, so nobody waits on them). Replies: `rematch:declined {reason: declined|left}`, `rematch:cancelled`,
+`rematch:expired`, `rematch:error {reason: unavailable|opponent-left|already-in-match|insufficient-chips|opponent-short|
+rating-too-low|opponent-ineligible|auth-required}`. Seat identity is the guestId, plus the signed-in account for wagered
+and friendly matches (`rematchSeatColor`, like `seatColor`). A socket disconnect closes its windows.
+
+On agreement `startRematch` re-checks everything as for a fresh pairing (both sockets live, neither in a live match,
+fresh rating/title), swaps the colours (new White = previous Black) and answers both players with the ordinary
+`queue:matched`, so the app's `/match` needs no changes: **friendly** and **Garage** matches go straight to `createMatch`
+(same base time, same `friendly` flag); **wagered** venues re-check the rating gate and go through `startPairedMatch`
+(`opts.whiteFirst`, `opts.rematch`) and the same atomic `escrowWager`, with each player's Safety Net choice carried
+over. A refused wagered rematch (`insufficient-chips`, `opponent-short`, ...) charges nobody and does NOT put anyone
+back in the matchmaking queue. Bot rematches are client-only (`result-placeholder.tsx` starts the same bot with the
+colour swapped; `match.tsx` opens a fresh verified session).
+
 ## Friendly matches (friend challenges and private rooms)
 
 A match started from a friend challenge or a room code is created with `friendly: true`
@@ -245,6 +296,20 @@ ONE activated copy). Routes: `GET /me/gear`, `POST /me/gear/:itemId/buy`,
   total. `wager:settled` carries `insurance: {premium, refund} | null`.
 - Show Report: `fame.ampBonus / ampWinsLeft / luckyPickSaved`. App: the Shop's **Gear** tab
   (`components/shop/GearPanel.tsx`) and the Safety Net card + active-gear pills on Match Setup.
+
+## Chip-priced extra spins
+
+After the free daily spin (and alongside the one ad spin) a player can buy up to three more spins, at 300,
+then 450, then 600 chips (`economy.config.json` -> `spinExtra.prices`; the cap is the number of prices).
+`POST /me/spin {withChips: true}` (`db/spin.ts`): refused with `free-spin-available` until the free spin is
+used, `paid-spins-used` past the cap, `insufficient-funds` (with the price) when short. The debit, the prize
+and the log row (`user_spin_log.paid_chips`, migration `0020`) are ONE transaction behind a per-user advisory
+lock, so a failed spin never costs chips and two quick taps can't share a price. **The wheel's expected value
+is ~197 chips-equivalent per spin (chips plus gems at 40:1), so every price is far above it** (66% / 44% / 33%
+of the price): `check-economy.mjs` fails if any price is not at least 1/0.75 of the EV. The ad spin and the
+paid spins are independent. `GET /me/spin/status` carries `paid: {used, cap, nextPrice}`; the Daily Spin screen
+shows "Spin again - N chips" under the free/ad buttons. If the wheel table is ever re-seeded with richer
+prizes, re-run the checker: it reads the config wheel, which `seed:spin` writes to the DB.
 
 ## Out-of-chips refill (rewarded ad)
 
@@ -571,9 +636,10 @@ Railway supports deploying from a subdirectory of a monorepo:
 7. Run `npm run db:migrate:remote` once (with `server/.env.production` set
    to this same Neon `DATABASE_URL` -- see "Local development vs.
    production" above) to create the tables before the first real request
-   hits `/auth/signup`. Also run `npm run seed:spin:remote` and
-   `npm run seed:cosmetics:remote` once, same target, before the daily spin
-   wheel or the Forge shop are used for the first time. Every later schema/
+   hits `/api/auth/sign-up/email`. Also run `npm run seed:spin:remote`,
+   `seed:cosmetics:remote`, `seed:quests:remote` and
+   `seed:achievements:remote` once, same target, before the spin wheel, the
+   Forge, quests or achievements are used for the first time. Every later schema/
    catalog change follows the same `:remote` pattern once it's been tested
    locally, instead of re-running this step manually.
 8. Copy the generated public URL (`https://<app>.up.railway.app`) into the

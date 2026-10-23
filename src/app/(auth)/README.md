@@ -1,9 +1,11 @@
 # (auth) route group
 
 Screens a player sees before reaching the main app: sign up, sign in, and
-onboarding. Backed by a self-hosted account system on the companion
-`server/` (bcrypt + JWT, see `server/src/auth.ts`) — not Supabase, which an
-earlier version of this note planned for before that server existed.
+onboarding. Backed by **better-auth** on the companion `server/`
+(`server/src/betterAuth.ts`, mounted at `/api/auth/*`), called through
+`src/lib/authClient.ts`'s `signUpWithEmail` / `signInWithEmail`. The returned
+session token is stored by `src/lib/authStorage.ts` and sent as a bearer token
+on REST calls and in the socket handshake.
 
 The parentheses make this a *route group* — Expo Router uses the folder to organize
 files without adding `/auth` to the URL/deep-link path.
@@ -14,8 +16,11 @@ files without adding `/auth` to the URL/deep-link path.
   `/home` with the persisted guest identity). Successful sign-in goes straight
   to `/home`. The sign-in ↔ sign-up links use `router.replace` (swap in place),
   not `push` — pushing each other stacked history and looped.
+  **"Forgot Password?" is not wired** (it only `console.log`s; the server has no
+  password-reset flow yet — see `ROADMAP.md`).
 - `sign-up.tsx` — built from the `sign_up_pro_stage_production_ready` Stitch mockup.
-  Calls `POST /auth/signup`, stores the returned JWT (`src/lib/authStorage.ts`), then
+  Requires accepting the Privacy Policy / Terms (`src/constants/legal.ts`), calls
+  `signUpWithEmail`, stores the session token (`src/lib/authStorage.ts`), then
   continues to `pick-rockstar.tsx`.
 - `pick-rockstar.tsx` — stage name + avatar persona selection (class tabs; only free Garage Band avatars are selectable here, Main Stage / Hall of Fame show a "unlocks in The Forge" teaser). Calls
   `PATCH /me/profile` with the choice, then continues to `welcome-reward.tsx`.

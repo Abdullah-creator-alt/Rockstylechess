@@ -17,6 +17,7 @@ files without adding `/play` to the URL/deep-link path.
   with a buy-in it also offers the optional **Safety Net** (premium up front, a loss pays part of
   the buy-in back; forwarded to `matchmaking.tsx` as `insured=1` and sent as `queue:join
   {insured: true}`) and shows which Backstage Gear is switched on (`useGear`).
+- **Time controls:** what the picker shows is what is played. Queues pair only players on the same clock (`server/README.md` -> "Time-control pools"); `setup.tsx` shows "N searching" per clock, and after ~25 s `matchmaking.tsx` offers an opt-in "Also search other time controls".
 - `matchmaking.tsx` — joins the companion `server/`'s real matchmaking queue over
   Socket.IO (`queue:join` with the venue tier, `queue:matched` to advance) — no
   longer simulated. Re-joins on every socket `connect` (including automatic
@@ -28,7 +29,7 @@ files without adding `/play` to the URL/deep-link path.
   server-provided `clockW`/`clockB` (real multiplayer, passed by `matchmaking.tsx`
   once the server pairs an opponent) and passes them into `useChessGame`, which
   routes online moves through `src/lib/socket.ts` instead of applying them
-  locally. Mounts `StockfishEngine` when `difficulty` is one of the two Stockfish
+  locally. Mounts `StockfishEngine` when `difficulty` is one of the three Stockfish
   tiers. Bot/local clock time = `DURATION_MS[duration]` (from `src/lib/onlineMatch.ts`)
   when a `duration` param is present, else `DEFAULT_CLOCK_MS` (5 min). `venueTier`
   (falls back to `garage` when absent) resolves to a `Venue` from
@@ -106,6 +107,13 @@ files without adding `/play` to the URL/deep-link path.
   its resign copy warns the run ends. After the set, `result-placeholder.tsx` renders
   `src/components/festival/FestivalSetPanel` (the Set Break: bank the purse or play the next
   set) from the cached `festival:update` (`src/lib/festival.ts`).
+- **Rematch** (`result-placeholder.tsx`): the result screen's first button. Bot games start the same bot again
+  with the colours swapped and the same time control (`match.tsx` forwards `rematchBot`, a fresh verified session
+  opens in `/match`; not offered after a Roadie Kit game or a Festival set, and with no interstitial). Online games
+  (friend/room, Garage, wagered venues) use `components/match/RematchPanel` + `hooks/useRematch` against the server's
+  rematch window (`server/README.md` -> "Rematch"): one player offers, the other accepts or declines, colours swap,
+  a wagered rematch re-escrows the stake (each player's Safety Net choice carries over) and is disabled with a
+  reason when chips or rating fall short.
 - **Show Report** (`result-placeholder.tsx` + `src/components/progression/ShowReport.tsx`):
   after every match the result card shows the server's progression report instead of the old
   hardcoded "710 -> 726": Fame earned (with Opening Night / Hot Streak / daily-cap pills), the
@@ -125,8 +133,9 @@ files without adding `/play` to the URL/deep-link path.
   heights and board sizing are untouched). `result-placeholder.tsx` shows the server's
   `wager:settled` (cached by `src/lib/wagerResult.ts`) as a signed net, "Settling…" until it
   arrives, and "No Contest" for a voided early exit. Rules: `server/README.md` → "Wagers".
-- `result-placeholder.tsx` — stub destination for Resign until the real Win/Loss
-  screen is built. Its single exit (`goHome`, used by the Home button *and* hardware
+- `result-placeholder.tsx` — the real post-match result screen (the name is
+  historical): outcome banner + reason, rewards, Show Report, wager settlement,
+  Rematch, Replay / Analyze Game and Home. Its single exit (`goHome`, used by the Home button *and* hardware
   back) is where the post-match **interstitial ad** may appear — every 3rd finished
   match, never the first two, min 4 minutes apart, only if an ad is already loaded,
   and never for a Remove Ads buyer. Navigation always follows whether or not an ad
@@ -147,7 +156,19 @@ files without adding `/play` to the URL/deep-link path.
   the current `color · duration · venue` selection. All ride along on the
   `/match` push; session state only, resets to White / `5m` / `arena` on each
   visit.
-- `tournaments.tsx` — built from `tournaments_pro_stage_animated`.
+- `tournaments.tsx` — built from `tournaments_pro_stage_animated`. Honestly
+  "Coming Soon": no brackets, scheduling or prizes exist; actions show a notice.
+- `game-room.tsx` — private room: create a room and share its 6-character code
+  (copy to clipboard), or join by code (`room:*` socket events, server
+  `server/src/gameRoom.ts`). Pairing ends in the same `queue:matched` as
+  matchmaking, so `/match` is identical. Rooms are always 5m and **friendly**
+  (unrated, no rewards; `server/README.md` -> "Friendly matches").
+- `replay.tsx` — move-by-move replay with transport controls. Sources: a just-finished
+  bot/local/online game (`localMatchReplayStore.ts`) or a saved online match
+  (`getMatchReplay`, from Iron ID's match history). Reached with `mode=analysis` only
+  from the paid "Analyze Game" entry point on the result screen, which adds the
+  Stockfish analysis (eval bar, move-quality labels, accuracy). It cannot explore
+  side lines (no board input), despite the Play tab's "explore lines" copy.
 - `puzzles.tsx` — puzzle training hub over `src/lib/puzzleCatalog.ts` (~250
   puzzles curated by `scripts/curate-puzzles.mjs` from the Lichess CC0 DB, no
   title/difficulty fields). All presentation metadata — friendly titles,

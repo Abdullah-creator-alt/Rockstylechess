@@ -23,7 +23,9 @@ Most `src/` subdirectories — every route group under `src/app/` (e.g.
 `README.md` with file-level rationale (why a screen exists, what Stitch
 mockup it came from, which parts are still mock data). Check the relevant
 one before making structural changes in that area; this file only covers
-the cross-cutting picture.
+the cross-cutting picture. `ROADMAP.md` is the prioritized list of what is
+still missing or broken (launch blockers, production readiness, game gaps,
+known bugs) — update it when you fix or find one.
 
 ## Commands
 
@@ -124,6 +126,11 @@ as `pendingPromotion` until `PromotionPicker` resolves the piece
 
 ### ChessBoard rendering — `src/components/ui/ChessBoard.tsx`
 
+Open issue: the match screen can freeze/crash on low-end Android GPUs. The
+leading suspect is that expo-image draws the traced piece SVGs as vector
+`PictureDrawable`s every frame; see `TEMP-match-crash-notes.md` before
+touching piece rendering.
+
 Pieces have **persistent identity**: a `LivePiece {id, type, square}` list is
 reconciled incrementally per move (normal move, capture including en
 passant, castling — both king and rook, promotion) rather than re-derived
@@ -161,11 +168,13 @@ for anything else gameplay-related.
 
 ### Bots — `src/lib/botEngine.ts`
 
-Dispatches by difficulty: `randomBot.ts` (easy, 1-ply), `heuristicBot.ts`
-(medium — negamax/alpha-beta, iteratively deepened against a wall-clock
+Dispatches by difficulty: `heuristicBot.ts` for easy (depth 1) and medium
+(negamax/alpha-beta + quiescence, iteratively deepened against a wall-clock
 deadline so a complex position can't freeze the single JS thread), or three
 Stockfish 18 WASM tiers run inside a hidden `react-native-webview`
-(`StockfishEngine.tsx` + `stockfishProtocol.ts`).
+(`StockfishEngine.tsx` + `stockfishProtocol.ts`). `randomBot.ts` is only a
+fallback when no engine is available. The six roster bots (and which is a Tour
+boss) come from `economy.config.json` -> `bots`.
 
 ### Multiplayer server (`server/`)
 
@@ -179,8 +188,8 @@ independent single-shot `setTimeout`-per-color mechanisms live on
 `RECONNECT_GRACE_MS` = 60s) and `clock.deadlineTimer` (real flag-fall) — kept
 deliberately separate (different reschedule cadence) rather than merged.
 Auth is **better-auth** (`server/src/betterAuth.ts`, Drizzle adapter, Expo +
-bearer plugins — not a hand-rolled bcrypt/JWT scheme, despite what the
-READMEs' prose still says), mounted at `/api/auth/*`; a socket with no/invalid
+bearer plugins — not a hand-rolled bcrypt/JWT scheme), mounted at
+`/api/auth/*`; a socket with no/invalid
 token still connects and plays as an anonymous guest
 (`src/lib/playerId.ts`'s persisted device UUID) — `requireAuth`/`socketAuth`
 in `authMiddleware.ts` are the two enforcement points. Match persistence
@@ -270,10 +279,12 @@ verify path). Full detail: root `README.md` → "Ads", `server/README.md` → "A
 
 ### Sound — `src/lib/soundEffects.ts` / `src/lib/backgroundMusic.ts`
 
-Five short SFX (move/capture/castle/check/checkmate/illegal), each a
-pre-instantiated `expo-audio` `AudioPlayer` (eager, no pooling — chess is
-turn-sequential). A looping menu-only background track is lazily created
-instead. Both toggle off a persisted preference; the root layout
+Six short gameplay SFX (move/capture/castle/check/checkmate/illegal) plus
+three celebration cues (level-up/reward/title, played by
+`src/lib/celebration.ts`), each a pre-instantiated `expo-audio` `AudioPlayer`
+in `soundEffects.ts` (eager, no pooling — chess is turn-sequential). Menu
+music (three tracks played in a fixed cycle) is lazily created instead.
+Both toggle off a persisted preference; the root layout
 (`src/app/_layout.tsx`) starts/stops menu music by exact route (not route
 group — `(play)/` contains non-gameplay screens like the bot picker and
 setup that should still play menu music).

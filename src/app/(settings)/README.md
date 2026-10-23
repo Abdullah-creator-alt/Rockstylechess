@@ -9,17 +9,29 @@ files without adding `/settings` to the URL/deep-link path.
 
 - `control-core.tsx` — audio toggles, game settings rows, account ID, logout, built
   from `control_core_pro_stage_animated`. Real entry point: a gear icon on Iron ID's
-  header. Logout clears the stored JWT (`src/lib/authStorage.ts`) and the socket's
-  trusted identity (`src/lib/socket.ts`'s `clearSocketAuth`), then returns to
-  `sign-up.tsx`.
+  header. Logout clears the stored session token (`src/lib/authStorage.ts`), the guest
+  latch and the socket's trusted identity (`src/lib/socket.ts`'s `clearSocketAuth`),
+  then returns to `sign-in.tsx`. Shows "Privacy & Ad Choices" (Google UMP) only where
+  consent rules require it. **Not wired yet:** the Language and Terms of Service rows
+  only `console.log` (see `ROADMAP.md`).
 - `backstage-alerts.tsx` — notification feed with claim/view actions, built from
   `backstage_alerts_pro_stage_animated`. Reached from Control Core's Notifications row.
-- `account-security.tsx` — linked accounts (Google/Facebook/Apple) + delete-account
-  danger zone, built from `account_security_pro_stage_animated`. Reached from Control
-  Core's Account row. Delete Account calls the real `DELETE /me` on the server
-  (`src/lib/api.ts`), then clears local auth state the same way logout does. A
-  guest (never signed in) has nothing server-side to delete, so it just navigates
-  back.
-- `roadie-support.tsx` — FAQ/Technical/Billing/Report support categories + contact
-  action, built from `roadie_support_pro_stage_animated`. Reached from Control Core's
-  Game section ("Help & Support" row).
+  In-app only (no push notifications).
+- `account-security.tsx` — linked accounts + blocked players + delete-account danger
+  zone, built from `account_security_pro_stage_animated`. Reached from Control Core's
+  Account row. **The linked-accounts list is hardcoded mock data** (it shows "Google:
+  gm.player@gmail.com, connected" to everyone; no social sign-in exists). Delete Account
+  calls the real `DELETE /me` on the server (`src/lib/api.ts`), then clears local auth
+  state the same way logout does. A guest (never signed in) has nothing server-side to
+  delete, so it just navigates back.
+- `blocked-players.tsx` — the signed-in player's block list (`GET` blocked users,
+  unblock with a confirmation). Reached from Account Security.
+- `roadie-support.tsx` — support hub built from `roadie_support_pro_stage_animated`:
+  FAQ, Technical / Billing (email support pre-filled with app version and platform),
+  and Report a Player.
+  Reached from Control Core's "Help & Support" row.
+- `faq.tsx` — static FAQ (`FAQ_ENTRIES`), expandable rows. Reached from Roadie Support.
+- `report-player.tsx` — pick a friend or a recent online opponent (`getMyMatches`) and
+  report them (the shared form is `src/components/social/ReportPlayerModal.tsx`; server
+  side `db/moderation.ts`).
+  Reached from Roadie Support.

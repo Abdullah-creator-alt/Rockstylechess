@@ -1,50 +1,50 @@
 # RockStyle Chess
 
 A mobile chess app built with Expo Router (SDK 54) + React Native, styled as a
-"rockstar arena" experience. Chess itself, the five-tier bot ladder, and real
-online multiplayer (with accounts, Elo, and match history) are fully wired up
-end-to-end. Most of the surrounding meta-game — shop, social, daily
-rewards — is still UI rendering mock data over Stitch-generated designs,
-being wired up incrementally on top of the database schema that already
-exists for it.
+"rockstar arena" experience, with a companion Node/Express/Socket.IO server
+(`server/`) for online play, accounts and the whole economy. Almost everything
+is wired end to end; what is still missing before launch is tracked in
+[`ROADMAP.md`](ROADMAP.md).
 
 ## Features
 
-**Real / working**
+**Chess and play modes**
 - **Chess engine** — `chess.js` drives all legality, check/checkmate/
-  stalemate/draw detection; the app only renders and dispatches moves.
-- **Five-tier bot ladder** (`src/lib/botEngine.ts`) — a from-scratch
-  negamax/alpha-beta heuristic bot, iteratively deepened against a shared
-  time budget (time-budgeted to stay responsive on React Native's single JS
-  thread) for easy (1-ply) and medium (up to 3-ply), and three Stockfish 18
-  WASM tiers (basic ~1600 Elo / lite ~2000 Elo / strong ~2800 Elo) run
-  inside a hidden `react-native-webview` (`src/components/StockfishEngine.tsx`).
-- **Local pass-and-play** and **bot matches**, fully client-side, no server
-  required.
-- **Real online multiplayer** — matchmaking by venue tier, live move sync,
-  resign/forfeit, and reconnection within a grace window, via a companion
-  Socket.IO server (`server/`). Every move is re-validated server-side with
-  `chess.js` again before being broadcast — the client's own check is only
-  for instant UI feedback, never trusted alone.
-- **Self-hosted accounts** — email/password sign-up and sign-in, bcrypt +
-  JWT sessions, wired end-to-end from the `(auth)` screens through the
-  server.
-- **Persistence** — PostgreSQL (via Drizzle ORM) stores accounts, player
-  profiles, Elo ratings, and match history. Elo (K=32) and win/loss/streak
-  stats update automatically after every online match between two
-  authenticated players. Persistence writes happen *after* the realtime
-  broadcast, fire-and-forget — a database hiccup degrades to "this result
-  didn't save," never to blocked or broken gameplay.
-- **Safe-area-aware layout** across every screen (notch/status bar, gesture
-  bar, bottom nav all accounted for).
+  stalemate/draw detection on client and server; the app only renders and
+  dispatches moves.
+- **Six roster bots on five difficulty tiers** (`src/lib/botEngine.ts`,
+  roster in `economy.config.json` -> `bots`) — a from-scratch negamax/
+  alpha-beta heuristic bot, iteratively deepened against a wall-clock deadline
+  so it never freezes the JS thread (easy = depth 1, medium = deeper), and
+  three Stockfish 18 WASM tiers (basic ~1600 / lite ~2000 / strong ~2800) run
+  in a hidden `react-native-webview` (`src/components/StockfishEngine.tsx`).
+  Rewarded bot games go through a server-issued, PGN-verified session.
+- **Local pass-and-play** (client-only, unrewarded) and **puzzles** (~250
+  Lichess puzzles, local progress).
+- **Online multiplayer** — matchmaking per venue and time control, private
+  rooms, friend challenges, live move sync, server-authoritative clocks,
+  draw offers, rematch, reconnection within a grace window, in-match chat and
+  live spectating. Every move is re-validated server-side with `chess.js`.
+- **The Tour** (campaign: 6 chapters of gigs and boss bots) and **Festival
+  Run** (a paid ladder of server-played bot sets).
 
-**UI-only / mock (not backed by real data yet)**
-- Shop (chip/gem packs, VIP), Forge (cosmetics), Rewards (daily bonus,
-  quests, achievements, spin wheel, collections), and Social (friends,
-  bands, messages, world rankings, front-row spectate) all render hardcoded
-  arrays today. Their Postgres tables already exist — see
-  [Database](#database) — but no endpoints or screen wiring consume them
-  yet; this is deliberately scoped as follow-up work, not an oversight.
+**Accounts, progression and economy**
+- **Accounts** — email/password via **better-auth** (bearer + Expo plugins),
+  or guest play with a persisted device id.
+- **Rating, Fame, levels and titles** — Elo (K=32) on rated online games;
+  Fame/levels/titles granted in one place (`grantFame`); a post-match Show
+  Report and level-up celebrations.
+- **Economy** — chips and gems, every price and payout in
+  `economy.config.json`: chip wagers at Club-and-up venues, cosmetics in the
+  Forge (boards, piece sets, 3 avatar classes), Backstage Gear, Review Packs,
+  daily bonus, spin, daily/weekly quests, achievements.
+- **Monetization** — Google Play Billing (chip/gem packs, Remove Ads) and
+  AdMob rewarded/interstitial ads (test ids until a real AdMob account exists).
+- **Social** — friends with live presence, DMs, notifications, global and
+  friends leaderboards, public player profiles, report/block.
+
+**Not built yet:** tournaments, Backstage Pass, venue/country leaderboards,
+push notifications, social sign-in. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Tech stack
 
@@ -54,44 +54,48 @@ exists for it.
 - `chess.js` — chess rules engine
 - `react-native-reanimated` / `react-native-gesture-handler` — board
   animation and drag/tap interaction
-- `react-native-webview` — hosts the Stockfish WASM build for the two
-  hard-mode bots
-- `socket.io-client`, `expo-secure-store` (JWT), `@react-native-async-storage/async-storage`
-  (persisted guest id for unauthenticated play)
+- `react-native-webview` — hosts the Stockfish WASM build for the three
+  Stockfish bot tiers
+- `expo-image` (pieces, art), `expo-audio` (SFX + menu music), `expo-haptics`
+- `better-auth` + `@better-auth/expo` (session token in `expo-secure-store`),
+  `socket.io-client`, `@react-native-async-storage/async-storage` (persisted
+  guest id, local settings)
+- `react-native-iap` (Google Play Billing), `react-native-google-mobile-ads` (AdMob)
 
 **Server** (`server/` — a separate Node.js project with its own
 `package.json`, deployed independently)
 - Express + Socket.IO — realtime match and matchmaking layer
 - PostgreSQL + Drizzle ORM (`drizzle-kit` for migrations)
-- `bcryptjs` + `jsonwebtoken` — auth
+- `better-auth` (Drizzle adapter, bearer + Expo plugins) — auth
+- `google-auth-library` — Play purchase verification
 
 ## Project structure
 
 ```
 src/
   app/                    Expo Router screens, grouped by feature
-    (auth)/               sign-up, sign-in, onboarding
-    (play)/                venue select, matchmaking, live match, bot & tournament galleries
-    (rewards)/             daily bonus, quests, achievements, spin, collections     [mock]
-    (settings)/             control core (incl. logout), notifications, account, support
-    (shop)/                  chip/gem shop, cosmetics forge                          [mock]
-    (social)/                 rankings, own profile, bands, friends, messages, spectate [mock]
-    (tabs)/                    main lobby shell
-    (modals)/                   reserved, currently empty
-    index.tsx                    entry route: routes to /home or /sign-up based on stored session
-  components/
-    ui/                    design-system primitives (RockButton, RockCard, ChessBoard, ...)
-    StockfishEngine.tsx    headless WebView-hosted Stockfish bridge
-  hooks/useChessGame.ts    chess.js wrapper + bot/online move orchestration
-  lib/                     bot engines, Stockfish protocol, socket client, auth/session storage
-  constants/theme.ts       colors, fonts, spacing tokens
+    (auth)/      sign-in, sign-up, onboarding (pick rockstar, welcome reward)
+    (play)/      setup, matchmaking, game room, match, bots, Tour, Festival, puzzles, replay, result, tournaments
+    (rewards)/   daily bonus, spin, quests, achievements, collections
+    (settings)/  Control Core, alerts, account security, support, FAQ, report/blocked players
+    (shop)/      Rock Shop (IAP packs, Remove Ads, Gear), Forge (cosmetics)
+    (social)/    rankings, Iron ID, friends, messages, Front Row (spectate)
+    (tabs)/      home (lobby), play (mode picker)
+    (modals)/    reserved, currently empty
+    index.tsx    entry route: /home with a session or a chosen guest mode, else /sign-in
+  components/    ui/ primitives (RockButton, RockCard, ChessBoard, ...), plus feature folders
+  hooks/         useChessGame, useChessClock, useFriends, useTour, useFestival, ...
+  lib/           bot engines, Stockfish protocol, sockets, auth, ads, economy mirror
+  constants/     theme.ts (design tokens), venues, bots, cosmetics catalogs
 server/
   src/
-    index.ts               Express + Socket.IO entry point
-    match.ts / matchmaking.ts   in-memory live match & queue state
-    auth.ts / authMiddleware.ts REST + Socket.IO JWT auth
-    db/                     Drizzle client, schema (users/matches/economy/progression/social), Elo, match persistence
-  drizzle/                  generated SQL migrations (committed)
+    index.ts                  Express + Socket.IO entry point, every match-ending path (finishMatch)
+    match.ts / matchmaking.ts in-memory live match & queue state
+    betterAuth.ts             better-auth instance (mounted at /api/auth/*)
+    auth.ts                   the single authRouter for every /me/* route
+    db/                       Drizzle schema + one module per feature (wagers, tour, festival, ...)
+  drizzle/                    generated SQL migrations (committed)
+economy.config.json           every price and payout (generated into client + server mirrors)
 ```
 
 Most directories have their own `README.md` with more detail on individual
@@ -99,6 +103,20 @@ files and design decisions (why a file exists, what Stitch mockup it came
 from, what's still a stub) — check those first when working in a given
 area. `server/README.md` in particular documents the full Socket.IO
 protocol and the auth/persistence design.
+
+### Documentation map
+
+| File | What it covers |
+|---|---|
+| `README.md` | This overview, setup, Android builds |
+| `ROADMAP.md` | Prioritized list of what is missing before launch (blockers, production readiness, game gaps, known bugs) |
+| `CLAUDE.md` / `AGENTS.md` | Cross-cutting architecture rules for coding agents |
+| `server/README.md` | Every server system: economy, progression, Tour, Festival, wagers, ads, protocol, deploys |
+| `DESIGN.md` | Design tokens (colors, type, spacing, gradients, shadows) |
+| `ui.md` | Motion, audio, navigation and a screen-by-screen UI reference |
+| `product_overview.md` | Client-facing, non-technical product description |
+| `src/**/README.md` | Per-folder file rationale |
+| `TEMP-match-crash-notes.md` | Open Android match-crash investigation (delete when fixed) |
 
 ## Setup
 
@@ -130,8 +148,9 @@ below.
 ```bash
 cd server
 npm install
-cp .env.example .env       # set DATABASE_URL to your local Postgres, + JWT_SECRET
+cp .env.example .env       # set DATABASE_URL to your local Postgres, + BETTER_AUTH_SECRET
 npm run db:migrate         # apply pending migrations (local DB)
+npm run seed:spin && npm run seed:cosmetics && npm run seed:quests && npm run seed:achievements
 npm run dev                # tsx watch src/index.ts, listens on :4000
 ```
 
@@ -143,8 +162,8 @@ local-DB setup and the `:remote` npm scripts that deliberately push a
 tested migration/seed change to the real Neon database once it's approved
 — that split, plus a normal `git push` for the Railway deploy itself, is
 the whole "promote local changes to production" workflow. Also see
-`server/README.md` for the full protocol reference, why Drizzle over
-Prisma, and why auth is self-hosted rather than a third-party provider.
+`server/README.md` for the full protocol reference and why Drizzle over
+Prisma.
 
 ### Redeploying the server to Railway
 
@@ -258,10 +277,15 @@ list is passed as a Gradle flag, so the regenerated `android/gradle.properties`
 is never edited.
 
 Output lands at `android/app/build/outputs/apk/release/app-release.apk` (or
-`.../debug/app-debug.apk` if you built that variant). The release build type
-currently signs with the Expo-generated debug keystore
-(`android/app/debug.keystore`) — fine for sideloading/testing, but swap in a
-real release keystore before shipping to the Play Store.
+`.../debug/app-debug.apk` if you built that variant). The release build is
+signed with the real upload keystore (`release.jks` + `keystore.properties` in
+the repo root, both gitignored) via `plugins/withReleaseKeystore.js`, which
+re-applies the signing config on every prebuild and falls back to the debug
+keystore when those files are missing (e.g. a fresh clone).
+
+**Play Store upload needs an App Bundle, not an APK:** run
+`./gradlew bundleRelease` (output `android/app/build/outputs/bundle/release/app-release.aab`).
+`plugins/withKotlinMetadataSkip.js` is required for the AdMob native build.
 
 ## Architecture
 
@@ -273,10 +297,11 @@ real release keystore before shipping to the Play Store.
   connection (`src/lib/socket.ts`) instead of applying them directly, and
   reconciles incoming opponent moves from the server.
 - **Bots** — `src/lib/botEngine.ts` dispatches by difficulty to
-  `randomBot.ts` (easy), `heuristicBot.ts` (medium — negamax with alpha-beta
-  pruning and a hard wall-clock deadline so a complex position can't freeze
-  the UI thread), or the Stockfish WebView bridge (`StockfishEngine.tsx` +
-  `stockfishProtocol.ts`) for the two hard tiers.
+  `heuristicBot.ts` (easy = depth 1, medium = deeper; negamax with alpha-beta
+  pruning, quiescence and a hard wall-clock deadline so a complex position
+  can't freeze the UI thread) or the Stockfish WebView bridge
+  (`StockfishEngine.tsx` + `stockfishProtocol.ts`) for the three Stockfish
+  tiers. `randomBot.ts` is only a fallback.
 - **Multiplayer server** — a single Socket.IO instance holds the
   matchmaking queue and live match state (`chess.js` instances) in process
   memory. Deliberately not Redis-backed: one instance is simpler and has
@@ -284,10 +309,12 @@ real release keystore before shipping to the Play Store.
   setup, and isn't needed until real load demands it (see
   `server/README.md`). Every move is authoritatively re-validated
   server-side before being broadcast to both players.
-- **Auth** — self-hosted, not a third-party provider: bcrypt-hashed
-  passwords and JWT sessions (`server/src/auth.ts`,
-  `server/src/authMiddleware.ts`). Sockets carry the JWT in the connection
-  handshake; a missing or invalid token doesn't reject the connection, it
+- **Auth** — self-hosted with **better-auth** (`server/src/betterAuth.ts`,
+  Drizzle adapter, bearer + Expo plugins, mounted at `/api/auth/*`; the app
+  uses `src/lib/authClient.ts`). REST calls send the session token as
+  `Authorization: Bearer`, checked by `requireAuth`; sockets send it in the
+  handshake (`socketAuth`, `server/src/authMiddleware.ts`). A missing or
+  invalid token doesn't reject the connection, it
   just means that seat plays as an anonymous guest (`src/lib/playerId.ts`'s
   persisted device UUID) — guest play works identically, it's just never
   persisted.
@@ -350,5 +377,10 @@ upload a Play Store build that still uses test ids.
 | `npm run lint` | root | ESLint |
 | `npm run dev` | `server/` | Run the multiplayer server with hot reload |
 | `npm run build` then `npm start` | `server/` | Compile and run the server for production |
-| `npx drizzle-kit generate` | `server/` | Generate a SQL migration from schema changes |
-| `npx drizzle-kit migrate` | `server/` | Apply pending migrations to `DATABASE_URL` |
+| `npm run db:generate` | `server/` | Generate a SQL migration from schema changes (`npx drizzle-kit` won't resolve: `bin-links=false`) |
+| `npm run db:migrate` | `server/` | Apply pending migrations to the local DB (`db:migrate:remote` for Neon) |
+| `npm run seed:<spin\|cosmetics\|quests\|achievements>` | `server/` | Idempotent catalog seeds (`:remote` variants for Neon) |
+| `npx tsc --noEmit -p tsconfig.json` | root | Client type check |
+| `node scripts/gen-economy.mjs && node scripts/check-economy.mjs` | root | Regenerate + validate the economy mirrors |
+| `node scripts/rasterize-pieces.mjs` | root | Render piece SVGs to PNGs (`assets/pieces/png/`) |
+| `bash scripts/build-apk.sh [fast\|full]` | root | Release APK (fast = arm64 only) |
