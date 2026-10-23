@@ -466,7 +466,7 @@ export interface AdPlacementStatus {
   remaining: number;
 }
 export interface AdStatus {
-  placements: Record<'free-chips' | 'extra-spin' | 'daily-double', AdPlacementStatus>;
+  placements: Record<'free-chips' | 'extra-spin' | 'daily-double' | 'venue-refill', AdPlacementStatus>;
   ssvRequired: boolean;
 }
 
@@ -477,6 +477,12 @@ export function getAdStatus(token: string): Promise<AdStatus> {
 // Free-chips placement. Rejects with Error('ad-daily-cap-reached' | 'ad-not-verified').
 export function redeemFreeChipsAd(token: string): Promise<{ ok: true; chipsGranted: number; chips: number; gems: number }> {
   return request('/me/ads/redeem', { method: 'POST', body: { placement: 'free-chips' }, token });
+}
+
+// Out-of-chips lifeline: an ad pays the shortfall to the cheapest buy-in (server/src/adRewards.ts,
+// refillAmount). Rejects with Error('ad-daily-cap-reached' | 'ad-not-verified' | 'refill-not-needed').
+export function redeemVenueRefillAd(token: string): Promise<{ ok: true; chipsGranted: number; chips: number; gems: number }> {
+  return request('/me/ads/redeem', { method: 'POST', body: { placement: 'venue-refill' }, token });
 }
 
 export interface QuestStatus {

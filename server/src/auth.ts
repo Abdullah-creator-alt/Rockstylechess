@@ -48,6 +48,7 @@ import { claimDailyBonus, getDailyBonusStatus } from './db/dailyBonus.js';
 import { db } from './db/client.js';
 import { ENDED_BY, finishBotSession, startBotSession } from './db/botSessions.js';
 import { activateGear, buyGear, getGear } from './db/boosts.js';
+import { redeemVenueRefill } from './db/venueRefill.js';
 import { applyTour, getTour } from './db/tour.js';
 import { getOwnedTitleIds, getUnseenCelebrations, grantFame, markProgressionSeen, TITLES } from './db/progression.js';
 import { claimQuest, getQuestsStatus, reportPuzzleSolvedForQuests } from './db/quests.js';
@@ -625,6 +626,22 @@ authRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const userId = req.userId as string;
+    // Out-of-chips lifeline: the amount depends on the live balance, so it has its own path.
+    if (req.body?.placement === 'venue-refill') {
+      const refill = await redeemVenueRefill(userId);
+      if (refill.status === 'ok') {
+        res.json({ ok: true, chipsGranted: refill.chipsGranted, chips: refill.chips, gems: refill.gems });
+      } else if (refill.status === 'daily-cap-reached') {
+        res.status(409).json({ error: 'ad-daily-cap-reached' });
+      } else if (refill.status === 'not-verified') {
+        res.status(409).json({ error: 'ad-not-verified' });
+      } else if (refill.status === 'refill-not-needed') {
+        res.status(409).json({ error: 'refill-not-needed' });
+      } else {
+        res.status(404).json({ error: 'profile-not-found' });
+      }
+      return;
+    }
     if (req.body?.placement !== 'free-chips') {
       res.status(400).json({ error: 'invalid-placement' });
       return;

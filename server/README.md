@@ -246,6 +246,19 @@ ONE activated copy). Routes: `GET /me/gear`, `POST /me/gear/:itemId/buy`,
 - Show Report: `fame.ampBonus / ampWinsLeft / luckyPickSaved`. App: the Shop's **Gear** tab
   (`components/shop/GearPanel.tsx`) and the Safety Net card + active-gear pills on Match Setup.
 
+## Out-of-chips refill (rewarded ad)
+
+A player below the CHEAPEST paid buy-in (300, the Club) can enter no paid venue, so the "Not enough chips"
+prompt on Home / Match Setup offers "Watch ad · +N chips". It is the `venue-refill` ad placement
+(`economy.config.json` -> `ads`, `adRewards.ts` `refillAmount`, `db/venueRefill.ts`,
+`POST /me/ads/redeem {placement: 'venue-refill'}`): each ad pays the shortfall to that buy-in, at most 100,
+two a day (200, under one online win; `check-economy.mjs` asserts it, and that refill + free-chips ads can
+cover the cheapest buy-in from zero). Someone who can already afford the Club gets `refill-not-needed` (and the
+ad is not used up), so it is a way back in, not a faucet; a player who wants a pricier venue they are merely
+short for is not offered it. One transaction locks the profile, computes the shortfall from the LIVE balance,
+redeems the ad (daily cap, and the signed SSV view when `ADS_REQUIRE_SSV`), and credits. No ads on
+`/matchmaking` (house rule), so its queue error screen still only offers the shop.
+
 ## Review Packs (Game Analysis in bulk)
 
 A single Game Review is still 200 chips or 5 gems (`POST /me/analysis/charge {currency}`). A

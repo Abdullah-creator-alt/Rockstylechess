@@ -3,6 +3,11 @@ import { Alert } from 'react-native';
 
 import { formatChips, venueRequirement, type Venue, type VenueRequirement } from '@/constants/venues';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
+import { useRewardedAd } from '@/hooks/useRewardedAd';
+import { redeemWithRetry } from '@/lib/ads/redeemWithRetry';
+import { refillAmount } from '@/lib/adRefill';
+import { getAdStatus, redeemVenueRefillAd } from '@/lib/api';
+import { getAuthToken } from '@/lib/authStorage';
 import { safetyNetTerms } from '@/lib/gear';
 import type { Duration } from '@/lib/onlineMatch';
 
@@ -12,14 +17,55 @@ import type { Duration } from '@/lib/onlineMatch';
 // is the friendly explanation, not the security.
 export function useVenueEntry() {
   const router = useRouter();
-  const { status, profile } = usePlayerProfile();
+  const { status, profile, refresh } = usePlayerProfile();
+  const { ready: adReady, show: showAd } = useRewardedAd();
   const ctx = { status, chips: profile?.chips ?? 0, rating: profile?.rating ?? 0 };
 
   function requirementFor(venue: Venue): VenueRequirement | null {
     return venueRequirement(venue, ctx);
   }
 
-  function explain(venue: Venue, requirement: VenueRequirement): void {
+  // Out of chips (below the cheapest paid buy-in): watch an ad for the shortfall. The server pays it and
+  // enforces the daily cap; this just runs the ad and reports what happened.
+  async function watchRefillAd(venue: Venue): Promise<void> {
+    if (!adReady) {
+      Alert.alert('No ad available', 'Please try again in a moment.');
+      return;
+    }
+    try {
+      const result = await showAd();
+      if (result === 'unavailable') {
+        Alert.alert('No ad available', 'Please try again in a moment.');
+        return;
+      }
+      if (result !== 'earned') return; // closed early: no reward
+      const token = await getAuthToken();
+      if (!token) return;
+      const granted = await redeemWithRetry(() => redeemVenueRefillAd(token));
+      void refresh();
+      const short = venue.buyIn - granted.chips;
+      Alert.alert(
+        `+${granted.chipsGranted.toLocaleString('en-US')} chips`,
+        short <= 0
+          ? `You have ${granted.chips.toLocaleString('en-US')} chips: enough for ${venue.name}.`
+          : `You have ${granted.chips.toLocaleString('en-US')} chips. ${venue.name} needs ${short.toLocaleString('en-US')} more${refillAmount(granted.chips) > 0 ? ', and you can watch another ad.' : '.'}`,
+      );
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      Alert.alert(
+        'Reward not granted',
+        code === 'ad-daily-cap-reached'
+          ? "You've used today's refill ads. Play the free Garage to earn more chips, or come back tomorrow."
+          : code === 'refill-not-needed'
+            ? 'You already have enough chips for the cheapest venue.'
+            : code === 'ad-not-verified'
+              ? "We couldn't confirm that the ad finished. Please try again."
+              : 'Something went wrong. Please try again.',
+      );
+    }
+  }
+
+  async function explain(venue: Venue, requirement: VenueRequirement): Promise<void> {
     if (requirement === 'sign-in') {
       Alert.alert(`${venue.name} is played for chips`, 'Sign in to play for chips. The Garage is always free.', [
         { text: 'Not now', style: 'cancel' },
@@ -31,11 +77,24 @@ export function useVenueEntry() {
         `You need a rating of ${venue.minRating} to enter (yours is ${ctx.rating}). Win matches at the lower venues to climb.`,
       );
     } else {
+      const offer = refillAmount(ctx.chips);
+      // The ad is only for a player who can afford NO paid venue, and only while today's refills last.
+      let adsLeft = 0;
+      if (offer > 0) {
+        try {
+          const token = await getAuthToken();
+          if (token) adsLeft = (await getAdStatus(token)).placements['venue-refill'].remaining;
+        } catch {
+          adsLeft = 0;
+        }
+      }
       Alert.alert(
         `Not enough chips`,
-        `${venue.name} costs ${venue.buyIn.toLocaleString('en-US')} chips to enter and you have ${ctx.chips.toLocaleString('en-US')}.`,
+        `${venue.name} costs ${venue.buyIn.toLocaleString('en-US')} chips to enter and you have ${ctx.chips.toLocaleString('en-US')}.` +
+          (offer > 0 && adsLeft > 0 ? ` Watch a short ad for +${offer.toLocaleString('en-US')} chips (${adsLeft} left today).` : ''),
         [
           { text: 'Not now', style: 'cancel' },
+          ...(offer > 0 && adsLeft > 0 ? [{ text: `Watch ad · +${offer}`, onPress: () => void watchRefillAd(venue) }] : []),
           { text: 'Get Chips', onPress: () => router.push('/shop') },
         ],
       );
@@ -51,7 +110,7 @@ export function useVenueEntry() {
   function tryPlay(venue: Venue, duration: Duration, insured = false): void {
     const requirement = requirementFor(venue);
     if (requirement) {
-      explain(venue, requirement);
+      void explain(venue, requirement);
       return;
     }
     if (venue.buyIn <= 0) {

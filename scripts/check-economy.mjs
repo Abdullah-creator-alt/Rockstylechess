@@ -114,6 +114,12 @@ const quests = Object.values(cfg.quests).reduce((s, v) => s + v, 0);
 const bonus = weekChips / 7;
 const base = online + bot + quests + bonus + spinChipsEv;
 const adsDay = ads.dailyCap * ads.rewardChips;
+// Venue refill: a lifeline for a player who cannot afford ANY paid venue.
+const refill = cfg.ads['venue-refill'];
+const cheapestBuyIn = Math.min(...Object.values(cfg.venues).map((v) => v.buyIn).filter((b) => b > 0));
+check('a day of refill ads stays under one online win', refill.dailyCap * refill.rewardChips <= cfg.matchRewards.online.win, `${refill.dailyCap * refill.rewardChips}`);
+check('one refill ad is less than the cheapest buy-in (it takes several to get back in)', refill.rewardChips < cheapestBuyIn, `${refill.rewardChips} vs ${cheapestBuyIn}`);
+check('refill + free-chips ads together can cover the cheapest buy-in from zero (a broke player is not stuck)', refill.dailyCap * refill.rewardChips + adsDay >= cheapestBuyIn, `${refill.dailyCap * refill.rewardChips + adsDay} vs ${cheapestBuyIn}`);
 const gemsDay = weekGems / 7 + spinGemsEv;
 console.log(`\nIncome model (ESTIMATE): online ${online.toFixed(0)} + bot ${bot.toFixed(0)} + quests ${quests} + daily bonus ${bonus.toFixed(0)} + spin ${spinChipsEv.toFixed(0)} = ${base.toFixed(0)} chips/day (+${adsDay} if all ads watched), ${gemsDay.toFixed(1)} gems/day`);
 const days = (chips) => (chips / base).toFixed(1);

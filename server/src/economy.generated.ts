@@ -312,6 +312,10 @@ export const ECONOMY = {
     "daily-double": {
       "dailyCap": 1,
       "rewardChips": 0
+    },
+    "venue-refill": {
+      "dailyCap": 2,
+      "rewardChips": 100
     }
   },
   "analysis": {

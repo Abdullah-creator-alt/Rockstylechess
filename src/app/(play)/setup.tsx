@@ -40,7 +40,7 @@ export default function PlaySetupScreen() {
   function handleVenuePress(venue: Venue) {
     const requirement = requirementFor(venue);
     if (requirement) {
-      explain(venue, requirement);
+      void explain(venue, requirement);
       return;
     }
     setSelectedVenueId(venue.id);

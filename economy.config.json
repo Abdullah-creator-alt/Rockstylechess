@@ -313,6 +313,11 @@
     "daily-double": {
       "dailyCap": 1,
       "rewardChips": 0
+    },
+    "venue-refill": {
+      "_note": "Out-of-chips lifeline: a player whose balance is below the CHEAPEST wagered buy-in (so they can't enter any paid venue) may watch an ad for the shortfall, at most rewardChips per ad and dailyCap ads a day. Not offered to anyone who can already afford the cheapest venue, so it is a way back in, never a faucet.",
+      "dailyCap": 2,
+      "rewardChips": 100
     }
   },
   "analysis": {
