@@ -68,8 +68,11 @@ export async function persistMatchResult(
   const moveCount = Math.ceil(history.length / 2);
   const whiteExpected = expectedScore(whiteProfile.rating, blackProfile.rating);
   const blackExpected = 1 - whiteExpected;
-  const whiteRatingAfter = updatedRating(whiteProfile.rating, whiteExpected, whiteScore);
-  const blackRatingAfter = updatedRating(blackProfile.rating, blackExpected, blackScore);
+  // A friendly match (friend challenge / private room) is kept for history and replays but is
+  // unrated: nothing below the participant rows may run, or two accounts could farm each other.
+  const friendly = match.friendly === true;
+  const whiteRatingAfter = friendly ? whiteProfile.rating : updatedRating(whiteProfile.rating, whiteExpected, whiteScore);
+  const blackRatingAfter = friendly ? blackProfile.rating : updatedRating(blackProfile.rating, blackExpected, blackScore);
 
   const [insertedMatch] = await db
     .insert(matches)
@@ -108,6 +111,18 @@ export async function persistMatchResult(
       chipsDelta: opts.chipsDeltaByUser?.[black.userId] ?? null,
     },
   ]);
+
+  if (friendly) {
+    await Promise.all([
+      insertNotification(white.userId, 'match_ended', ...matchNotificationText(whiteScore, resultType, black.displayName), {
+        matchId: insertedMatch.id, opponentUserId: black.userId, opponentDisplayName: black.displayName, resultType, color: 'w', playedAt: new Date().toISOString(),
+      }),
+      insertNotification(black.userId, 'match_ended', ...matchNotificationText(blackScore, resultType, white.displayName), {
+        matchId: insertedMatch.id, opponentUserId: white.userId, opponentDisplayName: white.displayName, resultType, color: 'b', playedAt: new Date().toISOString(),
+      }),
+    ]);
+    return;
+  }
 
   const [whiteStats, blackStats] = await Promise.all([
     updateProfileStats(white.userId, whiteRatingAfter, whiteScore, !opts.wagered),

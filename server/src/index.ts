@@ -551,8 +551,8 @@ async function startPairedMatch(waiting: QueuedPlayer, joiner: QueuedPlayer, tie
 // access, see fireTimeout's comment).
 // What the client needs to show the stakes: which venue this really is (it used
 // to trust its own route param) and the buy-in / prize at stake (0 = unwagered).
-function venueFields(match: MatchState): { venueTier: string; buyIn: number; prize: number } {
-  return { venueTier: match.venueTier ?? 'garage', buyIn: match.wager?.buyIn ?? 0, prize: match.wager?.prize ?? 0 };
+function venueFields(match: MatchState): { venueTier: string; buyIn: number; prize: number; friendly: boolean } {
+  return { venueTier: match.venueTier ?? 'garage', buyIn: match.wager?.buyIn ?? 0, prize: match.wager?.prize ?? 0, friendly: match.friendly === true };
 }
 
 // What the app needs to draw a Festival set: the run, which set this is, and the bot's face.
@@ -761,7 +761,7 @@ io.on('connection', (socket: Socket) => {
       guestIdBySocket.set(socket.id, payload.guestId);
 
       const accepter = await buildChallengePlayer(socket.id, payload.guestId, uid);
-      notifyMatched(createMatch(challenge.challenger, accepter, DURATION_MS[challenge.duration]));
+      notifyMatched(createMatch(challenge.challenger, accepter, DURATION_MS[challenge.duration], 0, { friendly: true }));
     },
   );
 
@@ -929,7 +929,7 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
-    notifyMatched(createMatch(result.opponent, player, DURATION_MS[result.opponent.duration]));
+    notifyMatched(createMatch(result.opponent, player, DURATION_MS[result.opponent.duration], 0, { friendly: true }));
   });
 
   socket.on('room:cancel', () => {

@@ -36,6 +36,8 @@ export interface QueueMatchedPayload {
   venueTier: VenueTier;
   buyIn: number;
   prize: number;
+  // A friend challenge or private room: unrated, no chips/Fame/Tour (server/src/db/persistMatchResult.ts).
+  friendly?: boolean;
   // Present only for a Festival set (a paid bot ladder run, see lib/festival.ts): the
   // opponent is a bot the SERVER plays.
   festival?: FestivalMatchInfo;

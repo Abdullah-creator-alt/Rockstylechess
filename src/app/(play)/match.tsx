@@ -140,6 +140,7 @@ export default function MatchScreen() {
     opponentRating: opponentRatingParam,
     opponentTitle: opponentTitleParam,
     festival: festivalParam,
+    friendly: friendlyParam,
     sessionId: sessionIdParam,
     kitTakeTwos: kitTakeTwosParam,
     kitTips: kitTipsParam,
@@ -178,6 +179,8 @@ export default function MatchScreen() {
     // Festival set only: the run / set / purse / bot, JSON from the server's queue:matched
     // (lib/festival.ts). The opponent is a bot the SERVER plays.
     festival?: string;
+    // Friend challenge / private room (queue:matched `friendly`): unrated, no rewards.
+    friendly?: string;
     // Tour boss fight only: the bot session the Tour screen already opened (it bought the
     // Roadie Kit with it, so it can't be opened twice) and what the kit holds.
     sessionId?: string;
@@ -345,7 +348,7 @@ export default function MatchScreen() {
     // matches pay what the SERVER verifies: it issued the match at the start and
     // replays the finished PGN before paying anything (db/botSessions.ts), so this
     // starts at 0 and becomes whatever the server says. Pass-and-play pays nothing.
-    let chipsGranted = mode === 'online' && !festivalInfo ? MATCH_CHIP_REWARDS[outcome] : 0;
+    let chipsGranted = mode === 'online' && !festivalInfo && friendlyParam !== '1' ? MATCH_CHIP_REWARDS[outcome] : 0;
     let noReward: string | undefined;
     // Bot matches get their Show Report from the server's reply (online ones arrive
     // over the socket as `progression:update`, keyed by the match id).
@@ -417,7 +420,8 @@ export default function MatchScreen() {
           matchMode: mode,
           ...(noReward ? { noReward } : {}),
           // Where the Show Report comes from: the online match id (socket push) or a bot report key.
-          ...(mode === 'online' && matchId ? { reportKey: matchId } : mode === 'bot' ? { reportKey } : {}),
+          ...(mode === 'online' && matchId && friendlyParam !== '1' ? { reportKey: matchId } : mode === 'bot' ? { reportKey } : {}),
+          ...(friendlyParam === '1' ? { friendly: '1' } : {}),
           venueTier,
           // A wagered match shows the server's settlement instead of the flat
           // reward (see wagerResult.ts / result-placeholder.tsx).

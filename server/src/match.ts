@@ -71,6 +71,8 @@ export interface MatchState {
   // game rooms (they have no venue).
   venueTier?: string;
   wager?: MatchWager;
+  // Friend challenge / private room: unrated, no rewards (see CreateMatchOptions.friendly).
+  friendly?: boolean;
   bot?: MatchBot;
   festival?: MatchFestival;
   chess: Chess;
@@ -130,6 +132,9 @@ export interface CreateMatchOptions {
   whiteIsA?: boolean;
   venueTier?: string;
   wager?: MatchWager;
+  // A friend challenge or a private room: played for fun. The result is kept for history and
+  // replays but moves NO rating, chips, Fame, quests, Tour or achievements (db/persistMatchResult.ts).
+  friendly?: boolean;
 }
 
 export function createMatch(
@@ -146,6 +151,7 @@ export function createMatch(
     id: opts.id ?? randomUUID(),
     venueTier: opts.venueTier,
     wager: opts.wager,
+    friendly: opts.friendly,
     chess: new Chess(),
     players: {
       w: {

@@ -206,6 +206,15 @@ stuck on a chapter boss, built so it cannot be a shortcut and doubles as a chip 
 that unlock at level 5 and reset Monday 00:00 UTC (`questPeriodStart` in `db/quests.ts`);
 `GET /me/quests?type=weekly`. Seed with `npm run seed:quests`. Migration `0015`.
 
+## Friendly matches (friend challenges and private rooms)
+
+A match started from a friend challenge or a room code is created with `friendly: true`
+(`createMatch`), announced to the app as `queue:matched.friendly`, and ended through the normal
+`finishMatch`. `persistMatchResult` keeps the game for history and replays (participant rows,
+rating delta 0, the match-ended notification) and then returns: **no rating, flat chips, Fame,
+quests, Tour or achievements**, so two accounts cannot farm each other. The result screen says
+"Friendly match - no rating or rewards" and does not wait for a Show Report.
+
 ## Backstage Gear (consumables)
 
 Chip sinks that cost nothing in fairness: none of it touches chess strength or rating. Rules and
