@@ -1,9 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FestivalSetPanel } from '@/components/festival/FestivalSetPanel';
+import { RematchPanel } from '@/components/match/RematchPanel';
+import { PlayerProfileSheet } from '@/components/social/PlayerProfileSheet';
 import { ShowReport } from '@/components/progression/ShowReport';
 import { AppIcon, CurrencyIcon, CurrencyPill, RockButton, RockCard, VenueBackdrop } from '@/components/ui';
 import { Colors, withOpacity } from '@/constants/theme';
@@ -79,6 +81,8 @@ export default function ResultScreen() {
     noReward,
     wagerMatchId,
     friendly,
+    rematchBot: rematchBotParam,
+    rematchMatchId,
     festivalMatchId,
     buyIn: buyInParam,
     prize: prizeParam,
@@ -102,6 +106,10 @@ export default function ResultScreen() {
     wagerMatchId?: string;
     // Friend challenge / private room: unrated, no chips, no Show Report.
     friendly?: string;
+    // Bot games: JSON of what is needed to start the same bot again (match.tsx). Absent = no rematch.
+    rematchBot?: string;
+    // Online games: the finished match's id, which names the server's rematch window (RematchPanel).
+    rematchMatchId?: string;
     // Set by match.tsx for a Festival set: the Set Break panel reads the run's update by match id.
     festivalMatchId?: string;
     buyIn?: string;
@@ -120,6 +128,8 @@ export default function ResultScreen() {
   // Game Reviews already bought in a Review Pack: spent before any chips/gems.
   const reviewCredits = myProfile?.analysisCredits ?? 0;
   const friends = useFriends();
+  // Tap the opponent to see who they are (rating, record, your head-to-head).
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
 
   // Wagered match: show the server's settlement, not the flat reward. It usually
   // landed before we got here (cached), otherwise it arrives within moments; if it
@@ -253,6 +263,47 @@ export default function ResultScreen() {
       else if (code === 'stock-full') Alert.alert('Reviews Full', `You can hold up to ${ANALYSIS_PACK.maxCredits} stored reviews. Use a few first.`);
       else Alert.alert('Something Went Wrong', 'Please try again.');
     }
+  }
+
+  // Rematch (bot games): the same bot, colours swapped, same time control, a fresh verified session.
+  // Validated here because it arrives as a route param. No interstitial: the player is asking to keep playing.
+  const rematchBot = useMemo(() => {
+    if (!rematchBotParam) return null;
+    try {
+      const r = JSON.parse(rematchBotParam) as Record<string, unknown>;
+      const okDifficulty = ['easy', 'medium', 'stockfish-basic', 'stockfish-lite', 'stockfish-strong'].includes(String(r.difficulty));
+      if (typeof r.botId !== 'string' || !okDifficulty || (r.color !== 'w' && r.color !== 'b')) return null;
+      return {
+        botId: r.botId,
+        botName: String(r.botName ?? ''),
+        botEmoji: String(r.botEmoji ?? ''),
+        difficulty: String(r.difficulty),
+        color: r.color as 'w' | 'b',
+        duration: ['3m', '5m', '10m'].includes(String(r.duration)) ? String(r.duration) : '5m',
+        venueTier: String(r.venueTier ?? 'garage'),
+      };
+    } catch {
+      return null;
+    }
+  }, [rematchBotParam]);
+
+  function handleBotRematch() {
+    if (!rematchBot || leavingRef.current) return;
+    leavingRef.current = true;
+    clearPendingLocalReplay();
+    router.replace({
+      pathname: '/match',
+      params: {
+        mode: 'bot',
+        difficulty: rematchBot.difficulty,
+        botName: rematchBot.botName,
+        botId: rematchBot.botId,
+        botEmoji: rematchBot.botEmoji,
+        color: rematchBot.color === 'w' ? 'b' : 'w',
+        duration: rematchBot.duration,
+        venueTier: rematchBot.venueTier,
+      },
+    });
   }
 
   async function handleAnalyzePress() {
@@ -404,6 +455,27 @@ export default function ResultScreen() {
       {festivalMatchId ? <FestivalSetPanel matchId={festivalMatchId} /> : null}
 
       <View className="w-full gap-md" style={{ maxWidth: 320 }}>
+        {rematchBot && !isFestivalSet ? (
+          <RockButton
+            label={`Rematch · play ${rematchBot.color === 'w' ? 'Black' : 'White'}`}
+            variant="gold"
+            icon={<AppIcon name="swords" size={20} color={Colors.bgBase} />}
+            onPress={handleBotRematch}
+          />
+        ) : null}
+        {rematchMatchId && matchMode === 'online' && !isFestivalSet ? (
+          <RematchPanel
+            matchId={rematchMatchId}
+            opponentName={opponentName ?? 'Opponent'}
+            venueTier={venueTier}
+            buyIn={buyIn}
+            wager={wager}
+            onStart={() => {
+              leavingRef.current = true;
+              clearPendingLocalReplay();
+            }}
+          />
+        ) : null}
         {localReplay && localReplay.mode !== 'online' ? (
           <RockButton label="Replay" variant="primary" icon={<AppIcon name="replay" size={20} color={Colors.bgBase} />} onPress={() => router.push({ pathname: '/replay', params: { source: 'local' } })} />
         ) : null}
@@ -428,6 +500,13 @@ export default function ResultScreen() {
               </View>
             )}
           </View>
+        ) : null}
+        {opponentUserId ? (
+          <Pressable onPress={() => setProfileUserId(opponentUserId)} hitSlop={10}>
+            <Text className="text-center font-body-sm text-text-muted" style={{ fontSize: 12, textDecorationLine: 'underline' }}>
+              View {opponentName ?? 'opponent'}&apos;s profile
+            </Text>
+          </Pressable>
         ) : null}
         {canAddOpponent ? (
           <RockButton
@@ -462,6 +541,7 @@ export default function ResultScreen() {
         </Pressable>
       ) : null}
       </ScrollView>
+      <PlayerProfileSheet userId={profileUserId} fallbackName={opponentName} onClose={() => setProfileUserId(null)} />
     </View>
   );
 }

@@ -926,6 +926,13 @@ export const ECONOMY = {
       }
     ]
   },
+  "spinExtra": {
+    "prices": [
+      300,
+      450,
+      600
+    ]
+  },
   "gear": {
     "maxStock": 5,
     "items": [

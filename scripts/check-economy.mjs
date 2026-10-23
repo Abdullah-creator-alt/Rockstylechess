@@ -71,6 +71,13 @@ check('spin weights sum to 100', wTotal === 100, String(wTotal));
 check('spin has 8 segments (wheel art)', cfg.spin.length === 8);
 const spinChipsEv = cfg.spin.filter((p) => p.rewardType === 'chips').reduce((s, p) => s + (p.rewardAmount * p.weight) / wTotal, 0);
 const spinGemsEv = cfg.spin.filter((p) => p.rewardType === 'gems').reduce((s, p) => s + (p.rewardAmount * p.weight) / wTotal, 0);
+// Chip-priced extra spins: every price must beat the wheel's FULL expected value, gems valued at 40:1.
+const spinEvChipEq = spinChipsEv + spinGemsEv * R;
+const spinPrices = cfg.spinExtra.prices;
+console.log(`Paid spins: wheel EV ${spinEvChipEq.toFixed(0)} chips-equivalent per spin; prices ${spinPrices.join(' / ')} (EV is ${spinPrices.map((p) => ((spinEvChipEq / p) * 100).toFixed(0) + '%').join(' / ')} of price)`);
+check('every paid-spin price is above the wheel EV, with a margin (EV <= 75% of price)', spinPrices.every((p) => spinEvChipEq <= 0.75 * p), `EV ${spinEvChipEq.toFixed(0)}`);
+check('paid-spin prices strictly increase and are capped at 1-3 a day', spinPrices.every((p, i) => i === 0 || p > spinPrices[i - 1]) && spinPrices.length >= 1 && spinPrices.length <= 3);
+check('even the cheapest paid spin costs more than the wheel is worth on average', spinPrices[0] > spinEvChipEq, `${spinPrices[0]} vs ${spinEvChipEq.toFixed(0)}`);
 check('spin EV about 151 chips + 1.1 gems', Math.abs(spinChipsEv - 151) < 2 && Math.abs(spinGemsEv - 1.14) < 0.1, `${spinChipsEv.toFixed(1)} / ${spinGemsEv.toFixed(2)}`);
 
 // ---- payout sanity -----------------------------------------------------

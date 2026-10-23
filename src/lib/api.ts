@@ -426,8 +426,42 @@ export function claimDailyBonus(token: string, options: { doubleWithAd?: boolean
   });
 }
 
+// Another player's public profile (server/src/db/publicProfile.ts): public fields only. Rejects with
+// Error('not-found') for an unknown or blocked player.
+export interface PublicProfile {
+  userId: string;
+  displayName: string | null;
+  avatarId: string | null;
+  country: string | null;
+  rating: number;
+  tier: RatingTier;
+  level: number;
+  title: { id: string; name: string } | null;
+  wins: number;
+  losses: number;
+  draws: number;
+  gamesPlayed: number;
+  winRate: number | null;
+  online: boolean;
+  relation: 'self' | 'friends' | 'outgoing' | 'incoming' | 'none';
+  headToHead: null | { games: number; yourWins: number; theirWins: number; draws: number };
+}
+
+export function getPlayerProfile(token: string, userId: string): Promise<{ profile: PublicProfile }> {
+  return request(`/users/${encodeURIComponent(userId)}/profile`, { method: 'GET', token });
+}
+
+// How many players are waiting per time control at a venue (server/src/matchmaking.ts queueCounts): display
+// only, for the "N searching" line under the time picker. Public, no sign-in needed.
+export function getQueueStats(venueTier: string): Promise<{ venueTier: string; waiting: Record<'3m' | '5m' | '10m', number> }> {
+  return request(`/queue/stats?venueTier=${encodeURIComponent(venueTier)}`, { method: 'GET' });
+}
+
 export interface SpinStatus {
   canSpin: boolean;
+  // Chip-priced extra spins (after the free one): how many today, the daily cap, and what the next one
+  // costs (null once today's are used up). Prices step up; see economy.config.json -> spinExtra.
+  paid: { used: number; cap: number; nextPrice: number | null };
 }
 
 export function getSpinStatus(token: string): Promise<SpinStatus> {
@@ -440,6 +474,7 @@ export interface SpinResult {
   label: string;
   rewardType: 'chips' | 'gems' | 'xp';
   rewardAmount: number;
+  paidChips: number | null; // chips this spin cost (null = the free or ad spin)
   chips: number;
   gems: number;
 }
@@ -451,10 +486,13 @@ export interface SpinResult {
 //
 // `withAd`: the one extra daily spin, earned by a rewarded ad. Also rejects
 // with Error('ad-daily-cap-reached' | 'ad-not-verified').
-export function spinWheel(token: string, options: { withAd?: boolean } = {}): Promise<SpinResult> {
+//
+// `withChips`: a chip-priced extra spin, only after the free one. Rejects with
+// Error('free-spin-available' | 'paid-spins-used' | 'insufficient-funds').
+export function spinWheel(token: string, options: { withAd?: boolean; withChips?: boolean } = {}): Promise<SpinResult> {
   return request('/me/spin', {
     method: 'POST',
-    body: options.withAd ? { withAd: true } : undefined,
+    body: options.withAd ? { withAd: true } : options.withChips ? { withChips: true } : undefined,
     token,
   });
 }

@@ -20,6 +20,7 @@ delete config.tour._note;
 delete config.tour.backstage._note;
 delete config.festival._note;
 delete config.gear._note;
+delete config.spinExtra._note;
 delete config.ads['venue-refill']._note;
 delete config.analysis.pack._note;
 // Skill profiles only size purses inside check-economy.mjs; nothing at runtime reads them.

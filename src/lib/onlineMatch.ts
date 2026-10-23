@@ -145,3 +145,55 @@ export function isVenueTier(value: unknown): value is VenueTier {
 export function isDuration(value: unknown): value is Duration {
   return value === '3m' || value === '5m' || value === '10m';
 }
+
+// The /match route params for a server-announced match (queue:matched). Used by the rematch flow; the
+// matchmaking, game-room and challenge screens each still build their own copy of this.
+export function matchParamsFromPayload(payload: QueueMatchedPayload): Record<string, string> {
+  const params: Record<string, string | undefined> = {
+    mode: 'online',
+    matchId: payload.matchId,
+    color: payload.color,
+    fen: payload.fen,
+    opponentName: payload.opponent.displayName,
+    opponentAvatarId: payload.opponent.avatarId ?? undefined,
+    opponentCountry: payload.opponent.country ?? undefined,
+    opponentUserId: payload.opponent.userId ?? undefined,
+    opponentRating: payload.opponent.rating != null ? String(payload.opponent.rating) : undefined,
+    opponentTitle: payload.opponent.title ?? undefined,
+    clockW: String(payload.clocks.w),
+    clockB: String(payload.clocks.b),
+    incrementMs: String(payload.incrementMs),
+    venueTier: payload.venueTier,
+    buyIn: String(payload.buyIn ?? 0),
+    prize: String(payload.prize ?? 0),
+    friendly: payload.friendly ? '1' : undefined,
+  };
+  return Object.fromEntries(Object.entries(params).filter((entry): entry is [string, string] => entry[1] !== undefined));
+}
+
+// Rematch (server/src/rematch.ts): events for the "play again with the same opponent" offer.
+export type RematchErrorReason =
+  | 'unavailable'
+  | 'opponent-left'
+  | 'already-in-match'
+  | 'insufficient-chips'
+  | 'opponent-short'
+  | 'rating-too-low'
+  | 'opponent-ineligible'
+  | 'auth-required';
+
+export interface RematchOfferedPayload {
+  matchId: string;
+  from: string;
+  venueTier: VenueTier | null;
+  buyIn: number;
+  prize: number;
+  insured: boolean; // YOUR Safety Net choice from the last game carries over
+  friendly: boolean;
+}
+export interface RematchErrorPayload {
+  matchId?: string;
+  reason: RematchErrorReason;
+  required?: number;
+  current?: number;
+}

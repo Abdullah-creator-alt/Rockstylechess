@@ -129,6 +129,8 @@ export const userSpinLog = pgTable('user_spin_log', {
     .notNull()
     .references(() => spinPrizes.id),
   spunAt: timestamp('spun_at', { withTimezone: true }).notNull().defaultNow(),
+  // Chips paid for this spin (a chip-priced extra spin, db/spin.ts); null = the free daily spin or the ad spin.
+  paidChips: integer('paid_chips'),
 });
 
 export const cardSets = pgTable('card_sets', {

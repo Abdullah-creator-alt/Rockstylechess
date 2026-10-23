@@ -50,6 +50,17 @@ import {
 } from './realtime.js';
 import { cancelRoomBySocketId, createRoom, joinRoom } from './gameRoom.js';
 import {
+  closeRematch,
+  closeRematchesForSocket,
+  getRematch,
+  openRematch,
+  rematchSeatColor,
+  snapshotForRematch,
+  type RematchSeat,
+  type RematchSnapshot,
+  type RematchWindow,
+} from './rematch.js';
+import {
   allMatches,
   applyMove,
   colorOf,
@@ -68,6 +79,7 @@ import {
   joinQueue,
   leaveQueue,
   removeFromQueues,
+  widenQueued,
   type Duration,
   type QueuedPlayer,
   type VenueTier,
@@ -233,8 +245,11 @@ function finishMatch(
   opts: { emit?: Record<string, unknown>; forceRefund?: boolean } = {},
 ): Promise<void> {
   if (opts.emit) io.to(match.id).emit('match:ended', { matchId: match.id, result: opts.emit });
+  // A rematch window is opened (by settleAndPersist, once any stake is settled) from what the match
+  // looked like at the end; the match itself is deleted right below. Never after a restart refund.
+  const rematch = opts.forceRefund ? null : snapshotForRematch(match);
   endMatchClean(match.id);
-  const task: Promise<void> = settleAndPersist(match, type, winnerColor, opts.forceRefund === true)
+  const task: Promise<void> = settleAndPersist(match, type, winnerColor, opts.forceRefund === true, rematch)
     .catch((err) => console.error('match persistence failed', err))
     .finally(() => pendingSettlements.delete(task));
   pendingSettlements.add(task);
@@ -246,12 +261,14 @@ async function settleAndPersist(
   type: EndType,
   winnerColor: PieceColor | null,
   forceRefund: boolean,
+  rematch: RematchSnapshot | null,
 ): Promise<void> {
   if (match.festival) {
     await settleFestivalSet(match, type, winnerColor, forceRefund);
     return;
   }
   if (!match.wager) {
+    if (rematch) openRematchWindow(rematch);
     await persistMatchResult(match, type, winnerColor);
     return;
   }
@@ -273,6 +290,9 @@ async function settleAndPersist(
     if (!userId || !mine) continue;
     emitToUser(userId, 'wager:settled', wagerSettledPayload(match, settled, mine));
   }
+
+  // The stake is settled (winnings credited), so a rematch can safely re-escrow from here.
+  if (rematch) openRematchWindow(rematch);
 
   // A void match (someone left in the first moves) leaves no trace: no rating,
   // no XP, no history row -- the stakes were simply returned.
@@ -463,24 +483,40 @@ const isSocketLive = (socketId: string): boolean => io.sockets.sockets.get(socke
 function requeue(player: QueuedPlayer, tier: VenueTier): void {
   if (!isSocketLive(player.socketId)) return;
   const next = joinQueue(tier, player);
-  if (next) void startPairedMatch(next, player, tier);
+  if (next) void startPairedMatch(next.opponent, player, tier, { duration: next.duration });
 }
 
 // A pair just formed in a venue queue. Free venues (Garage) go straight to a
 // match. Wagered venues first ESCROW both buy-ins -- before the match exists --
 // and only then create it, so there is never a live match whose stake was not
 // secured. Anything that goes wrong after the money moves refunds it.
-async function startPairedMatch(waiting: QueuedPlayer, joiner: QueuedPlayer, tier: VenueTier): Promise<void> {
+// `opts.whiteFirst` (a rematch) names who plays White instead of the coin flip; `opts.rematch` makes a
+// failed pairing report `rematch:error` to the two players instead of putting them back in the queue.
+interface PairOptions {
+  // The time control to play at (the matchmaking pairing's agreed clock); defaults to the waiting player's pick.
+  duration?: Duration;
+  whiteFirst?: QueuedPlayer;
+  rematch?: boolean;
+}
+
+async function startPairedMatch(waiting: QueuedPlayer, joiner: QueuedPlayer, tier: VenueTier, opts: PairOptions = {}): Promise<void> {
   // The player who was already waiting sets the clock -- see QueuedPlayer.duration.
-  const baseMs = DURATION_MS[waiting.duration];
+  const baseMs = DURATION_MS[opts.duration ?? waiting.duration];
   const stake = stakeFor(tier);
   if (!stake) {
-    notifyMatched(createMatch(waiting, joiner, baseMs, 0, { venueTier: tier }));
+    notifyMatched(createMatch(waiting, joiner, baseMs, 0, { venueTier: tier, ...(opts.whiteFirst ? { whiteIsA: opts.whiteFirst === waiting } : {}) }));
     return;
   }
+  const failRematch = (reason: string, extra: Record<string, unknown> = {}) => {
+    for (const p of [waiting, joiner]) io.to(p.socketId).emit('rematch:error', { reason, ...extra });
+  };
 
   const waitingLive = isSocketLive(waiting.socketId);
   const joinerLive = isSocketLive(joiner.socketId);
+  if (opts.rematch && (!waitingLive || !joinerLive)) {
+    failRematch('opponent-left');
+    return;
+  }
   if (!waitingLive || !joinerLive) {
     // A socket died between queuing and pairing (e.g. during the identity
     // lookup): never charge anyone for a match that cannot start.
@@ -490,14 +526,23 @@ async function startPairedMatch(waiting: QueuedPlayer, joiner: QueuedPlayer, tie
   }
 
   const matchId = randomUUID();
-  const whiteIsWaiting = Math.random() < 0.5;
+  const whiteIsWaiting = opts.whiteFirst ? opts.whiteFirst === waiting : Math.random() < 0.5;
   const [white, black] = whiteIsWaiting ? [waiting, joiner] : [joiner, waiting];
   let escrow;
   try {
     escrow = await escrowWager(matchId, tier, white.userId as string, black.userId as string, { white: white.insured, black: black.insured });
   } catch (error) {
     console.error('wager escrow failed', error);
-    for (const p of [waiting, joiner]) io.to(p.socketId).emit('queue:error', { reason: 'unavailable' });
+    if (opts.rematch) failRematch('unavailable');
+    else for (const p of [waiting, joiner]) io.to(p.socketId).emit('queue:error', { reason: 'unavailable' });
+    return;
+  }
+  if (escrow.status === 'insufficient-chips' && opts.rematch) {
+    // Nobody was charged (the escrow is all-or-nothing): tell the short player what they needed, and the other why.
+    const short = escrow.userId === waiting.userId ? waiting : joiner;
+    const need = stake.buyIn + (short.insured ? safetyNetTerms(stake.buyIn).premium : 0);
+    io.to(short.socketId).emit('rematch:error', { reason: 'insufficient-chips', required: need });
+    io.to((short === waiting ? joiner : waiting).socketId).emit('rematch:error', { reason: 'opponent-short' });
     return;
   }
   if (escrow.status === 'insufficient-chips') {
@@ -539,6 +584,108 @@ async function startPairedMatch(waiting: QueuedPlayer, joiner: QueuedPlayer, tie
   notifyMatched(match);
   for (const color of ['w', 'b'] as PieceColor[]) {
     if (!isSocketLive(match.players[color].socketId)) startForfeitCountdown(match, color);
+  }
+}
+
+// ---- Rematch (see rematch.ts): "play again" against the same opponent, colours swapped ----------
+
+// A seat's current socket: the last one it used, or any other live socket of the same account.
+function liveSocketForSeat(seat: RematchSeat): string | null {
+  if (isSocketLive(seat.socketId)) return seat.socketId;
+  if (seat.userId) return socketIdsForUser(seat.userId).find(isSocketLive) ?? null;
+  return null;
+}
+
+function emitToRematchSeat(window: RematchWindow, color: PieceColor, event: string, payload: Record<string, unknown>): void {
+  const socketId = liveSocketForSeat(window.seats[color]);
+  if (socketId) io.to(socketId).emit(event, { matchId: window.matchId, ...payload });
+}
+
+function openRematchWindow(snapshot: RematchSnapshot): void {
+  openRematch(snapshot, (window) => {
+    for (const color of ['w', 'b'] as PieceColor[]) emitToRematchSeat(window, color, 'rematch:expired', {});
+  });
+}
+
+const durationKeyFor = (baseMs: number): Duration =>
+  (Object.keys(DURATION_MS) as Duration[]).find((key) => DURATION_MS[key] === baseMs) ?? '5m';
+
+// Both players want it: start the same game again with the colours swapped. Everything is re-checked as if
+// it were a fresh pairing (live sockets, not already in a match, rating gate, balance), and a wagered
+// rematch goes through the same atomic escrow as any venue match, so nobody can be charged for a game that
+// does not start.
+async function startRematch(window: RematchWindow): Promise<void> {
+  if (!closeRematch(window.matchId)) return; // single shot: an accept racing an expiry/leave starts nothing
+  const colors: PieceColor[] = ['w', 'b'];
+  const fail = (reason: string, extra: Record<string, unknown> = {}) => {
+    for (const color of colors) emitToRematchSeat(window, color, 'rematch:error', { reason, ...extra });
+  };
+  try {
+    if (colors.some((c) => !liveSocketForSeat(window.seats[c]))) {
+      fail('opponent-left');
+      return;
+    }
+    for (const live of allMatches()) {
+      if (colors.some((c) => colorOf(live, window.seats[c].guestId))) {
+        fail('already-in-match');
+        return;
+      }
+    }
+
+    // Ratings and titles may have changed in the match that just ended.
+    const identities = await Promise.all(colors.map((c) => getPlayerIdentity(window.seats[c].userId)));
+    const players = Object.fromEntries(
+      colors.map((c, i): [PieceColor, QueuedPlayer] => {
+        const seat = window.seats[c];
+        return [
+          c,
+          {
+            socketId: liveSocketForSeat(seat) as string,
+            guestId: seat.guestId,
+            userId: seat.userId,
+            displayName: identities[i].displayName || seat.displayName,
+            avatarId: identities[i].avatarId ?? seat.avatarId,
+            country: identities[i].country ?? seat.country,
+            rating: identities[i].rating ?? seat.rating,
+            title: identities[i].title ?? seat.title,
+            duration: durationKeyFor(window.baseMs),
+            insured: seat.insured,
+          },
+        ];
+      }),
+    ) as Record<PieceColor, QueuedPlayer>;
+    // Colours swap: whoever had Black now has White.
+    const [newWhite, newBlack] = [players.b, players.w];
+
+    if (window.stake && window.venueTier && isVenueTier(window.venueTier)) {
+      const tier = window.venueTier;
+      const minRating = (ECONOMY.venues as Record<string, { minRating: number }>)[tier].minRating;
+      for (const c of colors) {
+        const entry = window.seats[c].userId ? await getEntryProfile(window.seats[c].userId as string) : null;
+        if (!entry) {
+          fail('auth-required');
+          return;
+        }
+        if (entry.rating < minRating) {
+          emitToRematchSeat(window, c, 'rematch:error', { reason: 'rating-too-low', required: minRating, current: entry.rating });
+          emitToRematchSeat(window, opponentColor(c), 'rematch:error', { reason: 'opponent-ineligible' });
+          return;
+        }
+      }
+      await startPairedMatch(newBlack, newWhite, tier, { whiteFirst: newWhite, rematch: true });
+      return;
+    }
+
+    notifyMatched(
+      createMatch(newWhite, newBlack, window.baseMs, 0, {
+        whiteIsA: true,
+        venueTier: window.venueTier,
+        friendly: window.friendly,
+      }),
+    );
+  } catch (error) {
+    console.error('rematch failed to start', error);
+    fail('unavailable');
   }
 }
 
@@ -799,7 +946,7 @@ io.on('connection', (socket: Socket) => {
 
   socket.on(
     'queue:join',
-    async (payload: { guestId?: string; displayName?: string; venueTier?: string; duration?: string; insured?: boolean }) => {
+    async (payload: { guestId?: string; displayName?: string; venueTier?: string; duration?: string; insured?: boolean; widen?: boolean }) => {
       if (!payload?.guestId || !isVenueTier(payload.venueTier)) {
         socket.emit('queue:error', { reason: 'bad-tier' });
         return;
@@ -857,6 +1004,8 @@ io.on('connection', (socket: Socket) => {
       title: identity.title,
         duration: resolveDuration(payload.duration),
         insured,
+        // A reconnect re-sends queue:join; a player who had already widened stays widened.
+        flex: payload.widen === true,
       };
 
       // ONE queue entry per socket, per guest and per account: an account on a
@@ -871,11 +1020,19 @@ io.on('connection', (socket: Socket) => {
         }
       }
 
-      const opponent = joinQueue(tier, player);
-      if (!opponent) return; // now waiting in queue
-      await startPairedMatch(opponent, player, tier);
+      const pairing = joinQueue(tier, player);
+      if (!pairing) return; // now waiting in queue
+      await startPairedMatch(pairing.opponent, player, tier, { duration: pairing.duration });
     },
   );
+
+  // The player waited a while and agreed to also play other time controls. Opt-in, so a clock is never
+  // forced on anyone: the game is played at the clock the OTHER player picked.
+  socket.on('queue:widen', async () => {
+    const widened = widenQueued(socket.id);
+    socket.emit('queue:widened', {});
+    if (widened) await startPairedMatch(widened.pairing.opponent, widened.player, widened.tier, { duration: widened.pairing.duration });
+  });
 
   socket.on('queue:leave', () => {
     leaveQueue(socket.id);
@@ -1031,6 +1188,80 @@ io.on('connection', (socket: Socket) => {
     });
   });
 
+  // ---- Rematch: offer -> the other player accepts or declines (see rematch.ts) ----------------
+  // The seat is named by guestId (and, for a wagered or friendly match, the signed-in account), exactly like draw:*.
+  function rematchSeat(matchId: unknown): { window: RematchWindow; color: PieceColor } | null {
+    const guestId = guestIdBySocket.get(socket.id);
+    const window = typeof matchId === 'string' ? getRematch(matchId) : undefined;
+    if (!window || !guestId) return null;
+    const color = rematchSeatColor(window, guestId, socket.data.userId as string | undefined);
+    if (!color) return null;
+    window.seats[color].socketId = socket.id; // the seat speaks from here now
+    return { window, color };
+  }
+
+  socket.on('rematch:offer', (payload: { matchId?: string }) => {
+    const seat = rematchSeat(payload?.matchId);
+    if (!seat) {
+      socket.emit('rematch:error', { matchId: payload?.matchId, reason: 'unavailable' });
+      return;
+    }
+    const { window, color } = seat;
+    const other = opponentColor(color);
+    if (!liveSocketForSeat(window.seats[other])) {
+      closeRematch(window.matchId);
+      socket.emit('rematch:error', { matchId: window.matchId, reason: 'opponent-left' });
+      return;
+    }
+    if (window.offeredBy === color) return;
+    // Both tapped Rematch: that is an accept from the second one.
+    if (window.offeredBy === other) {
+      void startRematch(window);
+      return;
+    }
+    window.offeredBy = color;
+    emitToRematchSeat(window, other, 'rematch:offered', {
+      from: window.seats[color].displayName,
+      venueTier: window.venueTier ?? null,
+      buyIn: window.stake?.buyIn ?? 0,
+      prize: window.stake?.prize ?? 0,
+      insured: window.seats[other].insured,
+      friendly: window.friendly,
+    });
+  });
+
+  socket.on('rematch:respond', (payload: { matchId?: string; accept?: boolean }) => {
+    const seat = rematchSeat(payload?.matchId);
+    if (!seat) {
+      socket.emit('rematch:error', { matchId: payload?.matchId, reason: 'unavailable' });
+      return;
+    }
+    const { window, color } = seat;
+    // Only the player who was ASKED can answer.
+    if (!window.offeredBy || window.offeredBy === color) return;
+    if (payload.accept === true) {
+      void startRematch(window);
+      return;
+    }
+    closeRematch(window.matchId);
+    emitToRematchSeat(window, window.offeredBy, 'rematch:declined', { reason: 'declined' });
+  });
+
+  socket.on('rematch:cancel', (payload: { matchId?: string }) => {
+    const seat = rematchSeat(payload?.matchId);
+    if (!seat || seat.window.offeredBy !== seat.color) return;
+    closeRematch(seat.window.matchId);
+    emitToRematchSeat(seat.window, opponentColor(seat.color), 'rematch:cancelled', {});
+  });
+
+  // The player left the result screen: nobody should keep waiting on them.
+  socket.on('rematch:leave', (payload: { matchId?: string }) => {
+    const seat = rematchSeat(payload?.matchId);
+    if (!seat) return;
+    closeRematch(seat.window.matchId);
+    emitToRematchSeat(seat.window, opponentColor(seat.color), 'rematch:declined', { reason: 'left' });
+  });
+
   socket.on('draw:offer', (payload: { matchId?: string }) => {
     const guestId = guestIdBySocket.get(socket.id);
     const match = payload?.matchId ? getMatch(payload.matchId) : undefined;
@@ -1160,6 +1391,11 @@ io.on('connection', (socket: Socket) => {
     // Any friend challenges this socket had outstanding are now dead.
     for (const challenge of cancelChallengesFromSocket(socket.id)) {
       emitToUser(challenge.toUserId, 'friend:challenge:cancelled', { challengeId: challenge.id });
+    }
+
+    // Any rematch this socket was part of is off: tell the other seat.
+    for (const { window, color } of closeRematchesForSocket(socket.id)) {
+      emitToRematchSeat(window, opponentColor(color), 'rematch:declined', { reason: 'left' });
     }
 
     // Presence: only fire "offline" when this was the account's last socket.

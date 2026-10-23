@@ -8,6 +8,8 @@ import { BOARD_THEMES } from './boardThemes.js';
 import { isValidCountryCode } from './countryCodes.js';
 import { ADS_REQUIRE_SSV, AD_PLACEMENTS } from './adRewards.js';
 import { verifyAdMobSsv } from './adsSsv.js';
+import { getPublicProfile } from './db/publicProfile.js';
+import { queueCounts, type VenueTier } from './matchmaking.js';
 import { buyAnalysisPack, chargeForAnalysis } from './db/analysisCharge.js';
 import { getAdStatus, recordVerifiedAdView, redeemAdReward } from './db/adEvents.js';
 import {
@@ -505,6 +507,37 @@ authRouter.get(
   }),
 );
 
+// Another player's public profile (tap an opponent / friend / ranking row). Public fields only; a blocked
+// pair, or an unknown id, is a plain 404. See db/publicProfile.ts.
+authRouter.get(
+  '/users/:userId/profile',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const targetId = String(req.params.userId);
+    if (!/^[0-9a-f-]{36}$/i.test(targetId)) {
+      res.status(404).json({ error: 'not-found' });
+      return;
+    }
+    const profile = await getPublicProfile(req.userId as string, targetId);
+    if (!profile) {
+      res.status(404).json({ error: 'not-found' });
+      return;
+    }
+    res.json({ profile });
+  }),
+);
+
+// How many players are waiting per time control at a venue, for the pickers ("N searching"). Public, display only.
+authRouter.get('/queue/stats', (req, res) => {
+  const tier = req.query.venueTier;
+  const valid = ['garage', 'club', 'arena', 'stadium', 'mainstage', 'world-tour'];
+  if (typeof tier !== 'string' || !valid.includes(tier)) {
+    res.status(400).json({ error: 'bad-tier' });
+    return;
+  }
+  res.json({ venueTier: tier, waiting: queueCounts(tier as VenueTier) });
+});
+
 // Backstage Gear (consumables): the bag, buying with chips, activating one copy. See db/boosts.ts.
 authRouter.get(
   '/me/gear',
@@ -587,7 +620,20 @@ authRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     // `withAd`: the one extra daily spin earned by a rewarded ad.
-    const result = await performSpin(req.userId as string, { withAd: req.body?.withAd === true });
+    // `withChips`: a chip-priced extra spin (after the free one; price steps up, db/spin.ts).
+    const result = await performSpin(req.userId as string, { withAd: req.body?.withAd === true, withChips: req.body?.withChips === true });
+    if ('freeSpinAvailable' in result) {
+      res.status(409).json({ error: 'free-spin-available' });
+      return;
+    }
+    if ('paidCapReached' in result) {
+      res.status(409).json({ error: 'paid-spins-used' });
+      return;
+    }
+    if ('insufficientChips' in result) {
+      res.status(400).json({ error: 'insufficient-funds', price: result.insufficientChips });
+      return;
+    }
     if ('adBlocked' in result) {
       res.status(409).json({ error: result.adBlocked === 'not-verified' ? 'ad-not-verified' : 'ad-daily-cap-reached' });
       return;
@@ -602,6 +648,7 @@ authRouter.post(
       label: result.prize.label,
       rewardType: result.prize.rewardType,
       rewardAmount: result.prize.rewardAmount,
+      paidChips: result.paidChips,
       chips: result.chips,
       gems: result.gems,
     });

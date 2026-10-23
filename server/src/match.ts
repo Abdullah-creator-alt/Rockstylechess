@@ -19,6 +19,8 @@ export interface MatchPlayer {
   country: string | null;
   rating: number | null;
   title: string | null;
+  // Wagered matches: this seat bought the Safety Net (carried into a rematch, see rematch.ts).
+  insured?: boolean;
 }
 
 // Server-authoritative chess clock. Kept as its own field, deliberately
@@ -67,6 +69,8 @@ export interface MatchFestival {
 
 export interface MatchState {
   id: string;
+  // The base time each side started with (ms); a rematch reuses it.
+  baseMs: number;
   // Which venue queue produced this match; undefined for friend challenges and
   // game rooms (they have no venue).
   venueTier?: string;
@@ -149,6 +153,7 @@ export function createMatch(
   const [white, black] = whiteIsA ? [playerA, playerB] : [playerB, playerA];
   const match: MatchState = {
     id: opts.id ?? randomUUID(),
+    baseMs,
     venueTier: opts.venueTier,
     wager: opts.wager,
     friendly: opts.friendly,
@@ -163,6 +168,7 @@ export function createMatch(
         country: white.country,
         rating: white.rating,
         title: white.title,
+        insured: white.insured,
       },
       b: {
         socketId: black.socketId,
@@ -173,6 +179,7 @@ export function createMatch(
         country: black.country,
         rating: black.rating,
         title: black.title,
+        insured: black.insured,
       },
     },
     createdAt: new Date(),
@@ -225,6 +232,7 @@ export function createFestivalMatch(
   remainingMs[humanColor] = humanClockMs;
   const match: MatchState = {
     id,
+    baseMs: humanClockMs,
     chess: new Chess(),
     players: humanColor === 'w' ? { w: humanSeat, b: botSeat } : { w: botSeat, b: humanSeat },
     bot: { color: botColor, botId: bot.botId, difficulty: bot.difficulty, thinking: false },

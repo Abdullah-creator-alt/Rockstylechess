@@ -957,6 +957,14 @@
       }
     ]
   },
+  "spinExtra": {
+    "_note": "Chip-priced extra spins, on top of the free daily spin and the one ad spin. Allowed only after the free daily spin is used. Price steps up with each paid spin that UTC day (one price per allowed spin, so the cap is prices.length) and every price must stay above the wheel's full expected value (chips + gems at 40:1), so a paid spin is always a net chip sink on average. check-economy.mjs asserts it.",
+    "prices": [
+      300,
+      450,
+      600
+    ]
+  },
   "gear": {
     "_note": "Backstage Gear: consumables bought with chips. Nothing here touches chess strength or rating. Amp Boost = +ampBonus of BASE Fame (added on top of Opening Night / Hot Streak, never multiplied by them) on the next `charges` Fame-paying wins; Lucky Pick = a win streak of at least minStreak survives ONE loss; stock is capped; one copy of each is active at a time and the player activates it. Safety Net is not stocked: an optional add-on at a wagered venue (premium = premiumFraction of the buy-in, paid at pairing; a LOSS returns coverFraction of the buy-in; the premium is returned if the match is voided, kept on a win or a draw).",
     "maxStock": 5,

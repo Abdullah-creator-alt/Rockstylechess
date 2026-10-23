@@ -12,6 +12,7 @@ import { Colors, withOpacity } from '@/constants/theme';
 import { VENUES, formatChips, getVenue, type Venue } from '@/constants/venues';
 import { usePlayerProfile } from '@/hooks/usePlayerProfile';
 import { useGear } from '@/hooks/useGear';
+import { useQueueStats } from '@/hooks/useQueueStats';
 import { useVenueEntry } from '@/hooks/useVenueEntry';
 import { safetyNetTerms } from '@/lib/gear';
 import { DURATIONS, DURATION_LABELS, type Duration } from '@/lib/onlineMatch';
@@ -29,6 +30,8 @@ export default function PlaySetupScreen() {
   const [duration, setDuration] = useState<Duration>('5m');
 
   const selectedVenue = getVenue(selectedVenueId);
+  // Players searching per time control at this venue (you are only ever matched on the clock you pick).
+  const waiting = useQueueStats(selectedVenueId);
   const netOffered = selectedVenue.buyIn > 0 && status === 'ready';
   const net = netOffered ? safetyNetTerms(selectedVenue.buyIn) : null;
   const insuredNow = insured && netOffered;
@@ -122,6 +125,11 @@ export default function PlaySetupScreen() {
                     <Text className="font-caption text-caption uppercase" style={{ color: active ? withOpacity(Colors.cyan, 0.7) : Colors.chromeDark }}>
                       {DURATION_LABELS[d]}
                     </Text>
+                    {waiting ? (
+                      <Text className="font-caption" style={{ fontSize: 10, color: waiting[d] > 0 ? Colors.gold : Colors.chromeMid }}>
+                        {waiting[d] > 0 ? `${waiting[d]} searching` : 'no one waiting'}
+                      </Text>
+                    ) : null}
                   </View>
                 </Pressable>
               );

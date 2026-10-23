@@ -1,7 +1,7 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   BackHandler,
   Pressable,
@@ -35,6 +35,7 @@ import { getPieceSprites, type PieceSpriteMap } from '@/components/ui/pieceSprit
 import { getBoardTheme } from '@/constants/boardThemes';
 import { ScreenArt } from '@/constants/screenArt';
 import { Colors, Fonts, Spacing, withOpacity } from '@/constants/theme';
+import { PlayerProfileSheet } from '@/components/social/PlayerProfileSheet';
 import { BOT_PORTRAITS, BOT_TIER_LABEL } from '@/constants/bots';
 import { formatChips, getVenue, getVenueIntensity } from '@/constants/venues';
 import { useChessClock, type ClockTimes } from '@/hooks/useChessClock';
@@ -243,6 +244,8 @@ export default function MatchScreen() {
   const stockfishRef = useRef<StockfishEngineHandle>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [resignVisible, setResignVisible] = useState(false);
+  // Tap the opponent to look at their profile (a sheet over the match; the game and its clock keep running).
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
   // Peeking at a previous board state repurposes the MAIN board itself
   // (read-only, driven by useMatchReplay) rather than opening a separate
   // panel/sheet -- see peekActive below. historySnapshot is a frozen
@@ -428,6 +431,11 @@ export default function MatchScreen() {
           ...(wagered && matchId ? { wagerMatchId: matchId, buyIn: String(buyIn), prize: String(prize) } : {}),
           // A Festival set: the result screen shows the run (set break / purse) instead of chips.
           ...(festivalInfo && matchId ? { festivalRunId: festivalInfo.runId, festivalMatchId: matchId } : {}),
+          // Rematch (bot games): what the result screen needs to start the same bot again. Not offered for a
+          // Roadie Kit game (single-use session bought on the Tour screen) or a Festival set (own flow).
+          ...(mode === 'bot' && botId && !sessionIdParam && !festivalInfo
+            ? { rematchBot: JSON.stringify({ botId, botName, botEmoji, difficulty, color: playerColor, duration: durationParam ?? '5m', venueTier }) }
+            : {}),
           // Piece values each side captured (display only, result screen).
           myPoints: String(capturedPoints(playerColor === 'w' ? game.capturedByWhite : game.capturedByBlack)),
           oppPoints: String(capturedPoints(playerColor === 'w' ? game.capturedByBlack : game.capturedByWhite)),
@@ -436,6 +444,9 @@ export default function MatchScreen() {
           ...(mode === 'online' && opponentUserId
             ? { opponentUserId, opponentName: opponentDisplayName }
             : {}),
+          // Rematch (online): the finished match's id names the server's rematch window (server/src/rematch.ts).
+          // Not for a Festival set, which has its own Set Break flow.
+          ...(mode === 'online' && matchId && !festivalInfo ? { rematchMatchId: matchId, opponentName: opponentDisplayName } : {}),
         },
       });
     }, 900);
@@ -744,6 +755,7 @@ export default function MatchScreen() {
           color={opponentColor}
           accent={Colors.crimson}
           pulsing={game.turn === opponentColor && !clockFrozen}
+          onPressPlayer={mode === 'online' && !festivalInfo && opponentUserId ? () => setProfileUserId(opponentUserId) : undefined}
           running={!clockFrozen}
           captured={opponentColor === 'w' ? game.capturedByWhite : game.capturedByBlack}
           lead={opponentColor === 'w' ? whiteLead : blackLead}
@@ -878,6 +890,8 @@ export default function MatchScreen() {
         />
       ) : null}
 
+      <PlayerProfileSheet userId={profileUserId} fallbackName={opponentDisplayName} inMatch onClose={() => setProfileUserId(null)} />
+
       {game.pendingPromotion ? (
         <PromotionPicker
           color={game.turn}
@@ -904,6 +918,17 @@ export default function MatchScreen() {
   );
 }
 
+// The avatar + name block of a player row: a Pressable only when there is a profile to open (an online,
+// signed-in opponent), otherwise the exact plain View it always was, so nothing about the layout changes.
+function ProfileTap({ onPress, className, children }: { onPress?: () => void; className: string; children: ReactNode }) {
+  if (!onPress) return <View className={className}>{children}</View>;
+  return (
+    <Pressable onPress={onPress} className={className} hitSlop={6}>
+      {children}
+    </Pressable>
+  );
+}
+
 const PlayerRow = memo(function PlayerRow({
   name,
   avatarId,
@@ -920,6 +945,7 @@ const PlayerRow = memo(function PlayerRow({
   lead = 0,
   pieceSprites,
   hideTimer = false,
+  onPressPlayer,
 }: {
   name: string;
   avatarId?: string | null;
@@ -939,6 +965,8 @@ const PlayerRow = memo(function PlayerRow({
   pieceSprites: PieceSpriteMap;
   /** A Festival bot is never clocked: show no timer for it. */
   hideTimer?: boolean;
+  /** Tap the avatar/name to open this player's profile (online opponents only). */
+  onPressPlayer?: () => void;
 }) {
   // `captured` holds the pieces this row's player has taken -- i.e. the
   // opposite color's.
@@ -951,7 +979,8 @@ const PlayerRow = memo(function PlayerRow({
     // timer (it carries the capture slot), so top-aligning keeps all three level
     // whether or not anything has been captured yet.
     <View className="flex-row items-start justify-between gap-sm px-sm py-xs">
-      <View className="flex-shrink flex-row items-start gap-sm">
+      {/* Pressable only when there is a profile to open; same classes as the plain View, so layout is identical. */}
+      <ProfileTap onPress={onPressPlayer} className="flex-shrink flex-row items-start gap-sm">
         <PlayerAvatar avatarId={avatarId} emoji={avatarEmoji} source={avatarSource} size="small" />
         <View className="flex-shrink">
           <View className="flex-row items-center gap-1">
@@ -1004,7 +1033,7 @@ const PlayerRow = memo(function PlayerRow({
           {lead > 0 ? <Text style={styles.materialLead}>+{lead}</Text> : null}
           </View>
         </View>
-      </View>
+      </ProfileTap>
 
       {hideTimer ? null : <TimerPill getRemaining={getRemaining} color={color} accent={accent} pulsing={pulsing} running={running} />}
     </View>
